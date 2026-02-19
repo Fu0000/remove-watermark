@@ -1,4 +1,4 @@
-# 研发进度管理规范（v1.0）
+# 研发进度管理规范（v1.1）
 
 ## 1. 目标
 - 建立可持续执行的研发节奏，确保 12 周内可交付。
@@ -57,4 +57,136 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.1 | 2026-02-19 | 新增 v1.0 执行版研发任务清单、联调计划、测试证据、完成状态与关键结果看板 |
 | v1.0 | 2026-02-19 | 首版研发进度管理规范与模板 |
+
+## 7. v1.0 执行版研发任务清单（M0-M4）
+
+说明：
+- 状态流严格使用：`Backlog -> Ready -> In Progress -> In Review -> QA -> Done`。
+- 时间基线：`2026-02-23` 开始执行（可按实际启动日平移）。
+- 范围口径：`v1.0 = 图片 + 视频`。
+
+### 7.1 环境准备（Environment Readiness）
+
+| Task ID | Epic | Task | Owner | Start | End | 状态 | 联调依赖 | 测试层级 | 关键结果 |
+|---|---|---|---|---|---|---|---|---|---|
+| ENV-001 | 平台基础 | 建立 `dev/shared/staging/prod` 环境拓扑与命名 | 运维 | 2026-02-23 | 2026-02-25 | Ready | FE/BE 共用环境 | smoke | 4 套环境可用 |
+| ENV-002 | 平台基础 | PostgreSQL/Redis/MinIO/Triton 基础实例与网络打通 | 运维 | 2026-02-23 | 2026-02-27 | Ready | 后端服务启动 | integration | 关键中间件健康检查通过 |
+| ENV-003 | 平台基础 | OTel + Prometheus + Grafana + 日志采集落地 | 运维 | 2026-02-24 | 2026-02-28 | Ready | 全链路追踪 | smoke | `traceId` 可跨服务追踪 |
+| ENV-004 | 平台基础 | CI 门禁（lint/unit/contract）与发布流水线 | 平台工程 | 2026-02-24 | 2026-02-28 | Ready | PR 合并门禁 | unit/contract | PR 阶段自动门禁生效 |
+
+### 7.2 数据准备（Data Readiness）
+
+| Task ID | Epic | Task | Owner | Start | End | 状态 | 联调依赖 | 测试层级 | 关键结果 |
+|---|---|---|---|---|---|---|---|---|---|
+| DATA-001 | 数据基线 | Prisma schema 与 DDL 基线同步（含回滚脚本） | 后端 | 2026-02-24 | 2026-02-28 | Ready | shared 部署 | integration | DDL 可一次执行成功 |
+| DATA-002 | 数据基线 | 初始化套餐/权益种子数据（Free/Pro 月付/年付） | 后端 | 2026-02-26 | 2026-03-01 | Backlog | 订阅联调 | integration | 套餐查询接口可用 |
+| DATA-003 | 数据基线 | `idempotency_keys/outbox_events/usage_ledger` 去重索引校验 | 后端 | 2026-02-26 | 2026-03-02 | Backlog | 任务/账务一致性 | contract/integration | 幂等冲突可稳定复现与防重 |
+| DATA-004 | 数据基线 | 测试样本库（图片/视频，含失败样本）与标注策略 | 测试+算法 | 2026-02-25 | 2026-03-03 | Ready | E2E 与回归 | e2e/regression | FR 场景样本覆盖 >= 90% |
+
+### 7.3 服务准备（Service Readiness）
+
+| Task ID | Epic | Task | Owner | Start | End | 状态 | 联调依赖 | 测试层级 | 关键结果 |
+|---|---|---|---|---|---|---|---|---|---|
+| SVC-001 | 服务基线 | Monorepo 初始化（apps/packages 结构、eslint/tsconfig） | 后端 | 2026-02-23 | 2026-02-25 | Ready | FE/BE 契约共享 | unit | 项目骨架可编译 |
+| SVC-002 | 服务基线 | `api-gateway` 基础模块（auth/assets/tasks/plans） | 后端 | 2026-02-24 | 2026-03-03 | Ready | FE 调用 | contract | OpenAPI 可导出联调 |
+| SVC-003 | 服务基线 | `worker-orchestrator/media/detect/inpaint/result` 队列骨架 | 后端 | 2026-02-25 | 2026-03-05 | Backlog | 任务状态推进 | integration | 状态机全路径可推进 |
+| SVC-004 | 服务基线 | `webhook-dispatcher`（签名、重试、死信） | 后端 | 2026-03-10 | 2026-03-20 | Backlog | 外部回调联调 | contract/integration | Webhook 成功率可观测 |
+| SVC-005 | 服务基线 | `billing-service`（订阅、权益生效、账务流水） | 后端 | 2026-03-17 | 2026-03-30 | Backlog | 套餐支付联调 | integration/contract | `HELD/COMMITTED/RELEASED` 闭环 |
+
+### 7.4 前端研发任务（Mini/Web + Admin）
+
+| Task ID | Epic | Task | Owner | Start | End | 状态 | 需求映射 | 联调接口 | 测试层级 | 完成状态 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| FE-001 | 用户端主链路 | 登录态与会话续期 | 前端 | 2026-03-02 | 2026-03-06 | Ready | FR-001 | `/v1/auth/*` | unit/e2e | 未开始 |
+| FE-002 | 用户端主链路 | 上传页（格式校验、分片上传、失败恢复） | 前端 | 2026-03-02 | 2026-03-10 | Ready | FR-002 | `/v1/assets/upload-policy` | e2e | 未开始 |
+| FE-003 | 用户端主链路 | 编辑页（自动检测+手动蒙版） | 前端 | 2026-03-05 | 2026-03-14 | Backlog | FR-003/FR-004 | `/v1/tasks`, `/v1/tasks/{taskId}/mask` | e2e/regression | 未开始 |
+| FE-004 | 用户端主链路 | 任务中心（轮询/SSE 回退、重试/取消） | 前端 | 2026-03-09 | 2026-03-18 | Backlog | FR-005/FR-006 | `/v1/tasks*` | contract/e2e | 未开始 |
+| FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | Backlog | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 未开始 |
+| FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | Backlog | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 未开始 |
+| FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | Backlog | FR-010 | 删除相关接口 | e2e | 未开始 |
+| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | Backlog | FR-012 | `/admin/*` | e2e/smoke | 未开始 |
+
+### 7.5 后端研发任务（API + Worker + Billing）
+
+| Task ID | Epic | Task | Owner | Start | End | 状态 | 需求映射 | 测试层级 | 完成状态 | 关键结果 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| BE-001 | 契约实现 | `GET /v1/system/capabilities` + 默认策略 | 后端 | 2026-02-26 | 2026-03-03 | Ready | FR-005 | contract | 未开始 | 能力协商可回退 FAST |
+| BE-002 | 上传链路 | `POST /v1/assets/upload-policy` + MinIO 签名 | 后端 | 2026-02-26 | 2026-03-04 | Ready | FR-002 | integration/contract | 未开始 | 上传策略 10 分钟有效 |
+| BE-003 | 任务编排 | `POST /v1/tasks` + 幂等 + 预扣事务 | 后端 | 2026-03-01 | 2026-03-08 | Backlog | FR-005/FR-008 | integration/contract | 未开始 | `tasks + usage_ledger + outbox` 同事务 |
+| BE-004 | 状态推进 | Orchestrator 状态机推进与乐观锁版本控制 | 后端 | 2026-03-03 | 2026-03-12 | Backlog | FR-005/FR-006 | unit/integration | 未开始 | 非法迁移拦截 100% |
+| BE-005 | 结果交付 | `GET /v1/tasks/{taskId}/result` + 结果 TTL | 后端 | 2026-03-09 | 2026-03-15 | Backlog | FR-007 | integration | 未开始 | 结果链接按策略失效 |
+| BE-006 | 失败恢复 | retry/cancel 语义与并发互斥 | 后端 | 2026-03-09 | 2026-03-16 | Backlog | FR-005/FR-006 | unit/contract | 未开始 | 重试与取消冲突可控 |
+| BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | Backlog | FR-008 | integration/contract | 未开始 | 账务一致性可追踪 |
+| BE-008 | 通知回调 | webhook endpoint 管理/投递/重试/手动重放 | 后端 | 2026-03-24 | 2026-04-10 | Backlog | FR-009 | integration/contract | 未开始 | DEAD 信队列可运维回放 |
+| BE-009 | 合规治理 | 素材/任务/账户删除与审计日志链路 | 后端 | 2026-03-30 | 2026-04-12 | Backlog | FR-010/FR-011 | integration/e2e | 未开始 | 删除 SLA <= 24h |
+
+### 7.6 联调对接任务（FE/BE/QA/OPS）
+
+| Task ID | 对接项 | Owner | Start | End | 状态 | 验收标准 | 备注 |
+|---|---|---|---|---|---|---|---|
+| INT-001 | 契约冻结（字段/错误码/状态机） | 产品+前后端 | 2026-02-24 | 2026-02-28 | In Progress | OpenAPI 冻结并发布 | shared 联调前置 |
+| INT-002 | Header 校验（Authorization/Idempotency-Key/X-Request-Id） | 前后端 | 2026-03-01 | 2026-03-04 | Ready | 三个 Header 行为一致 | 必测 |
+| INT-003 | 上传 -> 创建任务主链路联调 | 前后端+测试 | 2026-03-05 | 2026-03-12 | Backlog | 端到端成功率 >= 95% | 图片优先 |
+| INT-004 | 任务中心状态刷新与错误路径联调 | 前后端+测试 | 2026-03-10 | 2026-03-18 | Backlog | 状态渲染与错误码一致 | 含 retry/cancel |
+| INT-005 | 结果下载与过期策略联调 | 前后端+测试 | 2026-03-14 | 2026-03-20 | Backlog | 过期前提醒与失效行为一致 |  |
+| INT-006 | 订阅/配额扣减联调 | 前后端+测试+支付 | 2026-03-24 | 2026-04-07 | Backlog | 扣减一致率 100% | 含退款回滚 |
+| INT-007 | Webhook 对接联调（验签/重试/幂等） | 后端+外部系统 | 2026-03-28 | 2026-04-12 | Backlog | 签名校验通过，重试可观测 |  |
+| INT-008 | staging 全链路回归与发布演练 | 全体 | 2026-04-28 | 2026-05-10 | Backlog | 发布准入清单全绿 | 不允许跳过 staging |
+
+### 7.7 项目治理任务（PM/QA/ALG/OPS）
+
+| Task ID | Task | Owner | 状态 | 截止时间 | 风险等级 | 下一步 |
+|---|---|---|---|---|---|---|
+| PM-001 | FR/NFR/MET 映射到 Story 与测试用例 | 产品+测试 | In Progress | 2026-02-28 | 中 | 完成 FR-001~FR-012 映射表 |
+| PM-002 | 风险台账维护（许可/成本/性能） | 产品+技术负责人 | In Progress | 2026-03-03 | 高 | 补齐触发条件与替代方案 |
+| QA-001 | 测试计划与回归集建立（unit/integration/contract/e2e/smoke） | 测试 | Ready | 2026-03-05 | 中 | 完成主链路 case 编排 |
+| ALG-001 | FAST/QUALITY 模型路由及风险标记 | 算法 | Backlog | 2026-03-22 | 高 | 输出质量/成本基线报告 |
+| OPS-001 | 扩缩容与降级阈值告警（queue_depth、INPAINTING P95） | 运维 | Ready | 2026-03-15 | 中 | 完成告警模板与演练 |
+
+## 8. 测试情况与证据（截至 2026-02-19）
+
+### 8.1 已执行检查（文档与约束一致性）
+
+| 检查项 | 执行命令 | 结果 | 结论 |
+|---|---|---|---|
+| 状态机字面量一致性抽检 | `rg -n "UPLOADED -> QUEUED -> PREPROCESSING -> DETECTING -> INPAINTING -> PACKAGING -> SUCCEEDED\\|FAILED\\|CANCELED" doc \| wc -l` | `6` | 关键文档存在统一字面量 |
+| 幂等约束覆盖抽检 | `rg -n "Idempotency-Key" doc \| wc -l` | `11` | 创建任务幂等约束已在多文档显式出现 |
+| Node+Triton 架构边界抽检 | `rg -n "Node 控制面 \\+ Triton 推理面|Node.*Triton" doc/project-constraints.md doc/prd.md doc/tad.md doc/plan.md` | 命中 `plan.md`、`tad.md` | 架构口径一致，需在实施阶段继续守护 |
+| MinIO 术语一致性抽检 | `rg -n "MinIO" doc/project-constraints.md doc/prd.md doc/api-spec.md doc/tad.md doc/plan.md` | 多文档命中 | 对象存储术语一致 |
+
+### 8.2 后续测试计划（按门禁）
+- PR 阶段：`unit + lint + contract`。
+- shared/staging：`integration + e2e + regression + performance smoke`。
+- 发布前：`NFR-001~NFR-007` 验证与 `P0/P1=0`。
+
+## 9. 完成状态看板（截至 2026-02-19）
+
+统计口径：本节任务清单（ENV/DATA/SVC/FE/BE/INT/治理）共 `43` 项。
+
+| 状态 | 数量 | 占比 |
+|---|---:|---:|
+| Done | 0 | 0.0% |
+| In Progress | 3 | 7.0% |
+| Ready | 15 | 34.9% |
+| Backlog | 25 | 58.1% |
+| In Review | 0 | 0.0% |
+| QA | 0 | 0.0% |
+
+## 10. 关键结果（KR）跟踪（v1.0）
+
+| KR ID | 指标映射 | 目标值 | 当前基线（2026-02-19） | 当前状态 |
+|---|---|---|---|---|
+| KR-001 | MET-002 上传到任务创建转化率 | `>= 60%` | 待联调后建立 | 未开始 |
+| KR-002 | MET-003 任务成功率（剔除取消） | `>= 95%` | 待联调后建立 | 未开始 |
+| KR-003 | MET-004 图片 TTFR P95 | `< 8s` | 待压测与灰度 | 未开始 |
+| KR-004 | NFR-002 API 月可用性 | `>= 99.9%` | 待监控看板上线 | 未开始 |
+| KR-005 | 账务一致性（配额扣减一致率） | `= 100%` | 待订阅链路联调 | 未开始 |
+
+## 11. 阻塞项与风险（24h 回填机制）
+
+| Blocker ID | 描述 | Owner | 影响范围 | SLA | 下一步 |
+|---|---|---|---|---|---|
+| BLK-001 | shared 环境 Triton/GPU 资源未完成分配 | 运维 | 视频链路、性能基线 | 24h 回填 | 完成资源配额与可用性验证 |
+| BLK-002 | 支付联调测试账号与回调沙箱待开通 | 支付对接人 | 订阅链路、账务验证 | 24h 回填 | 明确开通时间与替代测试方案 |
