@@ -6,6 +6,7 @@ coverage
 dist
 .temp
 *.log
+*.tsbuildinfo
 apps/user-frontend/dist
 apps/user-frontend/.temp
 apps/user-frontend/.taro
