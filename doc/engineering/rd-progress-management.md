@@ -89,8 +89,8 @@
 
 | Task ID | Epic | Task | Owner | Start | End | 状态 | 联调依赖 | 测试层级 | 关键结果 |
 |---|---|---|---|---|---|---|---|---|---|
-| SVC-001 | 服务基线 | Monorepo 初始化（apps/packages 结构、eslint/tsconfig） | 后端 | 2026-02-23 | 2026-02-25 | Ready | FE/BE 契约共享 | unit | 项目骨架可编译 |
-| SVC-002 | 服务基线 | `api-gateway` 基础模块（auth/assets/tasks/plans） | 后端 | 2026-02-24 | 2026-03-03 | Ready | FE 调用 | contract | OpenAPI 可导出联调 |
+| SVC-001 | 服务基线 | Monorepo 初始化（apps/packages 结构、eslint/tsconfig） | 后端 | 2026-02-23 | 2026-02-25 | Done | FE/BE 契约共享 | unit | 项目骨架可编译 |
+| SVC-002 | 服务基线 | `api-gateway` 基础模块（auth/assets/tasks/plans） | 后端 | 2026-02-24 | 2026-03-03 | In Progress | FE 调用 | contract | OpenAPI 可导出联调 |
 | SVC-003 | 服务基线 | `worker-orchestrator/media/detect/inpaint/result` 队列骨架 | 后端 | 2026-02-25 | 2026-03-05 | Backlog | 任务状态推进 | integration | 状态机全路径可推进 |
 | SVC-004 | 服务基线 | `webhook-dispatcher`（签名、重试、死信） | 后端 | 2026-03-10 | 2026-03-20 | Backlog | 外部回调联调 | contract/integration | Webhook 成功率可观测 |
 | SVC-005 | 服务基线 | `billing-service`（订阅、权益生效、账务流水） | 后端 | 2026-03-17 | 2026-03-30 | Backlog | 套餐支付联调 | integration/contract | `HELD/COMMITTED/RELEASED` 闭环 |
@@ -99,21 +99,21 @@
 
 | Task ID | Epic | Task | Owner | Start | End | 状态 | 需求映射 | 联调接口 | 测试层级 | 完成状态 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| FE-001 | 用户端主链路 | 登录态与会话续期 | 前端 | 2026-03-02 | 2026-03-06 | Ready | FR-001 | `/v1/auth/*` | unit/e2e | 未开始 |
-| FE-002 | 用户端主链路 | 上传页（格式校验、分片上传、失败恢复） | 前端 | 2026-03-02 | 2026-03-10 | Ready | FR-002 | `/v1/assets/upload-policy` | e2e | 未开始 |
+| FE-001 | 用户端主链路 | 登录态与会话续期 | 前端 | 2026-03-02 | 2026-03-06 | In Progress | FR-001 | `/v1/auth/*` | unit/e2e | 框架已初始化，接口待联调 |
+| FE-002 | 用户端主链路 | 上传页（格式校验、分片上传、失败恢复） | 前端 | 2026-03-02 | 2026-03-10 | In Progress | FR-002 | `/v1/assets/upload-policy` | e2e | 页面骨架已完成，上传逻辑待接 MinIO |
 | FE-003 | 用户端主链路 | 编辑页（自动检测+手动蒙版） | 前端 | 2026-03-05 | 2026-03-14 | Backlog | FR-003/FR-004 | `/v1/tasks`, `/v1/tasks/{taskId}/mask` | e2e/regression | 未开始 |
 | FE-004 | 用户端主链路 | 任务中心（轮询/SSE 回退、重试/取消） | 前端 | 2026-03-09 | 2026-03-18 | Backlog | FR-005/FR-006 | `/v1/tasks*` | contract/e2e | 未开始 |
 | FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | Backlog | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 未开始 |
 | FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | Backlog | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 未开始 |
 | FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | Backlog | FR-010 | 删除相关接口 | e2e | 未开始 |
-| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | Backlog | FR-012 | `/admin/*` | e2e/smoke | 未开始 |
+| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Progress | FR-012 | `/admin/*` | e2e/smoke | 页面与 RBAC 骨架已完成 |
 
 ### 7.5 后端研发任务（API + Worker + Billing）
 
 | Task ID | Epic | Task | Owner | Start | End | 状态 | 需求映射 | 测试层级 | 完成状态 | 关键结果 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| BE-001 | 契约实现 | `GET /v1/system/capabilities` + 默认策略 | 后端 | 2026-02-26 | 2026-03-03 | Ready | FR-005 | contract | 未开始 | 能力协商可回退 FAST |
-| BE-002 | 上传链路 | `POST /v1/assets/upload-policy` + MinIO 签名 | 后端 | 2026-02-26 | 2026-03-04 | Ready | FR-002 | integration/contract | 未开始 | 上传策略 10 分钟有效 |
+| BE-001 | 契约实现 | `GET /v1/system/capabilities` + 默认策略 | 后端 | 2026-02-26 | 2026-03-03 | In Progress | FR-005 | contract | 控制器骨架已提交 | 能力协商可回退 FAST |
+| BE-002 | 上传链路 | `POST /v1/assets/upload-policy` + MinIO 签名 | 后端 | 2026-02-26 | 2026-03-04 | In Progress | FR-002 | integration/contract | 控制器骨架已提交 | 上传策略 10 分钟有效 |
 | BE-003 | 任务编排 | `POST /v1/tasks` + 幂等 + 预扣事务 | 后端 | 2026-03-01 | 2026-03-08 | Backlog | FR-005/FR-008 | integration/contract | 未开始 | `tasks + usage_ledger + outbox` 同事务 |
 | BE-004 | 状态推进 | Orchestrator 状态机推进与乐观锁版本控制 | 后端 | 2026-03-03 | 2026-03-12 | Backlog | FR-005/FR-006 | unit/integration | 未开始 | 非法迁移拦截 100% |
 | BE-005 | 结果交付 | `GET /v1/tasks/{taskId}/result` + 结果 TTL | 后端 | 2026-03-09 | 2026-03-15 | Backlog | FR-007 | integration | 未开始 | 结果链接按策略失效 |
@@ -151,6 +151,13 @@
 
 | 检查项 | 执行命令 | 结果 | 结论 |
 |---|---|---|---|
+| Monorepo 依赖安装 | `pnpm install` | `Done in 4m 23s` | 工作区依赖已完整安装，可执行后续联调与构建 |
+| 框架静态类型检查 | `pnpm -r typecheck` | `15/15 workspace passed` | 三端与共享包初始化代码可通过 TypeScript 校验 |
+| 工作区 lint 占位检查 | `pnpm -r lint` | `15/15 workspace passed` | lint 脚本已统一挂载，后续可替换为 ESLint 实检 |
+| 用户前端目录规范检查 | `for dir in pages components modules stores services utils; do find apps/user-frontend/src/$dir -type f \\| wc -l; done` | `目录均存在且有文件` | 已对齐 `frontend-framework.md` 目录约束 |
+| 管理端构建验证 | `pnpm --filter @apps/admin-console build` | `Next build passed` | 管理端框架可完成生产构建 |
+| API 网关构建验证 | `pnpm --filter @apps/api-gateway build` | `tsc passed` | 后端网关骨架可完成编译 |
+| 用户端 H5 构建验证 | `pnpm --filter @apps/user-frontend build:h5` | `failed` | Taro H5 webpack alias 校验异常，已转阻塞跟踪 |
 | 状态机字面量一致性抽检 | `rg -n "UPLOADED -> QUEUED -> PREPROCESSING -> DETECTING -> INPAINTING -> PACKAGING -> SUCCEEDED\\|FAILED\\|CANCELED" doc \| wc -l` | `6` | 关键文档存在统一字面量 |
 | 幂等约束覆盖抽检 | `rg -n "Idempotency-Key" doc \| wc -l` | `11` | 创建任务幂等约束已在多文档显式出现 |
 | Node+Triton 架构边界抽检 | `rg -n "Node 控制面 \\+ Triton 推理面|Node.*Triton" doc/project-constraints.md doc/prd.md doc/tad.md doc/plan.md` | 命中 `plan.md`、`tad.md` | 架构口径一致，需在实施阶段继续守护 |
@@ -167,10 +174,10 @@
 
 | 状态 | 数量 | 占比 |
 |---|---:|---:|
-| Done | 0 | 0.0% |
-| In Progress | 3 | 7.0% |
-| Ready | 15 | 34.9% |
-| Backlog | 25 | 58.1% |
+| Done | 1 | 2.3% |
+| In Progress | 9 | 20.9% |
+| Ready | 9 | 20.9% |
+| Backlog | 24 | 55.9% |
 | In Review | 0 | 0.0% |
 | QA | 0 | 0.0% |
 
@@ -190,3 +197,34 @@
 |---|---|---|---|---|---|
 | BLK-001 | shared 环境 Triton/GPU 资源未完成分配 | 运维 | 视频链路、性能基线 | 24h 回填 | 完成资源配额与可用性验证 |
 | BLK-002 | 支付联调测试账号与回调沙箱待开通 | 支付对接人 | 订阅链路、账务验证 | 24h 回填 | 明确开通时间与替代测试方案 |
+| BLK-003 | `@apps/user-frontend` 执行 `build:h5` 时出现 webpack alias 校验异常（`@tarojs/shared`） | 前端 | H5 端构建与联调节奏 | 24h 回填 | 锁定 Taro/runner 版本组合并修复 alias 配置 |
+
+## 12. 本次执行回填（框架初始化）
+
+- 任务编号：`INIT-20260219-01`
+- 需求映射：`FR-001/FR-002/FR-005/FR-012`、`NFR-006/NFR-007`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/frontend-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/admin-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-service-framework.md`
+- 实施摘要：
+  - 初始化 Monorepo：`apps/* + packages/* + pnpm workspace`
+  - 初始化用户前端（Taro + React）：`apps/user-frontend`，覆盖 `pages/components/modules/stores/services/utils` 目录，落地多端适配工具与统一页面骨架
+  - 初始化管理端（Next.js + Ant Design）：`apps/admin-console`，落地 `pages/features/components/services/auth` 目录与 RBAC 基础
+  - 初始化后端服务骨架：`apps/api-gateway` 与 `worker-* / webhook-dispatcher / billing-service`
+  - 初始化共享包：`packages/contracts/shared/observability/eslint-config/tsconfig`
+- 测试证据：
+  - `pnpm install`：成功（含警告，不阻塞）
+  - `pnpm -r typecheck`：通过
+  - `pnpm -r lint`：通过（当前为占位脚本）
+  - `pnpm --filter @apps/admin-console build`：通过
+  - `pnpm --filter @apps/api-gateway build`：通过
+  - `pnpm --filter @apps/user-frontend build:h5`：失败（已登记 `BLK-003`）
+- 风险与回滚：
+  - 风险：`lint` 尚为占位脚本，尚未接入真实 ESLint 规则
+  - 回滚：删除 `apps/` 与 `packages/` 初始化目录并恢复本文件状态
+- 当前状态：`In Progress`
+- 下一步：
+  - 接入真实 ESLint（替换占位 lint）
+  - 完成 `api-gateway` 模块拆分与契约测试
+  - 完成用户端上传/任务接口联调

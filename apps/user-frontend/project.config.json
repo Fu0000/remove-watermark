@@ -1,0 +1,12 @@
+{
+  "miniprogramRoot": "dist/weapp",
+  "projectname": "remove-watermark-user-frontend",
+  "description": "remove-watermark user frontend",
+  "appid": "touristappid",
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": false
+  }
+}

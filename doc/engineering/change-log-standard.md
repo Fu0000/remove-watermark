@@ -1,4 +1,4 @@
-# 变更日志规范（v1.1）
+# 变更日志规范（v1.2）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -18,7 +18,7 @@
 
 ### 4.1 变更日志模板
 ```markdown
-## [0.2.0] - 2026-03-01
+## [0.3.0] - 2026-03-01
 ### Added
 - 新增前后端联调流程规范文档。
 
@@ -51,10 +51,37 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.2 | 2026-02-19 | 新增框架初始化阶段执行日志（Monorepo、前后端骨架、测试与阻塞回填） |
 | v1.1 | 2026-02-19 | 新增项目执行变更日志示例（含研发任务清单、联调、测试、KR 回填） |
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.2.0] - 2026-02-19
+
+### Added
+- 初始化 Monorepo 工程骨架：`apps/*` 与 `packages/*`。
+- 新增用户前端框架：`apps/user-frontend`（Taro + React，多端目录与适配工具）。
+- 新增管理端框架：`apps/admin-console`（Next.js + Ant Design，RBAC 与核心页面骨架）。
+- 新增后端服务骨架：`apps/api-gateway`、`apps/worker-*`、`apps/webhook-dispatcher`、`apps/billing-service`。
+- 新增共享包：`packages/contracts`、`packages/shared`、`packages/observability`、`packages/eslint-config`、`packages/tsconfig`。
+
+### Changed
+- `rd-progress-management.md` 中 `SVC-001` 更新为 `Done`，`SVC-002/FE-001/FE-002/FE-008/BE-001/BE-002` 更新为 `In Progress`。
+- 回填测试证据增加安装、类型检查、管理端构建、API 网关构建结果。
+
+### Fixed
+- 将“仅文档阶段”的项目仓库升级为“文档 + 可运行框架骨架”状态，消除执行起步缺口。
+
+### Security
+- 保持任务创建幂等头、状态机字面量、Node+Triton 边界、MinIO 术语一致性。
+
+### Rollback
+- 若框架初始化不满足当前迭代节奏，可回滚新增 `apps/`、`packages/` 目录并恢复台账状态。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps`、`/Users/codelei/Documents/ai-project/remove-watermark/packages`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.1.0] - 2026-02-19
 

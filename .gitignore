@@ -1,0 +1,11 @@
+node_modules
+.pnpm-store
+.next
+.turbo
+coverage
+dist
+.temp
+*.log
+apps/user-frontend/dist
+apps/user-frontend/.temp
+apps/user-frontend/.taro

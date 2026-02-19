@@ -1,0 +1,24 @@
+page {
+  background: #f5f7fb;
+  color: #1f2937;
+  min-height: 100%;
+}
+
+.container {
+  box-sizing: border-box;
+  padding: 24rpx;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 20rpx;
+}
+
+.platform-h5 {
+  padding-bottom: 24px;
+}
+
+.platform-weapp {
+  padding-bottom: env(safe-area-inset-bottom);
+}

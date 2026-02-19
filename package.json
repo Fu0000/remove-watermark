@@ -1,0 +1,24 @@
+{
+  "name": "remove-watermark",
+  "private": true,
+  "version": "0.1.0",
+  "description": "remove-watermark monorepo",
+  "packageManager": "pnpm@10.30.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "dev:user:h5": "pnpm --filter @apps/user-frontend dev:h5",
+    "dev:user:weapp": "pnpm --filter @apps/user-frontend dev:weapp",
+    "dev:admin": "pnpm --filter @apps/admin-console dev",
+    "dev:api": "pnpm --filter @apps/api-gateway dev"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2",
+    "tsx": "^4.20.3"
+  }
+}

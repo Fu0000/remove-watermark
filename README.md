@@ -1,6 +1,6 @@
 # remove-watermark
 
-去水印项目文档主仓库（当前阶段以文档为主），面向微信小程序 + Web 首发，后续扩展 App。
+去水印项目主仓库（文档 + 工程骨架），面向微信小程序 + Web 首发，后续扩展 App。
 
 ## 项目定位
 
@@ -69,6 +69,23 @@
 - 先实现图片链路，再实现视频链路
 - 通过能力协商接口 `GET /v1/system/capabilities` 做策略降级与路由
 - 所有变更遵循：先更新文档真源，再变更代码实现
+
+## 工程骨架（已初始化）
+
+- 工作区：`pnpm workspace`
+- 用户前端（多端）：`/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend`（Taro + React）
+- 管理端：`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console`（Next.js + Ant Design）
+- 后端服务：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway` + `worker-*` + `billing-service` + `webhook-dispatcher`
+- 共享包：`/Users/codelei/Documents/ai-project/remove-watermark/packages/{contracts,shared,observability,eslint-config,tsconfig}`
+
+### 常用命令
+
+- 安装依赖：`pnpm install`
+- 全量类型检查：`pnpm -r typecheck`
+- 用户前端 H5 开发：`pnpm dev:user:h5`
+- 用户前端小程序开发：`pnpm dev:user:weapp`
+- 管理端开发：`pnpm dev:admin`
+- API 网关开发：`pnpm dev:api`
 
 ## 里程碑（12周）
 
