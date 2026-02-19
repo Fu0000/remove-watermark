@@ -42,6 +42,19 @@
 - 调研对齐矩阵：`/Users/codelei/Documents/ai-project/remove-watermark/doc/research-alignment.md`
 - 统一约束规范：`/Users/codelei/Documents/ai-project/remove-watermark/doc/project-constraints.md`
 
+### 工程执行规范文档
+
+- 工程规范总览：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/README.md`
+- 前台页面框架：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/frontend-framework.md`
+- 后台页面框架：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/admin-framework.md`
+- 后端服务框架：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-service-framework.md`
+- 研发进度管理：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+- 变更日志规范：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- Git 提交规范：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/git-commit-standard.md`
+- 测试流程规范：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 前后端联调流程：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+- 后端数据表规范：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-db-standards.md`
+
 ## 推荐阅读顺序
 
 1. `doc/project-constraints.md`（先统一边界与术语）
@@ -68,3 +81,4 @@
 ## 版本记录
 
 - `2026-02-19`：完成文档体系重构与规范化，对齐深度调研结论并形成可实施文档闭环。
+- `2026-02-19`：新增 `doc/engineering/*` 工程规范文档集（前台/后台/后端框架与研发流程标准）。
