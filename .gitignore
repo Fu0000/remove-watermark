@@ -10,3 +10,4 @@ dist
 apps/user-frontend/dist
 apps/user-frontend/.temp
 apps/user-frontend/.taro
+apps/user-frontend/.swc

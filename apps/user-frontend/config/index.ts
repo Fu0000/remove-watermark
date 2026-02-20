@@ -1,4 +1,5 @@
 import { defineConfig } from "@tarojs/cli";
+import path from "node:path";
 
 export default defineConfig({
   projectName: "remove-watermark-user-frontend",
@@ -11,6 +12,9 @@ export default defineConfig({
   },
   sourceRoot: "src",
   outputRoot: `dist/${process.env.TARO_ENV || "h5"}`,
+  alias: {
+    "@": path.resolve(__dirname, "..", "src")
+  },
   framework: "react",
   compiler: {
     type: "webpack5"

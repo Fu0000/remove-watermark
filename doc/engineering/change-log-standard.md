@@ -1,4 +1,4 @@
-# 变更日志规范（v1.3）
+# 变更日志规范（v1.4）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,12 +51,44 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.4 | 2026-02-20 | 新增 FE 联调主链路与 H5 构建阻塞修复执行日志 |
 | v1.3 | 2026-02-20 | 新增 api-gateway 契约闭环执行日志与测试证据回填 |
 | v1.2 | 2026-02-19 | 新增框架初始化阶段执行日志（Monorepo、前后端骨架、测试与阻塞回填） |
 | v1.1 | 2026-02-19 | 新增项目执行变更日志示例（含研发任务清单、联调、测试、KR 回填） |
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.4.0] - 2026-02-20
+
+### Added
+- 新增用户端联调服务与状态管理：
+  - `apps/user-frontend/src/services/auth.ts`
+  - `apps/user-frontend/src/services/asset.ts`
+  - `apps/user-frontend/src/stores/auth.store.ts`
+  - `apps/user-frontend/src/utils/request-id.ts`
+  - `apps/user-frontend/src/utils/idempotency.ts`
+- 新增 `apps/user-frontend/babel.config.js`，恢复 H5 构建 TSX 解析链路。
+
+### Changed
+- `apps/user-frontend/src/services/http.ts` 迁移为 `Taro.request` 请求层，统一注入 `Authorization`、`X-Request-Id`、`Idempotency-Key`。
+- `apps/user-frontend/src/pages/home/index.tsx`、`apps/user-frontend/src/pages/editor/index.tsx`、`apps/user-frontend/src/pages/tasks/index.tsx` 打通登录、上传策略、任务创建/刷新/取消/重试联调动作。
+- `apps/user-frontend/config/index.ts` 增加 `@ -> src` alias。
+- `doc/engineering/rd-progress-management.md` 更新 FE/INT 状态、阻塞项与本轮测试证据。
+
+### Fixed
+- 修复 `@apps/user-frontend` `build:h5` 的 webpack alias 校验异常（`@tarojs/shared`），`BLK-003` 已解除。
+- 修复 H5 构建期 TSX/Babel preset 缺失问题（补齐 `babel-preset-taro` 与 `@babel/preset-react`）。
+
+### Security
+- 保持请求头约束一致性：`Authorization`、`Idempotency-Key`、`X-Request-Id`。
+
+### Rollback
+- 回退 `apps/user-frontend/{config,src,package.json,babel.config.js}` 与 `pnpm-lock.yaml`、`doc/engineering/rd-progress-management.md` 改动。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.3.0] - 2026-02-20
 

@@ -99,10 +99,10 @@
 
 | Task ID | Epic | Task | Owner | Start | End | 状态 | 需求映射 | 联调接口 | 测试层级 | 完成状态 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| FE-001 | 用户端主链路 | 登录态与会话续期 | 前端 | 2026-03-02 | 2026-03-06 | In Progress | FR-001 | `/v1/auth/*` | unit/e2e | 框架已初始化，接口待联调 |
-| FE-002 | 用户端主链路 | 上传页（格式校验、分片上传、失败恢复） | 前端 | 2026-03-02 | 2026-03-10 | In Progress | FR-002 | `/v1/assets/upload-policy` | e2e | 页面骨架已完成，上传逻辑待接 MinIO |
+| FE-001 | 用户端主链路 | 登录态与会话续期 | 前端 | 2026-03-02 | 2026-03-06 | In Review | FR-001 | `/v1/auth/*` | unit/e2e | 登录会话与鉴权头链路已联调 |
+| FE-002 | 用户端主链路 | 上传页（格式校验、分片上传、失败恢复） | 前端 | 2026-03-02 | 2026-03-10 | In Review | FR-002 | `/v1/assets/upload-policy` | e2e | 上传策略+任务创建链路已联调 |
 | FE-003 | 用户端主链路 | 编辑页（自动检测+手动蒙版） | 前端 | 2026-03-05 | 2026-03-14 | Backlog | FR-003/FR-004 | `/v1/tasks`, `/v1/tasks/{taskId}/mask` | e2e/regression | 未开始 |
-| FE-004 | 用户端主链路 | 任务中心（轮询/SSE 回退、重试/取消） | 前端 | 2026-03-09 | 2026-03-18 | Backlog | FR-005/FR-006 | `/v1/tasks*` | contract/e2e | 未开始 |
+| FE-004 | 用户端主链路 | 任务中心（轮询/SSE 回退、重试/取消） | 前端 | 2026-03-09 | 2026-03-18 | In Review | FR-005/FR-006 | `/v1/tasks*` | contract/e2e | 刷新/取消/重试联调动作与 H5 构建验证已通过 |
 | FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | Backlog | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 未开始 |
 | FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | Backlog | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 未开始 |
 | FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | Backlog | FR-010 | 删除相关接口 | e2e | 未开始 |
@@ -127,7 +127,7 @@
 | Task ID | 对接项 | Owner | Start | End | 状态 | 验收标准 | 备注 |
 |---|---|---|---|---|---|---|---|
 | INT-001 | 契约冻结（字段/错误码/状态机） | 产品+前后端 | 2026-02-24 | 2026-02-28 | In Progress | OpenAPI 冻结并发布 | shared 联调前置 |
-| INT-002 | Header 校验（Authorization/Idempotency-Key/X-Request-Id） | 前后端 | 2026-03-01 | 2026-03-04 | Ready | 三个 Header 行为一致 | 必测 |
+| INT-002 | Header 校验（Authorization/Idempotency-Key/X-Request-Id） | 前后端 | 2026-03-01 | 2026-03-04 | In Review | 三个 Header 行为一致 | 请求层统一已落地，待 shared 验收 |
 | INT-003 | 上传 -> 创建任务主链路联调 | 前后端+测试 | 2026-03-05 | 2026-03-12 | Backlog | 端到端成功率 >= 95% | 图片优先 |
 | INT-004 | 任务中心状态刷新与错误路径联调 | 前后端+测试 | 2026-03-10 | 2026-03-18 | Backlog | 状态渲染与错误码一致 | 含 retry/cancel |
 | INT-005 | 结果下载与过期策略联调 | 前后端+测试 | 2026-03-14 | 2026-03-20 | Backlog | 过期前提醒与失效行为一致 |  |
@@ -158,7 +158,9 @@
 | 管理端构建验证 | `pnpm --filter @apps/admin-console build` | `Next build passed` | 管理端框架可完成生产构建 |
 | API 网关构建验证 | `pnpm --filter @apps/api-gateway build` | `tsc passed` | 后端网关骨架可完成编译 |
 | API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `5 passed / 0 failed` | 关键契约（capabilities/upload-policy/tasks）可联调 |
-| 用户端 H5 构建验证 | `pnpm --filter @apps/user-frontend build:h5` | `failed` | Taro H5 webpack alias 校验异常，已转阻塞跟踪 |
+| 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
+| 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
+| 用户端 H5 构建验证（本轮修复） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | H5 构建链路已恢复，`BLK-003` 已解除（保留包体告警待优化） |
 | 状态机字面量一致性抽检 | `rg -n "UPLOADED -> QUEUED -> PREPROCESSING -> DETECTING -> INPAINTING -> PACKAGING -> SUCCEEDED\\|FAILED\\|CANCELED" doc \| wc -l` | `6` | 关键文档存在统一字面量 |
 | 幂等约束覆盖抽检 | `rg -n "Idempotency-Key" doc \| wc -l` | `11` | 创建任务幂等约束已在多文档显式出现 |
 | Node+Triton 架构边界抽检 | `rg -n "Node 控制面 \\+ Triton 推理面|Node.*Triton" doc/project-constraints.md doc/prd.md doc/tad.md doc/plan.md` | 命中 `plan.md`、`tad.md` | 架构口径一致，需在实施阶段继续守护 |
@@ -176,10 +178,10 @@
 | 状态 | 数量 | 占比 |
 |---|---:|---:|
 | Done | 1 | 2.3% |
-| In Progress | 6 | 14.0% |
-| Ready | 9 | 20.9% |
-| Backlog | 24 | 55.9% |
-| In Review | 3 | 7.0% |
+| In Progress | 4 | 9.3% |
+| Ready | 8 | 18.6% |
+| Backlog | 23 | 53.5% |
+| In Review | 7 | 16.3% |
 | QA | 0 | 0.0% |
 
 ## 10. 关键结果（KR）跟踪（v1.0）
@@ -198,7 +200,7 @@
 |---|---|---|---|---|---|
 | BLK-001 | shared 环境 Triton/GPU 资源未完成分配 | 运维 | 视频链路、性能基线 | 24h 回填 | 完成资源配额与可用性验证 |
 | BLK-002 | 支付联调测试账号与回调沙箱待开通 | 支付对接人 | 订阅链路、账务验证 | 24h 回填 | 明确开通时间与替代测试方案 |
-| BLK-003 | `@apps/user-frontend` 执行 `build:h5` 时出现 webpack alias 校验异常（`@tarojs/shared`） | 前端 | H5 端构建与联调节奏 | 24h 回填 | 锁定 Taro/runner 版本组合并修复 alias 配置 |
+| BLK-003 | [已解除 2026-02-20] `@apps/user-frontend` `build:h5` webpack alias 校验异常（`@tarojs/shared`）已修复 | 前端 | H5 端构建与联调节奏 | 24h 回填 | 跟踪包体告警并推进体积优化 |
 
 ## 12. 本次执行回填（框架初始化）
 
@@ -255,3 +257,53 @@
   - 接入持久化存储（PostgreSQL + Prisma）替换内存态
   - 接入真实 `userId` 与 token 解析，替换当前联调占位用户
   - 与前端联调 `FE-001/FE-002/FE-004`
+
+## 14. 本次执行回填（FE 联调主链路）
+
+- 任务编号：`DEV-20260220-FE-01`
+- 需求映射：`FR-001/FR-002/FR-005/FR-006`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/frontend-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+- 实施摘要：
+  - 重构跨端请求层为 `Taro.request`，统一注入 `Authorization`、`X-Request-Id`、`Idempotency-Key`
+  - 新增登录服务与会话状态：`/v1/auth/wechat-login` 联调
+  - 新增上传策略服务并打通“申请上传策略 -> 创建任务”链路
+  - 新增任务列表/取消/重试调用，任务页可触发基础联调动作
+- 测试证据：
+  - `pnpm --filter @apps/user-frontend typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（5/5）
+  - `pnpm -r typecheck`：通过（15/15）
+- 风险与回滚：
+  - 风险：H5 产物存在包体告警（`js/app.js` 与入口体积超推荐阈值），需在后续迭代做性能优化
+  - 回滚：回退 `apps/user-frontend/src/{services,stores,pages}` 本轮改动
+- 当前状态：`In Review`
+- 下一步：
+  - 在 shared 环境完成 `INT-002` 验收并推进 `INT-003`
+  - 优化 H5 包体与依赖拆分，降低首包体积告警
+
+## 15. 本次执行回填（FE 构建阻塞修复）
+
+- 任务编号：`DEV-20260220-FE-02`
+- 需求映射：`NFR-006`、`FR-001/FR-002/FR-005/FR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/frontend-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 实施摘要：
+  - 修复 Taro H5 构建阻塞：补齐 `@tarojs/shared` 直接依赖，修复 webpack alias 校验失败
+  - 增加 `babel.config.js` 与 `babel-preset-taro`/`@babel/preset-react`，恢复 TSX 解析链路
+  - 在 Taro 配置补齐 `@ -> src` alias，消除构建期路径解析失败
+  - 清理构建产物并补充 `.gitignore`（`apps/user-frontend/.swc`）
+- 测试证据：
+  - `pnpm --filter @apps/user-frontend typecheck`：通过
+  - `pnpm --filter @apps/user-frontend build:h5`：通过（含 2 条包体告警）
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（5/5）
+  - `pnpm -r typecheck`：通过（15/15）
+- 风险与回滚：
+  - 风险：H5 首包体积告警（性能风险，非阻塞）
+  - 回滚：回退 `apps/user-frontend/{config,src,package.json,babel.config.js}` 与 `pnpm-lock.yaml` 改动
+- 当前状态：`In Review`
+- 下一步：
+  - 在 shared 环境验证 `INT-002` Header 一致性并推进 `INT-003`
+  - 制定 H5 包体优化方案（按页面拆包、依赖裁剪）
