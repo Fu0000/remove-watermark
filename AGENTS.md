@@ -1,4 +1,4 @@
-# AGENTS 执行入口规范（v1.0）
+# AGENTS 执行入口规范（v1.1）
 
 ## 1. 文档定位与适用范围
 
@@ -264,4 +264,55 @@
 ### 14.3 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.1 | 2026-02-20 | 新增“任务完成后测试通过再提交并推送 GitHub”闭环流程与最佳实践 |
 | v1.0 | 2026-02-19 | 首版 AGENTS 执行入口规范，覆盖流程、提交、测试、联调、回填与 DoD |
+
+## 15. 任务完成后 Git 提交与推送闭环（MUST）
+
+### 15.1 触发条件
+- 任一任务在“实现 + 验证”完成后，必须执行本闭环。
+- 未完成验证（测试/检查失败）不得进入提交与推送。
+
+### 15.2 标准闭环步骤（MUST）
+1. 变更收敛：确认仅包含本任务相关改动，避免混入无关文件。
+2. 执行验证：按任务等级执行 `unit/integration/contract/e2e/smoke` 或一致性审计，并记录命令与结果。
+3. 回填台账：更新
+   - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+   - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+4. 自检差异：核对 `git diff --stat` 与 `git status`，确保改动范围、风险与回滚点一致。
+5. 规范提交：按 Conventional Commits 提交（`type(scope): subject`）。
+6. 推送远端：推送到 GitHub 对应分支（默认 `origin/<branch>`）。
+7. 结果确认：确认远端推送成功（commit hash、分支、范围）。
+8. 状态更新：任务状态流转到 `In Review` 或 `Done`（按流程门禁）。
+
+### 15.3 命令基线（推荐）
+```bash
+# 1) 验证（示例，按任务实际替换）
+pnpm -r typecheck
+pnpm -r lint
+pnpm --filter @apps/api-gateway test:contract
+
+# 2) 检查变更范围
+git status --short
+git diff --stat
+
+# 3) 提交与推送
+git add <files...>
+git commit -m "type(scope): subject"
+git push origin <branch>
+```
+
+### 15.4 最佳实践（SHOULD）
+- 小步提交：单次 commit 聚焦单一任务，便于回滚与审计。
+- 提交前绿灯：本任务要求的测试必须通过；文档任务至少完成一致性审计。
+- 不跳过回填：先回填台账再提交，确保“代码/文档/台账”三者一致。
+- 不混合目的：功能改动与纯格式化改动尽量分开提交。
+- 可追溯性：在任务记录中保留测试命令、结果、结论与失败项处置。
+- 推送后复核：至少复核一次远端分支提交列表，避免漏推或错推。
+
+### 15.5 例外与补救（MUST）
+- 紧急修复允许“先提交后补充记录”，但必须在 24 小时内补齐：
+  - 测试证据
+  - 风险与回滚方案
+  - 台账与变更日志
+- 若推送后发现错误提交，必须新增修复提交，不允许通过口头说明替代。
