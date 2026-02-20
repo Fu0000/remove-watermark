@@ -1,4 +1,4 @@
-# 变更日志规范（v1.2）
+# 变更日志规范（v1.3）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -18,7 +18,7 @@
 
 ### 4.1 变更日志模板
 ```markdown
-## [0.3.0] - 2026-03-01
+## [0.4.0] - 2026-03-01
 ### Added
 - 新增前后端联调流程规范文档。
 
@@ -51,11 +51,44 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.3 | 2026-02-20 | 新增 api-gateway 契约闭环执行日志与测试证据回填 |
 | v1.2 | 2026-02-19 | 新增框架初始化阶段执行日志（Monorepo、前后端骨架、测试与阻塞回填） |
 | v1.1 | 2026-02-19 | 新增项目执行变更日志示例（含研发任务清单、联调、测试、KR 回填） |
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.3.0] - 2026-02-20
+
+### Added
+- 新增 `api-gateway` 联调最小闭环接口：
+  - `POST /v1/auth/wechat-login`
+  - `POST /v1/auth/refresh`
+  - `GET /v1/tasks`
+  - `GET /v1/tasks/{taskId}`
+  - `POST /v1/tasks/{taskId}/retry`
+  - `POST /v1/tasks/{taskId}/cancel`
+  - `GET /v1/tasks/{taskId}/result`
+- 新增 `apps/api-gateway/test/contract.spec.ts` 契约测试用例。
+
+### Changed
+- `apps/api-gateway/src/modules/tasks/tasks.controller.ts` 增加幂等约束、状态机校验与统一响应。
+- `apps/api-gateway/src/modules/assets/assets.controller.ts` 增加鉴权与参数校验。
+- `rd-progress-management.md` 更新 `SVC-002`、`BE-001`、`BE-002` 为 `In Review` 并补充最新测试证据。
+
+### Fixed
+- 修复 `api-gateway` 测试环境下 DI 注入问题（显式 `@Inject(TasksService)`）。
+- 修复动作类接口默认返回码问题（`cancel/retry` 调整为 `200`）。
+
+### Security
+- 保持 `Authorization`、`Idempotency-Key`、`X-Request-Id` 关键头校验路径。
+
+### Rollback
+- 回滚 `apps/api-gateway/src/modules/*` 与 `apps/api-gateway/test/contract.spec.ts` 改动。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.2.0] - 2026-02-19
 

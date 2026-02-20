@@ -90,7 +90,7 @@
 | Task ID | Epic | Task | Owner | Start | End | 状态 | 联调依赖 | 测试层级 | 关键结果 |
 |---|---|---|---|---|---|---|---|---|---|
 | SVC-001 | 服务基线 | Monorepo 初始化（apps/packages 结构、eslint/tsconfig） | 后端 | 2026-02-23 | 2026-02-25 | Done | FE/BE 契约共享 | unit | 项目骨架可编译 |
-| SVC-002 | 服务基线 | `api-gateway` 基础模块（auth/assets/tasks/plans） | 后端 | 2026-02-24 | 2026-03-03 | In Progress | FE 调用 | contract | OpenAPI 可导出联调 |
+| SVC-002 | 服务基线 | `api-gateway` 基础模块（auth/assets/tasks/plans） | 后端 | 2026-02-24 | 2026-03-03 | In Review | FE 调用 | contract | OpenAPI 可导出联调 |
 | SVC-003 | 服务基线 | `worker-orchestrator/media/detect/inpaint/result` 队列骨架 | 后端 | 2026-02-25 | 2026-03-05 | Backlog | 任务状态推进 | integration | 状态机全路径可推进 |
 | SVC-004 | 服务基线 | `webhook-dispatcher`（签名、重试、死信） | 后端 | 2026-03-10 | 2026-03-20 | Backlog | 外部回调联调 | contract/integration | Webhook 成功率可观测 |
 | SVC-005 | 服务基线 | `billing-service`（订阅、权益生效、账务流水） | 后端 | 2026-03-17 | 2026-03-30 | Backlog | 套餐支付联调 | integration/contract | `HELD/COMMITTED/RELEASED` 闭环 |
@@ -112,8 +112,8 @@
 
 | Task ID | Epic | Task | Owner | Start | End | 状态 | 需求映射 | 测试层级 | 完成状态 | 关键结果 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| BE-001 | 契约实现 | `GET /v1/system/capabilities` + 默认策略 | 后端 | 2026-02-26 | 2026-03-03 | In Progress | FR-005 | contract | 控制器骨架已提交 | 能力协商可回退 FAST |
-| BE-002 | 上传链路 | `POST /v1/assets/upload-policy` + MinIO 签名 | 后端 | 2026-02-26 | 2026-03-04 | In Progress | FR-002 | integration/contract | 控制器骨架已提交 | 上传策略 10 分钟有效 |
+| BE-001 | 契约实现 | `GET /v1/system/capabilities` + 默认策略 | 后端 | 2026-02-26 | 2026-03-03 | In Review | FR-005 | contract | 契约测试已通过 | 能力协商可回退 FAST |
+| BE-002 | 上传链路 | `POST /v1/assets/upload-policy` + MinIO 签名 | 后端 | 2026-02-26 | 2026-03-04 | In Review | FR-002 | integration/contract | 契约测试已通过 | 上传策略 10 分钟有效 |
 | BE-003 | 任务编排 | `POST /v1/tasks` + 幂等 + 预扣事务 | 后端 | 2026-03-01 | 2026-03-08 | Backlog | FR-005/FR-008 | integration/contract | 未开始 | `tasks + usage_ledger + outbox` 同事务 |
 | BE-004 | 状态推进 | Orchestrator 状态机推进与乐观锁版本控制 | 后端 | 2026-03-03 | 2026-03-12 | Backlog | FR-005/FR-006 | unit/integration | 未开始 | 非法迁移拦截 100% |
 | BE-005 | 结果交付 | `GET /v1/tasks/{taskId}/result` + 结果 TTL | 后端 | 2026-03-09 | 2026-03-15 | Backlog | FR-007 | integration | 未开始 | 结果链接按策略失效 |
@@ -145,7 +145,7 @@
 | ALG-001 | FAST/QUALITY 模型路由及风险标记 | 算法 | Backlog | 2026-03-22 | 高 | 输出质量/成本基线报告 |
 | OPS-001 | 扩缩容与降级阈值告警（queue_depth、INPAINTING P95） | 运维 | Ready | 2026-03-15 | 中 | 完成告警模板与演练 |
 
-## 8. 测试情况与证据（截至 2026-02-19）
+## 8. 测试情况与证据（截至 2026-02-20）
 
 ### 8.1 已执行检查（文档与约束一致性）
 
@@ -157,6 +157,7 @@
 | 用户前端目录规范检查 | `for dir in pages components modules stores services utils; do find apps/user-frontend/src/$dir -type f \\| wc -l; done` | `目录均存在且有文件` | 已对齐 `frontend-framework.md` 目录约束 |
 | 管理端构建验证 | `pnpm --filter @apps/admin-console build` | `Next build passed` | 管理端框架可完成生产构建 |
 | API 网关构建验证 | `pnpm --filter @apps/api-gateway build` | `tsc passed` | 后端网关骨架可完成编译 |
+| API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `5 passed / 0 failed` | 关键契约（capabilities/upload-policy/tasks）可联调 |
 | 用户端 H5 构建验证 | `pnpm --filter @apps/user-frontend build:h5` | `failed` | Taro H5 webpack alias 校验异常，已转阻塞跟踪 |
 | 状态机字面量一致性抽检 | `rg -n "UPLOADED -> QUEUED -> PREPROCESSING -> DETECTING -> INPAINTING -> PACKAGING -> SUCCEEDED\\|FAILED\\|CANCELED" doc \| wc -l` | `6` | 关键文档存在统一字面量 |
 | 幂等约束覆盖抽检 | `rg -n "Idempotency-Key" doc \| wc -l` | `11` | 创建任务幂等约束已在多文档显式出现 |
@@ -168,17 +169,17 @@
 - shared/staging：`integration + e2e + regression + performance smoke`。
 - 发布前：`NFR-001~NFR-007` 验证与 `P0/P1=0`。
 
-## 9. 完成状态看板（截至 2026-02-19）
+## 9. 完成状态看板（截至 2026-02-20）
 
 统计口径：本节任务清单（ENV/DATA/SVC/FE/BE/INT/治理）共 `43` 项。
 
 | 状态 | 数量 | 占比 |
 |---|---:|---:|
 | Done | 1 | 2.3% |
-| In Progress | 9 | 20.9% |
+| In Progress | 6 | 14.0% |
 | Ready | 9 | 20.9% |
 | Backlog | 24 | 55.9% |
-| In Review | 0 | 0.0% |
+| In Review | 3 | 7.0% |
 | QA | 0 | 0.0% |
 
 ## 10. 关键结果（KR）跟踪（v1.0）
@@ -228,3 +229,29 @@
   - 接入真实 ESLint（替换占位 lint）
   - 完成 `api-gateway` 模块拆分与契约测试
   - 完成用户端上传/任务接口联调
+
+## 13. 本次执行回填（api-gateway 契约闭环）
+
+- 任务编号：`DEV-20260220-API-01`
+- 需求映射：`FR-001/FR-002/FR-005/FR-006`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-service-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+- 实施摘要：
+  - 新增认证接口：`POST /v1/auth/wechat-login`、`POST /v1/auth/refresh`
+  - 完成任务接口最小闭环：`POST/GET /v1/tasks`、`GET /v1/tasks/{taskId}`、`POST /v1/tasks/{taskId}/cancel|retry`、`GET /v1/tasks/{taskId}/result`
+  - 完成上传策略接口鉴权与统一响应封装：`POST /v1/assets/upload-policy`
+  - 增加 `Idempotency-Key` 约束与基础幂等逻辑（内存态）
+  - 新增契约测试：`apps/api-gateway/test/contract.spec.ts`
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（5/5）
+- 风险与回滚：
+  - 风险：当前为内存态任务存储，重启后数据不保留，仅用于联调阶段
+  - 回滚：回退 `apps/api-gateway/src/modules/*` 与 `apps/api-gateway/test/contract.spec.ts` 相关改动
+- 当前状态：`In Review`
+- 下一步：
+  - 接入持久化存储（PostgreSQL + Prisma）替换内存态
+  - 接入真实 `userId` 与 token 解析，替换当前联调占位用户
+  - 与前端联调 `FE-001/FE-002/FE-004`
