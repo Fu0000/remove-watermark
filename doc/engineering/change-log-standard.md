@@ -1,4 +1,4 @@
-# 变更日志规范（v1.25）
+# 变更日志规范（v1.26）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.26 | 2026-02-21 | 新增 OPT-ARCH-002 shared/staging 本地映射矩阵验收执行记录 |
 | v1.25 | 2026-02-21 | 新增 OPT-ARCH-002 guard-drill 矩阵与报告能力执行记录 |
 | v1.24 | 2026-02-21 | 新增 OPT-ARCH-002 阻断/放行一键演练脚本执行记录 |
 | v1.23 | 2026-02-21 | 新增 OPT-ARCH-002 高并发批量阻断保护执行记录 |
@@ -79,6 +80,31 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.21] - 2026-02-21
+
+### Added
+- `doc/engineering/rd-progress-management.md` 新增第 35 节执行回填，记录 `dev/shared/staging` 三目标矩阵演练（shared/staging 使用本地地址映射）证据。
+- 新增本次矩阵报告引用：
+  - `apps/worker-orchestrator/.runtime/reports/deadletter-guard-drill-matrix-2026-02-21T14-25-47-376Z.md`
+
+### Changed
+- `Deadletter 演练矩阵校验（本轮）` 更新为三目标通过：`passed（dev/shared/staging-local）`。
+- 第 34 节阻塞项由“等待 shared/staging 地址”调整为“当前阶段无阻塞（本地映射）”。
+- `doc/engineering/mvp-optimization-backlog.md` 更新 `OPT-ARCH-002` 现状与验收口径，补充 shared/staging 本地映射矩阵通过状态。
+
+### Fixed
+- 修复矩阵验收仅有 dev 证据、缺少 shared/staging 阶段性记录的问题。
+
+### Security
+- 继续保持“本地映射先验收、云端发布前复验”的门禁策略，不跳过最终云端验证。
+
+### Rollback
+- 回退本次文档回填更新，恢复为仅 dev 矩阵证据状态。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.20] - 2026-02-21
 

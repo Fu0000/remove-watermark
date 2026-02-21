@@ -172,7 +172,7 @@
 | Deadletter 并发上限保护校验（本轮） | `DLQ_REPLAY_CONCURRENCY=20` 分别在 `DLQ_ALLOW_HIGH_CONCURRENCY=false/true` 下执行 `ops:deadletter:replay` | `passed` | 默认并发上限 `10`；仅在显式开启高并发开关时允许提升至 `20` |
 | Deadletter 高并发批量阻断校验（本轮） | `DLQ_DRY_RUN=false + DLQ_ALLOW_HIGH_CONCURRENCY=true + DLQ_REPLAY_CONCURRENCY=20 + DLQ_HIGH_CONCURRENCY_BULK_REJECT_THRESHOLD=1` 执行 `ops:deadletter:replay` | `passed（预期阻断）` | 达到阈值且未显式二次确认时，脚本会直接拒绝执行 |
 | Deadletter 阻断/放行一键演练校验（本轮） | `DATABASE_URL=... REDIS_URL=... pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill` | `passed` | 已脚本化“构造样本 -> 阻断验证 -> 放行验证 -> 自动清理”闭环，可直接用于 shared/staging 演练 |
-| Deadletter 演练矩阵校验（本轮） | `DEV_DATABASE_URL=... DEV_REDIS_URL=... pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill:matrix` | `passed（dev）` | 已支持多环境矩阵执行与报告输出，shared/staging 待补充目标地址 |
+| Deadletter 演练矩阵校验（本轮） | `DEV/SHARED/STAGING DATABASE_URL + REDIS_URL` 均指向本地地址后执行 `pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill:matrix` | `passed（dev/shared/staging-local）` | 已按当前阶段口径完成三目标矩阵演练，云端地址切换后可复用同命令补齐最终证据 |
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 编辑页真实绘制交互可完成多端构建（保留包体告警待优化） |
@@ -1082,7 +1082,7 @@
 - 负责人：后端
 - 截止时间：`2026-02-22`
 - 当前状态：`In Review`
-- 阻塞项：shared/staging 数据库与 Redis 地址待提供
+- 阻塞项：无（当前阶段使用本地地址映射 shared/staging）
 - 风险等级：中
 - 改动范围：
   - `/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator/src/ops/deadletter-guard-drill-matrix.ts`
@@ -1106,10 +1106,46 @@
 - 联调结果：
   - 本地已可一键输出矩阵执行结果；同命令可迁移至 shared/staging 补齐云端证据。
 - 遗留问题：
-  - shared/staging 目标环境变量未提供，当前仅完成 dev 证据。
+  - shared/staging 云端地址尚未切换，当前为本地地址映射证据。
 - 风险与回滚：
   - 风险：若目标配置错误，矩阵命令会按失败退出并阻断流程。
   - 回滚：回退 `deadletter-guard-drill-matrix.ts`、`package.json` 命令和 `.gitignore` 调整。
 - 下一步：
-  - 提供 shared/staging DB 与 Redis 地址后，执行矩阵命令并回填云端证据。
+  - 云端 shared/staging 地址可用后，复用同矩阵命令补齐云端证据。
   - 若云端稳定，推进 `OPT-ARCH-002` 进入 `Done` 评审。
+
+## 35. 本次执行回填（OPT-ARCH-002 矩阵演练三目标验收-本地映射）
+
+- 任务编号：`DEV-20260221-ARCH-02-REPLAY-MATRIX-LOCAL`
+- 需求映射：`FR-005/FR-006/FR-007`、`NFR-006/NFR-007`
+- 优化项关联：`OPT-ARCH-002`（`In Review`）
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-service-framework.md`
+- 负责人：后端
+- 截止时间：`2026-02-22`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+- 实施摘要：
+  - 按阶段策略将 `shared/staging` 的 PostgreSQL 与 Redis 映射到本地地址执行矩阵演练。
+  - 使用同一命令覆盖 `dev/shared/staging` 三目标并生成报告文件。
+  - 确认“阻断+放行+清理”闭环在三目标均可复用执行。
+- 测试证据：
+  - `DEV_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark DEV_REDIS_URL=redis://127.0.0.1:6379 SHARED_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark SHARED_REDIS_URL=redis://127.0.0.1:6379 STAGING_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark STAGING_REDIS_URL=redis://127.0.0.1:6379 pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill:matrix`：通过（`dev/shared/staging` 全绿）
+  - 报告文件：`apps/worker-orchestrator/.runtime/reports/deadletter-guard-drill-matrix-2026-02-21T14-25-47-376Z.md`
+- 联调结果：
+  - 当前阶段可用本地映射方式完成 shared/staging 口径演练验收，不阻塞后续迭代。
+- 遗留问题：
+  - 云端 shared/staging 尚未切换，最终发布前仍需云端同命令复验并留证。
+- 风险与回滚：
+  - 风险：本地映射无法覆盖云端网络与权限边界差异。
+  - 回滚：回退本次文档回填记录，恢复到仅 dev 目标证据状态。
+- 下一步：
+  - 获取云端地址后复跑同矩阵命令，补齐发布前门禁证据。
+  - 若云端同样通过，将 `OPT-ARCH-002` 状态推进到 `Done`。
