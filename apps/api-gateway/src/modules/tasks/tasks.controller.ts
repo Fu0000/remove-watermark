@@ -74,13 +74,14 @@ export class TasksController {
     @Headers("x-request-id") requestIdHeader: string | undefined
   ) {
     ensureAuthorization(authorization, requestIdHeader);
+    const items = this.tasksService.listByUser("u_1001");
 
     return ok(
       {
-        items: this.tasksService.listByUser("u_1001"),
+        items,
         page: 1,
         pageSize: 20,
-        total: this.tasksService.listByUser("u_1001").length
+        total: items.length
       },
       requestIdHeader
     );
@@ -183,12 +184,11 @@ export class TasksController {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
 
-    const before = this.tasksService.getByUser("u_1001", taskId);
-    if (!before) {
+    const task = this.tasksService.cancel("u_1001", taskId);
+    if (!task) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
 
-    const task = this.tasksService.cancel("u_1001", taskId)!;
     if (task.status !== "CANCELED") {
       unprocessableEntity(42201, "状态机非法迁移", requestIdHeader);
     }

@@ -263,3 +263,83 @@ test("POST /v1/tasks/{taskId}/mask should update version", async () => {
 
   await app.close();
 });
+
+test("GET /v1/tasks/{taskId}/result should return url after processing", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const create = await server.inject({
+    method: "POST",
+    url: "/v1/tasks",
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_result_create",
+      "content-type": "application/json"
+    },
+    payload: {
+      assetId: "ast_result_1001",
+      mediaType: "IMAGE",
+      taskPolicy: "FAST"
+    }
+  });
+
+  const taskId = create.json().data.taskId as string;
+
+  const mask = await server.inject({
+    method: "POST",
+    url: `/v1/tasks/${taskId}/mask`,
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_result_mask",
+      "content-type": "application/json"
+    },
+    payload: {
+      imageWidth: 1280,
+      imageHeight: 720,
+      polygons: [
+        [
+          [20, 20],
+          [80, 20],
+          [80, 80],
+          [20, 80]
+        ]
+      ],
+      brushStrokes: [],
+      version: 0
+    }
+  });
+
+  assert.equal(mask.statusCode, 200);
+
+  let status = "PREPROCESSING";
+  for (let i = 0; i < 6; i += 1) {
+    const detail = await server.inject({
+      method: "GET",
+      url: `/v1/tasks/${taskId}`,
+      headers: {
+        authorization: "Bearer test-token"
+      }
+    });
+
+    status = detail.json().data.status as string;
+    if (status === "SUCCEEDED") {
+      break;
+    }
+  }
+
+  assert.equal(status, "SUCCEEDED");
+
+  const result = await server.inject({
+    method: "GET",
+    url: `/v1/tasks/${taskId}/result`,
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.equal(typeof result.json().data.resultUrl, "string");
+  assert.equal(typeof result.json().data.expireAt, "string");
+
+  await app.close();
+});

@@ -95,7 +95,7 @@ export default function EditorPage() {
 
       setMaskVersion(response.data.version);
       setMaskId(response.data.maskId);
-      Taro.navigateTo({ url: "/pages/tasks/index" });
+      Taro.switchTab({ url: "/pages/tasks/index" });
     } catch (error) {
       if (error instanceof ApiError) {
         setErrorText(`${error.code} ${error.message}`);

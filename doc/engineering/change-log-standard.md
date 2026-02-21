@@ -1,4 +1,4 @@
-# 变更日志规范（v1.7）
+# 变更日志规范（v1.8）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.8 | 2026-02-21 | 新增任务中心轮询退避 + 结果页联调闭环执行日志 |
 | v1.7 | 2026-02-21 | 新增编辑页蒙版链路（`/v1/tasks/{taskId}/mask`）联调执行日志 |
 | v1.6 | 2026-02-21 | 切换 shared smoke 默认本地地址并完成本地联调验收 |
 | v1.5 | 2026-02-21 | 新增 shared 联调 smoke 脚本与环境接入准备回填 |
@@ -61,6 +62,35 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.3] - 2026-02-21
+
+### Added
+- 新增前端任务服务接口：`getTaskDetail`、`getTaskResult`。
+- 新增前端结果页联调能力：任务状态查询、结果预览/复制下载地址、过期时间提示。
+- 新增契约测试场景：`GET /v1/tasks/{taskId}/result` 成功路径（含状态推进后查询）。
+
+### Changed
+- `apps/user-frontend/src/pages/tasks/index.tsx` 升级为 `react-query` 轮询：
+  - 默认 3s 轮询
+  - 失败指数退避上限 15s
+  - 成功态自动跳转结果页
+- `apps/user-frontend/src/pages/editor/index.tsx` 跳转任务中心由 `navigateTo` 改为 `switchTab`，保证 tabBar 多端一致行为。
+- `doc/engineering/rd-progress-management.md` 更新 `FE-005`、`BE-005`、`INT-004`、`INT-005` 状态与测试证据。
+
+### Fixed
+- 修复后端 `GET /v1/tasks` 因重复调用导致同次请求状态推进两步的问题。
+- 修复 `cancel/retry/mask` 内部读取任务时的推进副作用，避免联调期间状态误跳转。
+
+### Security
+- 持续保持 `Authorization`、`Idempotency-Key`、`X-Request-Id` 约束一致，结果查询路径不绕开鉴权。
+
+### Rollback
+- 回退 `apps/api-gateway/src/modules/tasks/*`、`apps/api-gateway/test/contract.spec.ts`、`apps/user-frontend/src/{services,pages}` 与台账更新。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.2] - 2026-02-21
 

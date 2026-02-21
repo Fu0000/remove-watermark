@@ -103,7 +103,7 @@
 | FE-002 | 用户端主链路 | 上传页（格式校验、分片上传、失败恢复） | 前端 | 2026-03-02 | 2026-03-10 | In Review | FR-002 | `/v1/assets/upload-policy` | e2e | 上传策略+任务创建链路已联调 |
 | FE-003 | 用户端主链路 | 编辑页（自动检测+手动蒙版） | 前端 | 2026-03-05 | 2026-03-14 | In Progress | FR-003/FR-004 | `/v1/tasks`, `/v1/tasks/{taskId}/mask` | e2e/regression | 示例蒙版提交流程已打通 |
 | FE-004 | 用户端主链路 | 任务中心（轮询/SSE 回退、重试/取消） | 前端 | 2026-03-09 | 2026-03-18 | In Review | FR-005/FR-006 | `/v1/tasks*` | contract/e2e | 刷新/取消/重试联调动作与 H5 构建验证已通过 |
-| FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | Backlog | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 未开始 |
+| FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | In Review | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 结果查询、预览/复制下载地址、过期提示已联调 |
 | FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | Backlog | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 未开始 |
 | FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | Backlog | FR-010 | 删除相关接口 | e2e | 未开始 |
 | FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Progress | FR-012 | `/admin/*` | e2e/smoke | 页面与 RBAC 骨架已完成 |
@@ -116,7 +116,7 @@
 | BE-002 | 上传链路 | `POST /v1/assets/upload-policy` + MinIO 签名 | 后端 | 2026-02-26 | 2026-03-04 | In Review | FR-002 | integration/contract | 契约测试已通过 | 上传策略 10 分钟有效 |
 | BE-003 | 任务编排 | `POST /v1/tasks` + 幂等 + 预扣事务 | 后端 | 2026-03-01 | 2026-03-08 | Backlog | FR-005/FR-008 | integration/contract | 未开始 | `tasks + usage_ledger + outbox` 同事务 |
 | BE-004 | 状态推进 | Orchestrator 状态机推进与乐观锁版本控制 | 后端 | 2026-03-03 | 2026-03-12 | Backlog | FR-005/FR-006 | unit/integration | 未开始 | 非法迁移拦截 100% |
-| BE-005 | 结果交付 | `GET /v1/tasks/{taskId}/result` + 结果 TTL | 后端 | 2026-03-09 | 2026-03-15 | Backlog | FR-007 | integration | 未开始 | 结果链接按策略失效 |
+| BE-005 | 结果交付 | `GET /v1/tasks/{taskId}/result` + 结果 TTL | 后端 | 2026-03-09 | 2026-03-15 | In Review | FR-007 | integration | 契约测试已通过（含结果可用路径） | 结果链接按策略失效 |
 | BE-006 | 失败恢复 | retry/cancel 语义与并发互斥 | 后端 | 2026-03-09 | 2026-03-16 | Backlog | FR-005/FR-006 | unit/contract | 未开始 | 重试与取消冲突可控 |
 | BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | Backlog | FR-008 | integration/contract | 未开始 | 账务一致性可追踪 |
 | BE-008 | 通知回调 | webhook endpoint 管理/投递/重试/手动重放 | 后端 | 2026-03-24 | 2026-04-10 | Backlog | FR-009 | integration/contract | 未开始 | DEAD 信队列可运维回放 |
@@ -129,8 +129,8 @@
 | INT-001 | 契约冻结（字段/错误码/状态机） | 产品+前后端 | 2026-02-24 | 2026-02-28 | In Progress | OpenAPI 冻结并发布 | shared 联调前置 |
 | INT-002 | Header 校验（Authorization/Idempotency-Key/X-Request-Id） | 前后端 | 2026-03-01 | 2026-03-04 | In Review | 三个 Header 行为一致 | shared smoke 脚本已落地，待 shared 域名可达后验收 |
 | INT-003 | 上传 -> 创建任务主链路联调 | 前后端+测试 | 2026-03-05 | 2026-03-12 | In Progress | 端到端成功率 >= 95% | 本地 smoke 已通过，待云端 shared 验收 |
-| INT-004 | 任务中心状态刷新与错误路径联调 | 前后端+测试 | 2026-03-10 | 2026-03-18 | Backlog | 状态渲染与错误码一致 | 含 retry/cancel |
-| INT-005 | 结果下载与过期策略联调 | 前后端+测试 | 2026-03-14 | 2026-03-20 | Backlog | 过期前提醒与失效行为一致 |  |
+| INT-004 | 任务中心状态刷新与错误路径联调 | 前后端+测试 | 2026-03-10 | 2026-03-18 | In Progress | 状态渲染与错误码一致 | 本地轮询退避与状态推进已联调，待 shared 验收 |
+| INT-005 | 结果下载与过期策略联调 | 前后端+测试 | 2026-03-14 | 2026-03-20 | In Progress | 过期前提醒与失效行为一致 | 本地结果页链路已打通，待 shared/staging 验收 |
 | INT-006 | 订阅/配额扣减联调 | 前后端+测试+支付 | 2026-03-24 | 2026-04-07 | Backlog | 扣减一致率 100% | 含退款回滚 |
 | INT-007 | Webhook 对接联调（验签/重试/幂等） | 后端+外部系统 | 2026-03-28 | 2026-04-12 | Backlog | 签名校验通过，重试可观测 |  |
 | INT-008 | staging 全链路回归与发布演练 | 全体 | 2026-04-28 | 2026-05-10 | Backlog | 发布准入清单全绿 | 不允许跳过 staging |
@@ -157,10 +157,10 @@
 | 用户前端目录规范检查 | `for dir in pages components modules stores services utils; do find apps/user-frontend/src/$dir -type f \\| wc -l; done` | `目录均存在且有文件` | 已对齐 `frontend-framework.md` 目录约束 |
 | 管理端构建验证 | `pnpm --filter @apps/admin-console build` | `Next build passed` | 管理端框架可完成生产构建 |
 | API 网关构建验证 | `pnpm --filter @apps/api-gateway build` | `tsc passed` | 后端网关骨架可完成编译 |
-| API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `6 passed / 0 failed` | 关键契约（含 `/v1/tasks/{taskId}/mask`）可联调 |
+| API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `7 passed / 0 failed` | 关键契约（含 `/v1/tasks/{taskId}/mask`、`/v1/tasks/{taskId}/result`）可联调 |
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
-| 用户端 H5 构建验证（本轮修复） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | H5 构建链路已恢复，`BLK-003` 已解除（保留包体告警待优化） |
+| 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 任务中心与结果页改动可完成多端构建（保留包体告警待优化） |
 | shared 联调 smoke（INT-002/INT-003，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 本地地址 `http://127.0.0.1:3000` 联调通过，云端 shared 地址待切换 |
 | 状态机字面量一致性抽检 | `rg -n "UPLOADED -> QUEUED -> PREPROCESSING -> DETECTING -> INPAINTING -> PACKAGING -> SUCCEEDED\\|FAILED\\|CANCELED" doc \| wc -l` | `6` | 关键文档存在统一字面量 |
 | 幂等约束覆盖抽检 | `rg -n "Idempotency-Key" doc \| wc -l` | `11` | 创建任务幂等约束已在多文档显式出现 |
@@ -179,10 +179,10 @@
 | 状态 | 数量 | 占比 |
 |---|---:|---:|
 | Done | 1 | 2.3% |
-| In Progress | 6 | 14.0% |
+| In Progress | 8 | 18.6% |
 | Ready | 8 | 18.6% |
-| Backlog | 21 | 48.8% |
-| In Review | 7 | 16.3% |
+| Backlog | 17 | 39.5% |
+| In Review | 9 | 20.9% |
 | QA | 0 | 0.0% |
 
 ## 10. 关键结果（KR）跟踪（v1.0）
@@ -362,3 +362,49 @@
 - 下一步：
   - 补充编辑器蒙版交互组件（手动绘制/撤销）
   - 推进 `INT-004` 状态刷新与错误路径联调
+
+## 18. 本次执行回填（任务中心 + 结果页联调闭环）
+
+- 任务编号：`DEV-20260221-FEBE-04`
+- 需求映射：`FR-005/FR-006/FR-007`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/frontend-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+- 负责人：前后端联调
+- 截止时间：`2026-02-22`
+- 当前状态：`In Progress`
+- 阻塞项：`BLK-004`（云端 shared 域名待切换）
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/tasks/tasks.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/tasks/tasks.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/contract.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/services/task.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/pages/tasks/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/pages/result/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/pages/editor/index.tsx`
+- 实施摘要：
+  - 后端任务列表查询改为单次读取，修复同次请求重复推进状态问题。
+  - 后端新增任务状态模拟推进（基于蒙版提交触发）并补充结果 URL 产出，打通 `result` 查询链路。
+  - 新增契约测试：`GET /v1/tasks/{taskId}/result` 成功路径。
+  - 前端任务中心切换为 `react-query` 轮询，落地 `3s` 轮询与失败退避至 `15s`，并在成功态自动跳转结果页。
+  - 前端结果页接入任务详情与结果查询、过期时间展示、预览与复制下载地址。
+  - 修复编辑页跳转任务中心在 tabBar 页面上的跨端行为：`navigateTo` 改为 `switchTab`。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`7/7`）
+  - `pnpm --filter @apps/user-frontend typecheck`：通过
+  - `pnpm --filter @apps/user-frontend build:h5`：通过（2 条包体告警）
+  - `pnpm -r typecheck`：通过（`15/15`）
+- 联调结果：
+  - 本地 fallback（`http://127.0.0.1:3000`）下，任务状态刷新、取消/重试、结果页查询与过期提示链路可执行。
+  - `INT-004`、`INT-005` 已进入 `In Progress`，待 shared/staging 继续验收。
+- 遗留问题：
+  - 云端 shared 域名未切换，尚未完成云端 smoke 证据回填。
+  - 当前结果 URL 为联调占位地址，待 MinIO 实际部署后补充真实下载验证。
+- 风险与回滚：
+  - 风险：状态推进仍为内存态模拟逻辑，重启后任务状态不保留。
+  - 回滚：回退本节“改动范围”中的代码与文档变更。
+- 下一步：
+  - shared 地址可用后执行 `pnpm --filter @apps/api-gateway test:shared-smoke` 并补齐 `INT-004/INT-005` 云端证据。
+  - 推进 `BE-006`（retry/cancel 并发互斥）与 `FE-003` 编辑器真实绘制交互。

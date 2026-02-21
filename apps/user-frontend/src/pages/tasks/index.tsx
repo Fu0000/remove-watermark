@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Taro from "@tarojs/taro";
 import { Button, Text, View } from "@tarojs/components";
 import { PageShell } from "@/modules/common/page-shell";
 import { cancelTask, listTasks, retryTask } from "@/services/task";
@@ -7,64 +9,129 @@ import { buildIdempotencyKey } from "@/utils/idempotency";
 import { useTaskStore } from "@/stores/task.store";
 import type { TaskStatus } from "@packages/contracts";
 
+const TERMINAL_STATUS = new Set<TaskStatus>(["SUCCEEDED", "FAILED", "CANCELED"]);
+const CANCELABLE_STATUS = new Set<TaskStatus>(["QUEUED", "PREPROCESSING", "DETECTING"]);
+
+function resolveErrorText(error: unknown, fallback: string) {
+  if (error instanceof ApiError) {
+    return `${error.code} ${error.message}`;
+  }
+
+  return fallback;
+}
+
 export default function TasksPage() {
   const { taskId, status, setStatus } = useTaskStore();
-  const [latestCount, setLatestCount] = useState(0);
-  const [errorText, setErrorText] = useState("");
+  const queryClient = useQueryClient();
+  const [actionErrorText, setActionErrorText] = useState("");
+  const [navigatedTaskId, setNavigatedTaskId] = useState<string | undefined>();
 
-  const refreshTasks = async () => {
-    setErrorText("");
-    try {
-      const response = await listTasks();
-      setLatestCount(response.data.total);
+  useEffect(() => {
+    setNavigatedTaskId(undefined);
+  }, [taskId]);
 
-      if (taskId) {
-        const found = response.data.items.find((item) => item.taskId === taskId);
-        if (found) {
-          setStatus(found.status as TaskStatus);
-        }
+  const tasksQuery = useQuery({
+    queryKey: ["tasks", taskId],
+    queryFn: listTasks,
+    enabled: Boolean(taskId),
+    refetchInterval: (query) => {
+      if (!taskId || TERMINAL_STATUS.has(status)) {
+        return false;
       }
-    } catch (error) {
-      if (error instanceof ApiError) {
-        setErrorText(`${error.code} ${error.message}`);
-      } else {
-        setErrorText("任务刷新失败");
-      }
+
+      const failures = query.state.fetchFailureCount;
+      const backoffFactor = Math.max(1, 2 ** failures);
+      return Math.min(3000 * backoffFactor, 15000);
+    },
+    refetchIntervalInBackground: true
+  });
+
+  useEffect(() => {
+    if (!taskId || !tasksQuery.data) {
+      return;
     }
+
+    const found = tasksQuery.data.data.items.find((item) => item.taskId === taskId);
+    if (!found) {
+      return;
+    }
+
+    const nextStatus = found.status as TaskStatus;
+    if (nextStatus !== status) {
+      setStatus(nextStatus);
+    }
+
+    if (nextStatus === "SUCCEEDED" && navigatedTaskId !== taskId) {
+      setNavigatedTaskId(taskId);
+      Taro.navigateTo({ url: `/pages/result/index?taskId=${taskId}` });
+    }
+  }, [taskId, tasksQuery.data, status, setStatus, navigatedTaskId]);
+
+  const cancelMutation = useMutation({
+    mutationFn: async () => cancelTask(taskId as string, buildIdempotencyKey()),
+    onSuccess: (response) => {
+      setActionErrorText("");
+      setStatus(response.data.status as TaskStatus);
+      void queryClient.invalidateQueries({ queryKey: ["tasks", taskId] });
+    },
+    onError: (error) => {
+      setActionErrorText(resolveErrorText(error, "取消任务失败"));
+    }
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: async () => retryTask(taskId as string, buildIdempotencyKey()),
+    onSuccess: (response) => {
+      setActionErrorText("");
+      setStatus(response.data.status as TaskStatus);
+      void queryClient.invalidateQueries({ queryKey: ["tasks", taskId] });
+    },
+    onError: (error) => {
+      setActionErrorText(resolveErrorText(error, "重试任务失败"));
+    }
+  });
+
+  const queryErrorText = useMemo(() => {
+    if (!tasksQuery.error) {
+      return "";
+    }
+
+    return resolveErrorText(tasksQuery.error, "任务刷新失败");
+  }, [tasksQuery.error]);
+
+  const handleRefresh = async () => {
+    setActionErrorText("");
+    await tasksQuery.refetch();
   };
 
-  const handleCancel = async () => {
+  const handleCancel = () => {
+    if (!taskId) {
+      setActionErrorText("当前无可取消任务");
+      return;
+    }
+
+    cancelMutation.mutate();
+  };
+
+  const handleRetry = () => {
+    if (!taskId) {
+      setActionErrorText("当前无可重试任务");
+      return;
+    }
+
+    retryMutation.mutate();
+  };
+
+  const handleGoResult = () => {
     if (!taskId) {
       return;
     }
 
-    try {
-      const response = await cancelTask(taskId, buildIdempotencyKey());
-      setStatus(response.data.status as TaskStatus);
-    } catch (error) {
-      if (error instanceof ApiError) {
-        setErrorText(`${error.code} ${error.message}`);
-      }
-    }
-  };
-
-  const handleRetry = async () => {
-    if (!taskId) {
-      return;
-    }
-
-    try {
-      const response = await retryTask(taskId, buildIdempotencyKey());
-      setStatus(response.data.status as TaskStatus);
-    } catch (error) {
-      if (error instanceof ApiError) {
-        setErrorText(`${error.code} ${error.message}`);
-      }
-    }
+    Taro.navigateTo({ url: `/pages/result/index?taskId=${taskId}` });
   };
 
   return (
-    <PageShell title="任务中心" subtitle="状态机字面量与后端一致，支持刷新/取消/重试联调">
+    <PageShell title="任务中心" subtitle="轮询 3s，失败退避至 15s，支持取消/重试与结果跳转">
       <View>
         <Text>taskId: {taskId || "-"}</Text>
       </View>
@@ -72,20 +139,47 @@ export default function TasksPage() {
         <Text>status: {status}</Text>
       </View>
       <View>
-        <Text>任务总数: {latestCount}</Text>
+        <Text>任务总数: {tasksQuery.data?.data.total || 0}</Text>
       </View>
       <View>
-        <Button onClick={refreshTasks}>刷新任务</Button>
+        <Text>轮询失败次数: {tasksQuery.failureCount}</Text>
       </View>
       <View>
-        <Button onClick={handleCancel}>取消当前任务</Button>
+        <Button loading={tasksQuery.isFetching} onClick={handleRefresh}>
+          刷新任务
+        </Button>
       </View>
       <View>
-        <Button onClick={handleRetry}>重试当前任务</Button>
+        <Button
+          loading={cancelMutation.isPending}
+          disabled={!taskId || !CANCELABLE_STATUS.has(status)}
+          onClick={handleCancel}
+        >
+          取消当前任务
+        </Button>
       </View>
-      {errorText ? (
+      <View>
+        <Button
+          loading={retryMutation.isPending}
+          disabled={!taskId || status !== "FAILED"}
+          onClick={handleRetry}
+        >
+          重试当前任务
+        </Button>
+      </View>
+      <View>
+        <Button disabled={!taskId || status !== "SUCCEEDED"} onClick={handleGoResult}>
+          查看结果页
+        </Button>
+      </View>
+      {actionErrorText ? (
         <View>
-          <Text>{errorText}</Text>
+          <Text>{actionErrorText}</Text>
+        </View>
+      ) : null}
+      {queryErrorText ? (
+        <View>
+          <Text>{queryErrorText}</Text>
         </View>
       ) : null}
     </PageShell>

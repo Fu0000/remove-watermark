@@ -27,6 +27,10 @@ interface IdempotencyRecord {
   taskId: string;
 }
 
+interface GetTaskOptions {
+  advance?: boolean;
+}
+
 interface TaskMaskRecord {
   taskId: string;
   maskId: string;
@@ -45,6 +49,7 @@ export interface UpsertMaskInput {
 }
 
 const CANCELABLE_STATUS = new Set<TaskStatus>(["QUEUED", "PREPROCESSING", "DETECTING"]);
+const TERMINAL_STATUS = new Set<TaskStatus>(["SUCCEEDED", "FAILED", "CANCELED"]);
 
 @Injectable()
 export class TasksService {
@@ -94,22 +99,28 @@ export class TasksService {
   }
 
   listByUser(userId: string): TaskRecord[] {
-    return [...this.tasks.values()]
+    const tasks = [...this.tasks.values()]
       .filter((task) => task.userId === userId)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+    tasks.forEach((task) => this.maybeAdvanceForSimulation(task));
+    return tasks;
   }
 
-  getByUser(userId: string, taskId: string): TaskRecord | undefined {
+  getByUser(userId: string, taskId: string, options: GetTaskOptions = {}): TaskRecord | undefined {
     const task = this.tasks.get(taskId);
     if (!task || task.userId !== userId) {
       return undefined;
     }
 
+    if (options.advance !== false) {
+      this.maybeAdvanceForSimulation(task);
+    }
     return task;
   }
 
   cancel(userId: string, taskId: string): TaskRecord | undefined {
-    const task = this.getByUser(userId, taskId);
+    const task = this.getByUser(userId, taskId, { advance: false });
     if (!task) {
       return undefined;
     }
@@ -125,7 +136,7 @@ export class TasksService {
   }
 
   retry(userId: string, taskId: string): TaskRecord | undefined {
-    const task = this.getByUser(userId, taskId);
+    const task = this.getByUser(userId, taskId, { advance: false });
     if (!task) {
       return undefined;
     }
@@ -147,7 +158,7 @@ export class TasksService {
     taskId: string,
     input: UpsertMaskInput
   ): { conflict: false; maskId: string; version: number } | { conflict: true; version: number } | undefined {
-    const task = this.getByUser(userId, taskId);
+    const task = this.getByUser(userId, taskId, { advance: false });
     if (!task) {
       return undefined;
     }
@@ -173,6 +184,10 @@ export class TasksService {
       updatedAt: now
     });
 
+    if (!TERMINAL_STATUS.has(task.status)) {
+      task.status = "PREPROCESSING";
+      task.progress = 15;
+    }
     task.updatedAt = now;
 
     return {
@@ -197,5 +212,43 @@ export class TasksService {
       createdAt: now,
       updatedAt: now
     });
+  }
+
+  private maybeAdvanceForSimulation(task: TaskRecord) {
+    if (!this.taskMasks.has(task.taskId)) {
+      return;
+    }
+
+    if (TERMINAL_STATUS.has(task.status)) {
+      return;
+    }
+
+    switch (task.status) {
+      case "QUEUED":
+        task.status = "PREPROCESSING";
+        task.progress = 15;
+        break;
+      case "PREPROCESSING":
+        task.status = "DETECTING";
+        task.progress = 35;
+        break;
+      case "DETECTING":
+        task.status = "INPAINTING";
+        task.progress = 60;
+        break;
+      case "INPAINTING":
+        task.status = "PACKAGING";
+        task.progress = 85;
+        break;
+      case "PACKAGING":
+        task.status = "SUCCEEDED";
+        task.progress = 100;
+        task.resultUrl = `https://minio.local/result/${task.taskId}.png`;
+        break;
+      default:
+        break;
+    }
+
+    task.updatedAt = new Date().toISOString();
   }
 }

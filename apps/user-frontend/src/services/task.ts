@@ -12,7 +12,11 @@ export interface TaskListItem {
   mediaType: "IMAGE" | "VIDEO";
   taskPolicy: "FAST" | "QUALITY" | "LOW_COST";
   progress: number;
+  errorCode?: string;
+  errorMessage?: string;
+  resultUrl?: string;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface UpsertTaskMaskPayload {
@@ -41,6 +45,25 @@ export function upsertTaskMask(taskId: string, payload: UpsertTaskMaskPayload, i
 
 export function listTasks() {
   return request<{ items: TaskListItem[]; page: number; pageSize: number; total: number }>("/v1/tasks", {
+    method: "GET"
+  });
+}
+
+export function getTaskDetail(taskId: string) {
+  return request<TaskListItem>(`/v1/tasks/${taskId}`, {
+    method: "GET"
+  });
+}
+
+export interface TaskResultPayload {
+  taskId: string;
+  status: string;
+  resultUrl: string;
+  expireAt: string;
+}
+
+export function getTaskResult(taskId: string) {
+  return request<TaskResultPayload>(`/v1/tasks/${taskId}/result`, {
     method: "GET"
   });
 }
