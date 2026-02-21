@@ -1,4 +1,4 @@
-# AGENTS 执行入口规范（v1.1）
+# AGENTS 执行入口规范（v1.2）
 
 ## 1. 文档定位与适用范围
 
@@ -165,6 +165,7 @@
 - 固定回填到仓库文档台账：
 - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`（优化项专用台账）
 
 ### 10.2 最小回填字段模板（MUST）
 - 任务编号
@@ -264,6 +265,7 @@
 ### 14.3 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.2 | 2026-02-21 | 新增优化项专用台账回填要求与“发现即记录”闭环规则 |
 | v1.1 | 2026-02-20 | 新增“任务完成后测试通过再提交并推送 GitHub”闭环流程与最佳实践 |
 | v1.0 | 2026-02-19 | 首版 AGENTS 执行入口规范，覆盖流程、提交、测试、联调、回填与 DoD |
 
@@ -316,3 +318,33 @@ git push origin <branch>
   - 风险与回滚方案
   - 台账与变更日志
 - 若推送后发现错误提交，必须新增修复提交，不允许通过口头说明替代。
+
+## 16. 优化项沉淀与流程优化（MUST）
+
+### 16.1 优化项台账（MUST）
+- 所有“非阻塞 MVP 交付”的优化点，必须沉淀到：
+- `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+- 禁止仅在会话或口头中保留优化建议。
+
+### 16.2 发现即记录闭环（MUST）
+- 每次任务执行中一旦发现优化点，必须在同轮任务内完成以下动作：
+1. 在优化台账新增或更新对应 `OPT-ID`。
+2. 在 `rd-progress-management.md` 的“遗留问题/下一步”关联该 `OPT-ID`。
+3. 在 `change-log-standard.md` 记录本轮新增或更新的优化项摘要。
+
+### 16.3 优化项最小字段（MUST）
+- `OPT-ID`
+- 类别（Architecture/Performance/Reliability/Security/Process）
+- 触发背景
+- 当前现状
+- 优化建议
+- 影响范围
+- 收益评估
+- 实施成本
+- 优先级
+- 执行时机（MVP 内/MVP 后）
+- 依赖
+- 验收标准
+- 状态
+- Owner
+- 最近更新日期

@@ -1,4 +1,4 @@
-# 工程规范文档集（v1.0）
+# 工程规范文档集（v1.1）
 
 ## 1. 目标
 - 建立可直接执行的工程规范，降低跨团队协作歧义。
@@ -25,6 +25,7 @@
 - `backend-service-framework.md`：后端（Node Monorepo）
 - `rd-progress-management.md`：研发进度管理
 - `change-log-standard.md`：变更日志规范
+- `mvp-optimization-backlog.md`：MVP 后优化台账
 - `git-commit-standard.md`：提交与 PR 规范
 - `testing-workflow.md`：测试流程与门禁
 - `fe-be-integration-workflow.md`：前后端联调流程
@@ -48,4 +49,5 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.1 | 2026-02-21 | 新增 `mvp-optimization-backlog.md`，用于沉淀 MVP 后优化项 |
 | v1.0 | 2026-02-19 | 首版工程规范文档集目录与总则 |

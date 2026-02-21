@@ -114,8 +114,8 @@
 |---|---|---|---|---|---|---|---|---|---|---|
 | BE-001 | 契约实现 | `GET /v1/system/capabilities` + 默认策略 | 后端 | 2026-02-26 | 2026-03-03 | In Review | FR-005 | contract | 契约测试已通过 | 能力协商可回退 FAST |
 | BE-002 | 上传链路 | `POST /v1/assets/upload-policy` + MinIO 签名 | 后端 | 2026-02-26 | 2026-03-04 | In Review | FR-002 | integration/contract | 契约测试已通过 | 上传策略 10 分钟有效 |
-| BE-003 | 任务编排 | `POST /v1/tasks` + 幂等 + 预扣事务 | 后端 | 2026-03-01 | 2026-03-08 | Backlog | FR-005/FR-008 | integration/contract | 未开始 | `tasks + usage_ledger + outbox` 同事务 |
-| BE-004 | 状态推进 | Orchestrator 状态机推进与乐观锁版本控制 | 后端 | 2026-03-03 | 2026-03-12 | Backlog | FR-005/FR-006 | unit/integration | 未开始 | 非法迁移拦截 100% |
+| BE-003 | 任务编排 | `POST /v1/tasks` + 幂等 + 预扣事务 | 后端 | 2026-03-01 | 2026-03-08 | In Review | FR-005/FR-008 | integration/contract | 文件态持久化 + 事务化创建已联调 | `tasks + usage_ledger + outbox` 同事务 |
+| BE-004 | 状态推进 | Orchestrator 状态机推进与乐观锁版本控制 | 后端 | 2026-03-03 | 2026-03-12 | In Review | FR-005/FR-006 | unit/integration | 版本号乐观锁与状态迁移校验已落地 | 非法迁移拦截 100% |
 | BE-005 | 结果交付 | `GET /v1/tasks/{taskId}/result` + 结果 TTL | 后端 | 2026-03-09 | 2026-03-15 | In Review | FR-007 | integration | 契约测试已通过（含结果可用路径） | 结果链接按策略失效 |
 | BE-006 | 失败恢复 | retry/cancel 语义与并发互斥 | 后端 | 2026-03-09 | 2026-03-16 | In Review | FR-005/FR-006 | unit/contract | 动作幂等与冲突路径契约测试已通过 | 重试与取消冲突可控 |
 | BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | Backlog | FR-008 | integration/contract | 未开始 | 账务一致性可追踪 |
@@ -158,6 +158,7 @@
 | 管理端构建验证 | `pnpm --filter @apps/admin-console build` | `Next build passed` | 管理端框架可完成生产构建 |
 | API 网关构建验证 | `pnpm --filter @apps/api-gateway build` | `tsc passed` | 后端网关骨架可完成编译 |
 | API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `10 passed / 0 failed` | 关键契约（含 `cancel/retry` 幂等与冲突路径）可联调 |
+| API 网关单元测试 | `pnpm --filter @apps/api-gateway test:unit` | `2 passed / 0 failed` | `BE-003/BE-004`（事务创建与乐观锁）核心规则可回归 |
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 任务中心与结果页改动可完成多端构建（保留包体告警待优化） |
@@ -181,8 +182,8 @@
 | Done | 1 | 2.3% |
 | In Progress | 8 | 18.6% |
 | Ready | 8 | 18.6% |
-| Backlog | 16 | 37.2% |
-| In Review | 10 | 23.3% |
+| Backlog | 14 | 32.6% |
+| In Review | 12 | 27.9% |
 | QA | 0 | 0.0% |
 
 ## 10. 关键结果（KR）跟踪（v1.0）
@@ -407,7 +408,7 @@
   - 回滚：回退本节“改动范围”中的代码与文档变更。
 - 下一步：
   - shared 地址可用后执行 `pnpm --filter @apps/api-gateway test:shared-smoke` 并补齐 `INT-004/INT-005` 云端证据。
-  - 推进 `FE-003` 编辑器真实绘制交互与 `BE-003/BE-004` 持久化编排能力。
+  - 推进 `FE-003` 编辑器真实绘制交互与 `INT-004/INT-005` shared/staging 验收。
 
 ## 19. 本次执行回填（BE-006 动作幂等与冲突互斥）
 
@@ -445,4 +446,50 @@
   - 回滚：回退本节“改动范围”中的代码与文档更新。
 - 下一步：
   - shared 域名就绪后执行 smoke，补齐 `INT-004/INT-005` 云端验收。
-  - 推进 `BE-003/BE-004`（事务化创建与状态机乐观锁）替代内存态逻辑。
+  - 推进 `BE-003/BE-004` 持久化到 PostgreSQL + Prisma（替换当前文件态存储）。
+
+## 20. 本次执行回填（BE-003 + BE-004 持久化编排基座）
+
+- 任务编号：`DEV-20260221-BE-0304`
+- 需求映射：`FR-005/FR-006/FR-008`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-service-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/database-design.md`
+- 负责人：后端
+- 截止时间：`2026-02-22`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/tasks/tasks.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/tasks/tasks.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/tasks.service.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/contract.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/AGENTS.md`
+- 实施摘要：
+  - `TasksService` 新增文件态持久化存储（默认 `.runtime/api-gateway/tasks-state.json`），覆盖 `tasks/idempotency/action-idempotency/masks/usage-ledger/outbox-events`。
+  - 新增“事务化创建”实现：`POST /v1/tasks` 在单事务中完成 `tasks + usage_ledger(HELD) + outbox_events(task.created)` 写入。
+  - 新增状态机迁移中心与乐观锁版本字段（`version`），并提供 `advanceTaskStatus` 内部能力用于 Worker 场景扩展。
+  - 状态推进与动作执行统一采用版本校验，避免并发写入导致的状态覆盖。
+  - 新增单元测试：覆盖事务创建与乐观锁冲突路径。
+  - 新增优化台账文档并在 AGENTS 固化“发现即记录”流程。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway test:unit`：通过（`2/2`）
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`10/10`）
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm -r typecheck`：通过（`15/15`）
+- 联调结果：
+  - 本地 fallback 环境下，任务创建、状态推进、取消/重试、结果查询链路继续可用。
+  - `BE-003/BE-004` 已从 `Backlog` 进入 `In Review`，可支撑下一步 FE 编辑器交互联调。
+- 遗留问题：
+  - 当前持久化为文件态实现，尚未切换到 PostgreSQL + Prisma。
+  - Worker 异步推进仍为 API 模拟路径，待队列化迁移。
+- 风险与回滚：
+  - 风险：文件态持久化适合本地联调，不适合多实例生产部署。
+  - 回滚：回退本节“改动范围”中代码与文档变更。
+- 下一步：
+  - 进入 `FE-003` 真实绘制交互开发，并基于已实现版本号能力补齐前端冲突处理。
+  - 推进 `OPT-ARCH-001/OPT-ARCH-002`（PostgreSQL + Worker 编排）进入 `Ready`。

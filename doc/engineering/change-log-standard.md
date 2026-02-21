@@ -1,4 +1,4 @@
-# 变更日志规范（v1.9）
+# 变更日志规范（v1.10）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.10 | 2026-02-21 | 新增 BE-003/BE-004（事务化创建、乐观锁、文件态持久化）与优化台账机制 |
 | v1.9 | 2026-02-21 | 新增 BE-006（cancel/retry 动作幂等与冲突互斥）执行日志 |
 | v1.8 | 2026-02-21 | 新增任务中心轮询退避 + 结果页联调闭环执行日志 |
 | v1.7 | 2026-02-21 | 新增编辑页蒙版链路（`/v1/tasks/{taskId}/mask`）联调执行日志 |
@@ -63,6 +64,40 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.5] - 2026-02-21
+
+### Added
+- `apps/api-gateway/src/modules/tasks/tasks.service.ts` 新增文件态持久化存储，覆盖：
+  - `tasks`
+  - `idempotency`
+  - `action-idempotency`
+  - `task-masks`
+  - `usage-ledger`
+  - `outbox-events`
+- 新增单元测试：`apps/api-gateway/test/tasks.service.spec.ts`（事务创建与乐观锁冲突）。
+- 新增优化台账文档：`doc/engineering/mvp-optimization-backlog.md`。
+
+### Changed
+- `POST /v1/tasks` 改为事务化创建（同次写入 `tasks + usage_ledger(HELD) + outbox_events(task.created)`）。
+- 任务记录新增 `version`，状态迁移统一走乐观锁版本校验。
+- `apps/api-gateway/package.json` 新增 `test:unit`，并将契约测试切换为 `NODE_ENV=test` 运行以隔离持久化副作用。
+- `doc/engineering/rd-progress-management.md` 更新 `BE-003/BE-004` 状态为 `In Review` 并补充本轮执行回填。
+- `AGENTS.md` 新增优化项专用台账回填要求与“发现即记录”闭环。
+
+### Fixed
+- 修复任务创建在联调阶段仅内存态持有的问题，增强服务重启后的本地状态连续性。
+- 修复状态推进缺少统一版本锁校验的问题，避免并发覆盖。
+
+### Security
+- 关键链路继续保持 `Authorization`、`Idempotency-Key`、`X-Request-Id` 校验；测试环境通过 `NODE_ENV=test` 隔离运行态持久化。
+
+### Rollback
+- 回退 `apps/api-gateway/src/modules/tasks/tasks.service.ts`、`apps/api-gateway/test/tasks.service.spec.ts`、`apps/api-gateway/package.json` 以及相关台账文档变更。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.4] - 2026-02-21
 
