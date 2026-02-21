@@ -116,19 +116,23 @@ export class TasksController {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
 
-    const task = this.tasksService.retry("u_1001", taskId);
-    if (!task) {
+    const result = this.tasksService.retry("u_1001", taskId, idempotencyKey);
+    if (result.kind === "NOT_FOUND") {
       notFound(40401, "资源不存在", requestIdHeader);
     }
 
-    if (task.status !== "QUEUED") {
+    if (result.kind === "IDEMPOTENCY_CONFLICT") {
+      conflict(40901, "幂等冲突/重复任务", requestIdHeader);
+    }
+
+    if (result.kind === "INVALID_TRANSITION") {
       unprocessableEntity(42201, "状态机非法迁移", requestIdHeader);
     }
 
     return ok(
       {
-        taskId: task.taskId,
-        status: task.status
+        taskId: result.taskId,
+        status: result.status
       },
       requestIdHeader
     );
@@ -184,19 +188,23 @@ export class TasksController {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
 
-    const task = this.tasksService.cancel("u_1001", taskId);
-    if (!task) {
+    const result = this.tasksService.cancel("u_1001", taskId, idempotencyKey);
+    if (result.kind === "NOT_FOUND") {
       notFound(40401, "资源不存在", requestIdHeader);
     }
 
-    if (task.status !== "CANCELED") {
+    if (result.kind === "IDEMPOTENCY_CONFLICT") {
+      conflict(40901, "幂等冲突/重复任务", requestIdHeader);
+    }
+
+    if (result.kind === "INVALID_TRANSITION") {
       unprocessableEntity(42201, "状态机非法迁移", requestIdHeader);
     }
 
     return ok(
       {
-        taskId: task.taskId,
-        status: task.status
+        taskId: result.taskId,
+        status: result.status
       },
       requestIdHeader
     );

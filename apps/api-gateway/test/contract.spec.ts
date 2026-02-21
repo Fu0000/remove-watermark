@@ -5,6 +5,7 @@ import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter } from "@nestjs/platform-fastify";
 import type { INestApplication } from "@nestjs/common";
 import { AppModule } from "../src/modules/app.module";
+import { TasksService } from "../src/modules/tasks/tasks.service";
 
 async function setup(): Promise<INestApplication> {
   const app = await NestFactory.create(AppModule, new FastifyAdapter());
@@ -153,6 +154,129 @@ test("tasks list/detail/cancel should work with authorization", async () => {
 
   assert.equal(cancel.statusCode, 200);
   assert.equal(cancel.json().data.status, "CANCELED");
+
+  await app.close();
+});
+
+test("POST /v1/tasks/{taskId}/cancel should be idempotent for same key", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const create = await server.inject({
+    method: "POST",
+    url: "/v1/tasks",
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_cancel_create",
+      "content-type": "application/json"
+    },
+    payload: {
+      assetId: "ast_cancel_1001",
+      mediaType: "IMAGE"
+    }
+  });
+
+  const taskId = create.json().data.taskId as string;
+  const cancelHeaders = {
+    authorization: "Bearer test-token",
+    "idempotency-key": "idem_contract_cancel_action"
+  };
+
+  const first = await server.inject({
+    method: "POST",
+    url: `/v1/tasks/${taskId}/cancel`,
+    headers: cancelHeaders
+  });
+
+  const second = await server.inject({
+    method: "POST",
+    url: `/v1/tasks/${taskId}/cancel`,
+    headers: cancelHeaders
+  });
+
+  assert.equal(first.statusCode, 200);
+  assert.equal(second.statusCode, 200);
+  assert.equal(first.json().data.status, "CANCELED");
+  assert.equal(second.json().data.status, "CANCELED");
+  assert.equal(first.json().data.taskId, second.json().data.taskId);
+
+  await app.close();
+});
+
+test("POST /v1/tasks/{taskId}/retry should be idempotent for FAILED task", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+  const tasksService = app.get(TasksService);
+
+  tasksService.seedFailedTask("u_1001", "tsk_failed_contract_1");
+
+  const retryHeaders = {
+    authorization: "Bearer test-token",
+    "idempotency-key": "idem_contract_retry_action"
+  };
+
+  const first = await server.inject({
+    method: "POST",
+    url: "/v1/tasks/tsk_failed_contract_1/retry",
+    headers: retryHeaders
+  });
+
+  const second = await server.inject({
+    method: "POST",
+    url: "/v1/tasks/tsk_failed_contract_1/retry",
+    headers: retryHeaders
+  });
+
+  assert.equal(first.statusCode, 200);
+  assert.equal(second.statusCode, 200);
+  assert.equal(first.json().data.status, "QUEUED");
+  assert.equal(second.json().data.status, "QUEUED");
+
+  await app.close();
+});
+
+test("POST /v1/tasks/{taskId}/retry should reject idempotency-key mismatch payload", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const create = await server.inject({
+    method: "POST",
+    url: "/v1/tasks",
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_conflict_create",
+      "content-type": "application/json"
+    },
+    payload: {
+      assetId: "ast_conflict_1001",
+      mediaType: "IMAGE"
+    }
+  });
+
+  const taskId = create.json().data.taskId as string;
+  const sharedKey = "idem_contract_action_conflict";
+
+  const cancel = await server.inject({
+    method: "POST",
+    url: `/v1/tasks/${taskId}/cancel`,
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": sharedKey
+    }
+  });
+  assert.equal(cancel.statusCode, 200);
+
+  const retry = await server.inject({
+    method: "POST",
+    url: `/v1/tasks/${taskId}/retry`,
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": sharedKey
+    }
+  });
+
+  assert.equal(retry.statusCode, 409);
+  assert.equal(retry.json().code, 40901);
 
   await app.close();
 });

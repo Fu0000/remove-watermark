@@ -117,7 +117,7 @@
 | BE-003 | 任务编排 | `POST /v1/tasks` + 幂等 + 预扣事务 | 后端 | 2026-03-01 | 2026-03-08 | Backlog | FR-005/FR-008 | integration/contract | 未开始 | `tasks + usage_ledger + outbox` 同事务 |
 | BE-004 | 状态推进 | Orchestrator 状态机推进与乐观锁版本控制 | 后端 | 2026-03-03 | 2026-03-12 | Backlog | FR-005/FR-006 | unit/integration | 未开始 | 非法迁移拦截 100% |
 | BE-005 | 结果交付 | `GET /v1/tasks/{taskId}/result` + 结果 TTL | 后端 | 2026-03-09 | 2026-03-15 | In Review | FR-007 | integration | 契约测试已通过（含结果可用路径） | 结果链接按策略失效 |
-| BE-006 | 失败恢复 | retry/cancel 语义与并发互斥 | 后端 | 2026-03-09 | 2026-03-16 | Backlog | FR-005/FR-006 | unit/contract | 未开始 | 重试与取消冲突可控 |
+| BE-006 | 失败恢复 | retry/cancel 语义与并发互斥 | 后端 | 2026-03-09 | 2026-03-16 | In Review | FR-005/FR-006 | unit/contract | 动作幂等与冲突路径契约测试已通过 | 重试与取消冲突可控 |
 | BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | Backlog | FR-008 | integration/contract | 未开始 | 账务一致性可追踪 |
 | BE-008 | 通知回调 | webhook endpoint 管理/投递/重试/手动重放 | 后端 | 2026-03-24 | 2026-04-10 | Backlog | FR-009 | integration/contract | 未开始 | DEAD 信队列可运维回放 |
 | BE-009 | 合规治理 | 素材/任务/账户删除与审计日志链路 | 后端 | 2026-03-30 | 2026-04-12 | Backlog | FR-010/FR-011 | integration/e2e | 未开始 | 删除 SLA <= 24h |
@@ -157,7 +157,7 @@
 | 用户前端目录规范检查 | `for dir in pages components modules stores services utils; do find apps/user-frontend/src/$dir -type f \\| wc -l; done` | `目录均存在且有文件` | 已对齐 `frontend-framework.md` 目录约束 |
 | 管理端构建验证 | `pnpm --filter @apps/admin-console build` | `Next build passed` | 管理端框架可完成生产构建 |
 | API 网关构建验证 | `pnpm --filter @apps/api-gateway build` | `tsc passed` | 后端网关骨架可完成编译 |
-| API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `7 passed / 0 failed` | 关键契约（含 `/v1/tasks/{taskId}/mask`、`/v1/tasks/{taskId}/result`）可联调 |
+| API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `10 passed / 0 failed` | 关键契约（含 `cancel/retry` 幂等与冲突路径）可联调 |
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 任务中心与结果页改动可完成多端构建（保留包体告警待优化） |
@@ -181,8 +181,8 @@
 | Done | 1 | 2.3% |
 | In Progress | 8 | 18.6% |
 | Ready | 8 | 18.6% |
-| Backlog | 17 | 39.5% |
-| In Review | 9 | 20.9% |
+| Backlog | 16 | 37.2% |
+| In Review | 10 | 23.3% |
 | QA | 0 | 0.0% |
 
 ## 10. 关键结果（KR）跟踪（v1.0）
@@ -407,4 +407,42 @@
   - 回滚：回退本节“改动范围”中的代码与文档变更。
 - 下一步：
   - shared 地址可用后执行 `pnpm --filter @apps/api-gateway test:shared-smoke` 并补齐 `INT-004/INT-005` 云端证据。
-  - 推进 `BE-006`（retry/cancel 并发互斥）与 `FE-003` 编辑器真实绘制交互。
+  - 推进 `FE-003` 编辑器真实绘制交互与 `BE-003/BE-004` 持久化编排能力。
+
+## 19. 本次执行回填（BE-006 动作幂等与冲突互斥）
+
+- 任务编号：`DEV-20260221-BE-06`
+- 需求映射：`FR-005/FR-006`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-service-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 负责人：后端
+- 截止时间：`2026-02-22`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/tasks/tasks.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/tasks/tasks.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/contract.spec.ts`
+- 实施摘要：
+  - 为 `POST /v1/tasks/{taskId}/cancel|retry` 增加动作级幂等记录，支持“同 key 同请求”稳定重放。
+  - 对“同 key 不同动作或不同 taskId”返回 `40901`，避免重试与取消冲突请求误执行。
+  - 对非法状态迁移结果进行幂等固化，确保重复请求返回一致语义。
+  - 保持 `Authorization`、`Idempotency-Key`、`X-Request-Id` 校验链路不变。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`10/10`）
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm -r typecheck`：通过（`15/15`）
+- 联调结果：
+  - 本地 fallback 环境下，`cancel/retry` 重复提交可稳定返回同结果。
+  - 复用同一 `Idempotency-Key` 发起跨动作请求可稳定返回 `40901`。
+- 遗留问题：
+  - 当前并发互斥仍为内存态实现，待持久化后迁移为数据库级约束。
+- 风险与回滚：
+  - 风险：内存幂等记录在服务重启后丢失，仅满足当前联调阶段。
+  - 回滚：回退本节“改动范围”中的代码与文档更新。
+- 下一步：
+  - shared 域名就绪后执行 smoke，补齐 `INT-004/INT-005` 云端验收。
+  - 推进 `BE-003/BE-004`（事务化创建与状态机乐观锁）替代内存态逻辑。

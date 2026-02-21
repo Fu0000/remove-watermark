@@ -48,6 +48,20 @@ export interface UpsertMaskInput {
   version: number;
 }
 
+type TaskActionType = "CANCEL" | "RETRY";
+
+interface TaskActionIdempotencyRecord {
+  payloadHash: string;
+  result: TaskActionResult;
+  updatedAt: string;
+}
+
+type TaskActionResult =
+  | { kind: "SUCCESS"; taskId: string; status: TaskStatus; replayed: boolean }
+  | { kind: "NOT_FOUND" }
+  | { kind: "INVALID_TRANSITION"; status: TaskStatus }
+  | { kind: "IDEMPOTENCY_CONFLICT" };
+
 const CANCELABLE_STATUS = new Set<TaskStatus>(["QUEUED", "PREPROCESSING", "DETECTING"]);
 const TERMINAL_STATUS = new Set<TaskStatus>(["SUCCEEDED", "FAILED", "CANCELED"]);
 
@@ -55,6 +69,7 @@ const TERMINAL_STATUS = new Set<TaskStatus>(["SUCCEEDED", "FAILED", "CANCELED"])
 export class TasksService {
   private readonly tasks = new Map<string, TaskRecord>();
   private readonly idempotency = new Map<string, IdempotencyRecord>();
+  private readonly actionIdempotency = new Map<string, TaskActionIdempotencyRecord>();
   private readonly taskMasks = new Map<string, TaskMaskRecord>();
 
   createTask(userId: string, idempotencyKey: string, input: CreateTaskInput): { task: TaskRecord; created: boolean } {
@@ -119,38 +134,12 @@ export class TasksService {
     return task;
   }
 
-  cancel(userId: string, taskId: string): TaskRecord | undefined {
-    const task = this.getByUser(userId, taskId, { advance: false });
-    if (!task) {
-      return undefined;
-    }
-
-    if (!CANCELABLE_STATUS.has(task.status)) {
-      return task;
-    }
-
-    task.status = "CANCELED";
-    task.progress = 0;
-    task.updatedAt = new Date().toISOString();
-    return task;
+  cancel(userId: string, taskId: string, idempotencyKey: string): TaskActionResult {
+    return this.applyTaskAction(userId, taskId, idempotencyKey, "CANCEL");
   }
 
-  retry(userId: string, taskId: string): TaskRecord | undefined {
-    const task = this.getByUser(userId, taskId, { advance: false });
-    if (!task) {
-      return undefined;
-    }
-
-    if (task.status !== "FAILED") {
-      return task;
-    }
-
-    task.status = "QUEUED";
-    task.progress = 0;
-    task.errorCode = undefined;
-    task.errorMessage = undefined;
-    task.updatedAt = new Date().toISOString();
-    return task;
+  retry(userId: string, taskId: string, idempotencyKey: string): TaskActionResult {
+    return this.applyTaskAction(userId, taskId, idempotencyKey, "RETRY");
   }
 
   upsertMask(
@@ -212,6 +201,108 @@ export class TasksService {
       createdAt: now,
       updatedAt: now
     });
+  }
+
+  private applyTaskAction(
+    userId: string,
+    taskId: string,
+    idempotencyKey: string,
+    action: TaskActionType
+  ): TaskActionResult {
+    const key = `${userId}:${idempotencyKey}`;
+    const payloadHash = `${action}:${taskId}`;
+    const existing = this.actionIdempotency.get(key);
+
+    if (existing) {
+      if (existing.payloadHash !== payloadHash) {
+        return { kind: "IDEMPOTENCY_CONFLICT" };
+      }
+
+      if (existing.result.kind === "SUCCESS") {
+        return {
+          ...existing.result,
+          replayed: true
+        };
+      }
+
+      return existing.result;
+    }
+
+    const task = this.getByUser(userId, taskId, { advance: false });
+    if (!task) {
+      const result: TaskActionResult = { kind: "NOT_FOUND" };
+      this.actionIdempotency.set(key, {
+        payloadHash,
+        result,
+        updatedAt: new Date().toISOString()
+      });
+      return result;
+    }
+
+    const now = new Date().toISOString();
+    if (action === "CANCEL") {
+      if (!CANCELABLE_STATUS.has(task.status)) {
+        const result: TaskActionResult = {
+          kind: "INVALID_TRANSITION",
+          status: task.status
+        };
+        this.actionIdempotency.set(key, {
+          payloadHash,
+          result,
+          updatedAt: now
+        });
+        return result;
+      }
+
+      task.status = "CANCELED";
+      task.progress = 0;
+      task.updatedAt = now;
+
+      const result: TaskActionResult = {
+        kind: "SUCCESS",
+        taskId: task.taskId,
+        status: task.status,
+        replayed: false
+      };
+      this.actionIdempotency.set(key, {
+        payloadHash,
+        result,
+        updatedAt: now
+      });
+      return result;
+    }
+
+    if (task.status !== "FAILED") {
+      const result: TaskActionResult = {
+        kind: "INVALID_TRANSITION",
+        status: task.status
+      };
+      this.actionIdempotency.set(key, {
+        payloadHash,
+        result,
+        updatedAt: now
+      });
+      return result;
+    }
+
+    task.status = "QUEUED";
+    task.progress = 0;
+    task.errorCode = undefined;
+    task.errorMessage = undefined;
+    task.updatedAt = now;
+
+    const result: TaskActionResult = {
+      kind: "SUCCESS",
+      taskId: task.taskId,
+      status: task.status,
+      replayed: false
+    };
+    this.actionIdempotency.set(key, {
+      payloadHash,
+      result,
+      updatedAt: now
+    });
+    return result;
   }
 
   private maybeAdvanceForSimulation(task: TaskRecord) {

@@ -1,4 +1,4 @@
-# 变更日志规范（v1.8）
+# 变更日志规范（v1.9）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.9 | 2026-02-21 | 新增 BE-006（cancel/retry 动作幂等与冲突互斥）执行日志 |
 | v1.8 | 2026-02-21 | 新增任务中心轮询退避 + 结果页联调闭环执行日志 |
 | v1.7 | 2026-02-21 | 新增编辑页蒙版链路（`/v1/tasks/{taskId}/mask`）联调执行日志 |
 | v1.6 | 2026-02-21 | 切换 shared smoke 默认本地地址并完成本地联调验收 |
@@ -62,6 +63,33 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.4] - 2026-02-21
+
+### Added
+- 新增动作级幂等控制：`POST /v1/tasks/{taskId}/cancel|retry` 支持同 `Idempotency-Key` 重放稳定返回。
+- 新增契约测试场景：
+  - `cancel` 同 key 重复请求幂等验证
+  - `retry` 对 FAILED 任务同 key 重复请求幂等验证
+  - 跨动作复用同 key 的冲突校验（`40901`）
+
+### Changed
+- `apps/api-gateway/src/modules/tasks/tasks.service.ts` 引入动作幂等结果缓存，固定 `success/not_found/invalid_transition` 重放语义。
+- `apps/api-gateway/src/modules/tasks/tasks.controller.ts` 调整 `cancel/retry` 响应分支，显式处理 `40901` 与 `42201`。
+- `doc/engineering/rd-progress-management.md` 更新 `BE-006` 状态与测试证据（`10/10`）。
+
+### Fixed
+- 修复 `cancel/retry` 在重复提交和跨动作 key 复用场景下的不确定行为，确保冲突结果可控。
+
+### Security
+- 持续执行 `Authorization`、`Idempotency-Key`、`X-Request-Id` 校验，不放宽关键动作鉴权约束。
+
+### Rollback
+- 回退 `apps/api-gateway/src/modules/tasks/*`、`apps/api-gateway/test/contract.spec.ts` 与台账变更。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.3] - 2026-02-21
 
