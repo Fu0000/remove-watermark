@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.6 | 2026-02-22 | 新增 FE-007 本地 smoke 证据补齐（shared-smoke 覆盖删除与审计链路） |
 | v1.5 | 2026-02-22 | 新增 FE-007 第三阶段（删除二次确认与成功提示）执行记录 |
 | v1.4 | 2026-02-22 | 新增 FE-007 第二阶段（编辑/任务页删除入口）执行记录 |
 | v1.3 | 2026-02-22 | 新增 FE-007（账户隐私页：删除申请查询与审计日志）执行记录 |
@@ -193,6 +194,8 @@
 | FE-007 账户隐私页前端验证（本轮） | `pnpm --filter @apps/user-frontend typecheck` + `pnpm --filter @apps/user-frontend build:h5` | `passed（build 含 2 条包体告警）` | 删除申请创建、删除申请查询与审计日志查询页面通过多端构建与类型校验 |
 | FE-007 第二阶段（本轮）删除入口验证 | `pnpm --filter @apps/user-frontend typecheck` + `pnpm --filter @apps/user-frontend build:h5` | `passed（build 含 2 条包体告警）` | 编辑页已接入 `DELETE /v1/assets/{assetId}`，任务中心已接入 `DELETE /v1/tasks/{taskId}`，并统一透传 `Idempotency-Key` |
 | FE-007 第三阶段（本轮）删除确认交互验证 | `pnpm --filter @apps/user-frontend typecheck` + `pnpm --filter @apps/user-frontend build:h5` | `passed（build 含 2 条包体告警）` | 删除动作新增二次确认弹窗与成功提示，降低误触风险 |
+| FE-007 本地 smoke（本轮） | `SHARED_BASE_URL=http://127.0.0.1:3000 SHARED_USERNAME=admin SHARED_PASSWORD=admin123 SHARED_SMOKE_MAX_POLL_ATTEMPTS=80 SHARED_SMOKE_POLL_INTERVAL_MS=300 pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | `shared-smoke` 已覆盖 FE-007 删除与审计链路（素材删除、任务删除、删除申请 list/detail、审计日志查询） |
+| FE-007 本地 smoke 矩阵（dev-local，本轮） | `SMOKE_MATRIX_TARGETS=dev=http://127.0.0.1:3000 SHARED_SMOKE_MAX_POLL_ATTEMPTS=80 SHARED_SMOKE_POLL_INTERVAL_MS=300 pnpm --filter @apps/api-gateway test:shared-smoke:matrix` | `passed（dev=passed）` | 报告文件：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/.runtime/reports/shared-smoke-matrix-2026-02-21T19-59-34-171Z.md` |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
 | Webhook Dispatcher 本地 smoke（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:smoke` | `passed` | 已验证 outbox `PENDING -> PUBLISHED`、签名头生成与 `webhook_deliveries(SUCCESS)` 持久化闭环 |
@@ -1951,3 +1954,46 @@
   - 回滚：回退两处 `showModal/showToast` 逻辑，恢复到“直接删除”交互。
 - 下一步：
   - shared/staging 云端地址可用后，补齐 FE-007 第三阶段 smoke 证据并推进 `QA`。
+
+## 53. 本次执行回填（FE-007 本地 smoke 证据补齐）
+
+- 任务编号：`DEV-20260222-FE007-SMOKE-LOCAL`
+- 需求映射：`FR-010`、`FR-011`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/prd.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 负责人：前后端联调
+- 截止时间：`2026-04-06`
+- 当前状态：`In Review`
+- 阻塞项：云端 shared/staging 地址待发布前切换（本轮按本地口径验收）
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/scripts/shared-smoke.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 扩展 `shared-smoke`，新增 FE-007 覆盖项：
+    - `DELETE /v1/assets/{assetId}`（含幂等重放）
+    - `DELETE /v1/tasks/{taskId}`（删除后 detail=404、list 隐藏）
+    - `POST /v1/account/delete-request`（含幂等重放）
+    - `GET /v1/account/delete-requests`、`GET /v1/account/delete-requests/{requestId}`
+    - `GET /v1/account/audit-logs`（校验 `account.delete.requested`）
+  - 新增 smoke 输出标记：`[shared-smoke] FE-007 checks passed`。
+- 测试证据：
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma`：通过（`No pending migrations`）
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - 启动本地双进程（`api-gateway + worker-orchestrator`）后执行  
+    `SHARED_BASE_URL=http://127.0.0.1:3000 SHARED_USERNAME=admin SHARED_PASSWORD=admin123 SHARED_SMOKE_MAX_POLL_ATTEMPTS=80 SHARED_SMOKE_POLL_INTERVAL_MS=300 pnpm --filter @apps/api-gateway test:shared-smoke`：通过（含 `FE-007 checks passed`）
+  - `SMOKE_MATRIX_TARGETS=dev=http://127.0.0.1:3000 SHARED_SMOKE_MAX_POLL_ATTEMPTS=80 SHARED_SMOKE_POLL_INTERVAL_MS=300 pnpm --filter @apps/api-gateway test:shared-smoke:matrix`：通过（`dev=passed`）
+  - 报告文件：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/.runtime/reports/shared-smoke-matrix-2026-02-21T19-59-34-171Z.md`
+- 联调结果：
+  - 本地地址口径下，FE-007 已形成“页面交互 + 后端契约 + smoke 自动化”一致证据链。
+- 遗留问题：
+  - shared/staging 云端地址尚未执行同路径复验，待发布前门禁补齐。
+- 风险与回滚：
+  - 风险：Worker 异步推进在高负载下可能导致状态收敛耗时波动，需通过 `SHARED_SMOKE_MAX_POLL_ATTEMPTS` 保持稳定。
+  - 回滚：回退 `shared-smoke.ts` 的 FE-007 增量断言，恢复到 FE-007 之前的 smoke 覆盖口径。
+- 下一步：
+  - 拿到 shared/staging 云端地址后，复用同命令补齐 FE-007 云端 smoke 证据并推进 `QA`。

@@ -1,4 +1,4 @@
-# 变更日志规范（v1.43）
+# 变更日志规范（v1.44）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.44 | 2026-02-22 | 新增 FE-007 本地 smoke 证据补齐（shared-smoke 覆盖删除与审计链路） |
 | v1.43 | 2026-02-22 | 新增 FE-007 第三阶段（删除二次确认与成功提示）执行记录 |
 | v1.42 | 2026-02-22 | 新增 FE-007 第二阶段（编辑/任务页删除入口）执行记录 |
 | v1.41 | 2026-02-22 | 新增 FE-007（账户隐私页：删除申请与审计查询）执行记录 |
@@ -97,6 +98,31 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.39] - 2026-02-22
+
+### Changed
+- `apps/api-gateway/scripts/shared-smoke.ts` 扩展 FE-007 验证覆盖：
+  - `DELETE /v1/assets/{assetId}`（含幂等重放）
+  - `DELETE /v1/tasks/{taskId}`（删除后 detail/list 校验）
+  - `POST /v1/account/delete-request`（含幂等重放）
+  - `GET /v1/account/delete-requests` / `GET /v1/account/delete-requests/{requestId}`
+  - `GET /v1/account/audit-logs`（校验 `account.delete.requested`）
+- `shared-smoke` 新增日志标记：`[shared-smoke] FE-007 checks passed`。
+- `doc/engineering/rd-progress-management.md` 新增第 53 节回填与 FE-007 本地 smoke 证据（含 matrix 报告路径）。
+
+### Fixed
+- 修复 FE-007 在自动化 smoke 证据中缺少“删除与审计全链路”覆盖的问题。
+
+### Security
+- 扩展 smoke 仅复用既有鉴权与幂等约束，不放宽 `Authorization` / `Idempotency-Key` 语义。
+
+### Rollback
+- 回退 `shared-smoke.ts` 的 FE-007 增量断言与文档回填，恢复到 0.5.38 的 smoke 覆盖范围。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.38] - 2026-02-22
 

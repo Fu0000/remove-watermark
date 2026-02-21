@@ -605,8 +605,205 @@ async function main() {
   );
   assert(successDelivery.signatureValidated === true, "retry 后签名自检未通过");
 
+  const uploadForAssetDeleteResp = await request<{
+    assetId: string;
+  }>("/v1/assets/upload-policy", {
+    method: "POST",
+    token,
+    body: {
+      fileName: "fe007-delete-asset.png",
+      fileSize: 4096,
+      mediaType: "image",
+      mimeType: "image/png"
+    }
+  });
+  const uploadForAssetDeleteBody = uploadForAssetDeleteResp.body as ApiEnvelope<{ assetId: string }>;
+  assert(uploadForAssetDeleteResp.status < 500 && uploadForAssetDeleteBody.code === 0, "FE-007 素材创建失败");
+  const assetForDeleteId = uploadForAssetDeleteBody.data.assetId;
+
+  const assetDeleteIdem = buildRequestId("idem_fe007_asset_delete");
+  const deleteAssetResp = await request<{
+    assetId: string;
+    status: "DELETED";
+    cleanupStatus: "PENDING" | "DONE";
+  }>(`/v1/assets/${assetForDeleteId}`, {
+    method: "DELETE",
+    token,
+    idempotencyKey: assetDeleteIdem
+  });
+  const deleteAssetBody = deleteAssetResp.body as ApiEnvelope<{
+    assetId: string;
+    status: "DELETED";
+    cleanupStatus: "PENDING" | "DONE";
+  }>;
+  assert(deleteAssetResp.status === 200 && deleteAssetBody.code === 0, "FE-007 素材删除失败");
+  assert(deleteAssetBody.data.assetId === assetForDeleteId, "FE-007 素材删除 assetId 不一致");
+  assert(deleteAssetBody.data.status === "DELETED", "FE-007 素材删除状态非 DELETED");
+
+  const deleteAssetReplayResp = await request<{
+    assetId: string;
+    status: "DELETED";
+  }>(`/v1/assets/${assetForDeleteId}`, {
+    method: "DELETE",
+    token,
+    idempotencyKey: assetDeleteIdem
+  });
+  const deleteAssetReplayBody = deleteAssetReplayResp.body as ApiEnvelope<{
+    assetId: string;
+    status: "DELETED";
+  }>;
+  assert(
+    deleteAssetReplayResp.status === 200 &&
+      deleteAssetReplayBody.code === 0 &&
+      deleteAssetReplayBody.data.assetId === assetForDeleteId,
+    "FE-007 素材删除幂等重放失败"
+  );
+
+  const uploadForTaskDeleteResp = await request<{
+    assetId: string;
+  }>("/v1/assets/upload-policy", {
+    method: "POST",
+    token,
+    body: {
+      fileName: "fe007-delete-task.png",
+      fileSize: 4096,
+      mediaType: "image",
+      mimeType: "image/png"
+    }
+  });
+  const uploadForTaskDeleteBody = uploadForTaskDeleteResp.body as ApiEnvelope<{ assetId: string }>;
+  assert(uploadForTaskDeleteResp.status < 500 && uploadForTaskDeleteBody.code === 0, "FE-007 任务删除前素材创建失败");
+
+  const createTaskForDeleteResp = await request<{ taskId: string; status: TaskStatus }>("/v1/tasks", {
+    method: "POST",
+    token,
+    idempotencyKey: buildRequestId("idem_fe007_task_create"),
+    body: {
+      assetId: uploadForTaskDeleteBody.data.assetId,
+      mediaType: "IMAGE",
+      taskPolicy: "FAST"
+    }
+  });
+  const createTaskForDeleteBody = createTaskForDeleteResp.body as ApiEnvelope<{ taskId: string; status: TaskStatus }>;
+  assert(createTaskForDeleteResp.status === 200 && createTaskForDeleteBody.code === 0, "FE-007 删除任务创建失败");
+  const taskForDeleteId = createTaskForDeleteBody.data.taskId;
+
+  const taskDeleteResp = await request<{ taskId: string; status: "DELETED" }>(`/v1/tasks/${taskForDeleteId}`, {
+    method: "DELETE",
+    token,
+    idempotencyKey: buildRequestId("idem_fe007_task_delete")
+  });
+  const taskDeleteBody = taskDeleteResp.body as ApiEnvelope<{ taskId: string; status: "DELETED" }>;
+  assert(taskDeleteResp.status === 200 && taskDeleteBody.code === 0, "FE-007 任务删除失败");
+  assert(taskDeleteBody.data.status === "DELETED", "FE-007 任务删除状态非 DELETED");
+
+  const taskDetailAfterDeleteResp = await request(`/v1/tasks/${taskForDeleteId}`, {
+    method: "GET",
+    token
+  });
+  const taskDetailAfterDeleteBody = taskDetailAfterDeleteResp.body as ApiEnvelope<Record<string, unknown>>;
+  assert(
+    taskDetailAfterDeleteResp.status === 404 && taskDetailAfterDeleteBody.code === 40401,
+    "FE-007 删除后任务详情未返回 40401"
+  );
+
+  const tasksAfterDeleteResp = await request<{ items: Array<{ taskId: string }> }>("/v1/tasks", {
+    method: "GET",
+    token
+  });
+  const tasksAfterDeleteBody = tasksAfterDeleteResp.body as ApiEnvelope<{ items: Array<{ taskId: string }> }>;
+  assert(tasksAfterDeleteResp.status === 200 && tasksAfterDeleteBody.code === 0, "FE-007 删除后任务列表查询失败");
+  assert(
+    !tasksAfterDeleteBody.data.items.some((item) => item.taskId === taskForDeleteId),
+    "FE-007 删除后任务仍出现在列表中"
+  );
+
+  const accountDeleteIdem = buildRequestId("idem_fe007_account_delete");
+  const accountDeleteResp = await request<{ requestId: string; status: string; eta: string }>("/v1/account/delete-request", {
+    method: "POST",
+    token,
+    idempotencyKey: accountDeleteIdem,
+    body: {
+      reason: "fe007 local smoke",
+      confirm: true
+    }
+  });
+  const accountDeleteBody = accountDeleteResp.body as ApiEnvelope<{ requestId: string; status: string; eta: string }>;
+  assert(accountDeleteResp.status === 200 && accountDeleteBody.code === 0, "FE-007 账户删除申请失败");
+  assert(accountDeleteBody.data.status === "PENDING", `FE-007 删除申请状态异常: ${accountDeleteBody.data.status}`);
+  const accountDeleteRequestId = accountDeleteBody.data.requestId;
+
+  const accountDeleteReplayResp = await request<{ requestId: string }>("/v1/account/delete-request", {
+    method: "POST",
+    token,
+    idempotencyKey: accountDeleteIdem,
+    body: {
+      reason: "fe007 local smoke",
+      confirm: true
+    }
+  });
+  const accountDeleteReplayBody = accountDeleteReplayResp.body as ApiEnvelope<{ requestId: string }>;
+  assert(
+    accountDeleteReplayResp.status === 200 &&
+      accountDeleteReplayBody.code === 0 &&
+      accountDeleteReplayBody.data.requestId === accountDeleteRequestId,
+    "FE-007 删除申请幂等重放失败"
+  );
+
+  const deleteRequestListResp = await request<{
+    items: Array<{ requestId: string }>;
+    total: number;
+  }>("/v1/account/delete-requests?page=1&pageSize=20", {
+    method: "GET",
+    token
+  });
+  const deleteRequestListBody = deleteRequestListResp.body as ApiEnvelope<{
+    items: Array<{ requestId: string }>;
+    total: number;
+  }>;
+  assert(deleteRequestListResp.status === 200 && deleteRequestListBody.code === 0, "FE-007 删除申请列表查询失败");
+  assert(
+    deleteRequestListBody.data.items.some((item) => item.requestId === accountDeleteRequestId),
+    "FE-007 删除申请列表未包含目标 requestId"
+  );
+
+  const deleteRequestDetailResp = await request<{
+    requestId: string;
+    status: "PENDING" | "PROCESSING" | "DONE" | "FAILED";
+  }>(`/v1/account/delete-requests/${accountDeleteRequestId}`, {
+    method: "GET",
+    token
+  });
+  const deleteRequestDetailBody = deleteRequestDetailResp.body as ApiEnvelope<{
+    requestId: string;
+    status: "PENDING" | "PROCESSING" | "DONE" | "FAILED";
+  }>;
+  assert(deleteRequestDetailResp.status === 200 && deleteRequestDetailBody.code === 0, "FE-007 删除申请详情查询失败");
+  assert(
+    deleteRequestDetailBody.data.requestId === accountDeleteRequestId,
+    "FE-007 删除申请详情 requestId 不一致"
+  );
+
+  const auditLogsResp = await request<{
+    items: Array<{ action: string; resourceType: string }>;
+    total: number;
+  }>("/v1/account/audit-logs?page=1&pageSize=50&resourceType=account", {
+    method: "GET",
+    token
+  });
+  const auditLogsBody = auditLogsResp.body as ApiEnvelope<{
+    items: Array<{ action: string; resourceType: string }>;
+    total: number;
+  }>;
+  assert(auditLogsResp.status === 200 && auditLogsBody.code === 0, "FE-007 审计日志查询失败");
+  assert(
+    auditLogsBody.data.items.some((item) => item.action === "account.delete.requested"),
+    "FE-007 审计日志缺少 account.delete.requested 记录"
+  );
+
   console.log("[shared-smoke] INT-006 checks passed");
   console.log("[shared-smoke] INT-007 prep checks passed");
+  console.log("[shared-smoke] FE-007 checks passed");
   console.log("[shared-smoke] INT-004/INT-005 checks passed");
   console.log("[shared-smoke] INT-002/INT-006 checks passed");
 }
