@@ -10,6 +10,29 @@ interface HttpResult<T> {
   body: ApiEnvelope<T> | Record<string, unknown>;
 }
 
+type TaskStatus =
+  | "UPLOADED"
+  | "QUEUED"
+  | "PREPROCESSING"
+  | "DETECTING"
+  | "INPAINTING"
+  | "PACKAGING"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "CANCELED";
+
+const STATUS_ORDER: TaskStatus[] = [
+  "UPLOADED",
+  "QUEUED",
+  "PREPROCESSING",
+  "DETECTING",
+  "INPAINTING",
+  "PACKAGING",
+  "SUCCEEDED",
+  "FAILED",
+  "CANCELED"
+];
+
 const baseUrl = normalizeBaseUrl(process.env.SHARED_BASE_URL || "http://127.0.0.1:3000");
 const username = process.env.SHARED_USERNAME || "admin";
 const password = process.env.SHARED_PASSWORD || "admin123";
@@ -37,9 +60,11 @@ async function request<T>(
     body?: unknown;
   }
 ): Promise<HttpResult<T>> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json"
-  };
+  const headers: Record<string, string> = {};
+
+  if (options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
 
   if (options.token) {
     headers.Authorization = `Bearer ${options.token}`;
@@ -212,7 +237,142 @@ async function main() {
   );
   console.log("[shared-smoke] list-tasks and requestId fallback passed");
 
-  console.log("[shared-smoke] INT-002/INT-003 checks passed");
+  const taskFlowIdempotencyKey = buildRequestId("idem_task_flow");
+  const createTaskForFlow = await request<{ taskId: string; status: TaskStatus }>("/v1/tasks", {
+    method: "POST",
+    token,
+    idempotencyKey: taskFlowIdempotencyKey,
+    body: {
+      assetId: uploadBody.data.assetId,
+      mediaType: "IMAGE",
+      taskPolicy: "FAST"
+    }
+  });
+
+  assert(createTaskForFlow.status < 500, `create-task(flow) 异常，status=${createTaskForFlow.status}`);
+  const createTaskForFlowBody = createTaskForFlow.body as ApiEnvelope<{ taskId: string; status: TaskStatus }>;
+  assert(
+    createTaskForFlowBody.code === 0 && !!createTaskForFlowBody.data?.taskId,
+    `create-task(flow) 失败，code=${createTaskForFlowBody.code} message=${createTaskForFlowBody.message}`
+  );
+  const flowTaskId = createTaskForFlowBody.data.taskId;
+
+  const resultBeforeMask = await request(`/v1/tasks/${flowTaskId}/result`, {
+    method: "GET",
+    token
+  });
+  const resultBeforeMaskBody = resultBeforeMask.body as ApiEnvelope<Record<string, unknown>>;
+  assert(
+    resultBeforeMask.status === 422 && resultBeforeMaskBody.code === 42201,
+    "result 接口在任务未成功前未返回 42201"
+  );
+
+  const upsertMaskResp = await request<{ taskId: string; maskId: string; version: number }>(`/v1/tasks/${flowTaskId}/mask`, {
+    method: "POST",
+    token,
+    idempotencyKey: buildRequestId("idem_mask"),
+    body: {
+      imageWidth: 1920,
+      imageHeight: 1080,
+      polygons: [
+        [
+          [120, 120],
+          [280, 120],
+          [280, 280],
+          [120, 280]
+        ]
+      ],
+      brushStrokes: [
+        [
+          [320, 300],
+          [350, 320],
+          [380, 340]
+        ]
+      ],
+      version: 0
+    }
+  });
+  const upsertMaskBody = upsertMaskResp.body as ApiEnvelope<{ version: number }>;
+  assert(upsertMaskResp.status === 200 && upsertMaskBody.code === 0, "mask 提交失败");
+  assert(upsertMaskBody.data.version === 1, `mask 版本异常，期望 v1 实际 v${upsertMaskBody.data.version}`);
+
+  let finalStatus: TaskStatus | undefined;
+  let previousStatusOrder = -1;
+  let previousProgress = -1;
+  const observedStatus: TaskStatus[] = [];
+
+  for (let index = 0; index < 8; index += 1) {
+    const detailResp = await request<{
+      taskId: string;
+      status: TaskStatus;
+      progress: number;
+    }>(`/v1/tasks/${flowTaskId}`, {
+      method: "GET",
+      token
+    });
+    const detailBody = detailResp.body as ApiEnvelope<{
+      taskId: string;
+      status: TaskStatus;
+      progress: number;
+    }>;
+    assert(detailResp.status === 200 && detailBody.code === 0, "task detail 查询失败");
+
+    const currentStatus = detailBody.data.status;
+    const currentProgress = detailBody.data.progress;
+    const currentOrder = STATUS_ORDER.indexOf(currentStatus);
+
+    assert(currentOrder >= 0, `未知状态字面量: ${currentStatus}`);
+    assert(currentOrder >= previousStatusOrder, `状态倒退: ${STATUS_ORDER[previousStatusOrder]} -> ${currentStatus}`);
+    assert(currentProgress >= previousProgress, `进度倒退: ${previousProgress} -> ${currentProgress}`);
+
+    observedStatus.push(currentStatus);
+    previousStatusOrder = currentOrder;
+    previousProgress = currentProgress;
+
+    if (currentStatus === "SUCCEEDED") {
+      finalStatus = currentStatus;
+      break;
+    }
+  }
+
+  assert(finalStatus === "SUCCEEDED", `任务未在预期轮次内成功，状态轨迹=${observedStatus.join(" -> ")}`);
+
+  const resultResp = await request<{
+    taskId: string;
+    status: TaskStatus;
+    resultUrl: string;
+    expireAt: string;
+  }>(`/v1/tasks/${flowTaskId}/result`, {
+    method: "GET",
+    token
+  });
+  const resultBody = resultResp.body as ApiEnvelope<{
+    taskId: string;
+    status: TaskStatus;
+    resultUrl: string;
+    expireAt: string;
+  }>;
+  assert(resultResp.status === 200 && resultBody.code === 0, "result 查询失败");
+  assert(resultBody.data.status === "SUCCEEDED", `result 状态错误: ${resultBody.data.status}`);
+  assert(typeof resultBody.data.resultUrl === "string" && resultBody.data.resultUrl.length > 0, "resultUrl 为空");
+
+  const expireAtMs = Date.parse(resultBody.data.expireAt);
+  assert(Number.isFinite(expireAtMs), "expireAt 非合法时间");
+  assert(expireAtMs > Date.now(), "expireAt 未大于当前时间");
+
+  const cancelAfterSuccessResp = await request(`/v1/tasks/${flowTaskId}/cancel`, {
+    method: "POST",
+    token,
+    idempotencyKey: buildRequestId("idem_cancel_after_success")
+  });
+  const cancelAfterSuccessBody = cancelAfterSuccessResp.body as ApiEnvelope<Record<string, unknown>>;
+  assert(
+    cancelAfterSuccessResp.status === 422 && cancelAfterSuccessBody.code === 42201,
+    `成功态取消未按预期返回 42201，status=${cancelAfterSuccessResp.status} code=${cancelAfterSuccessBody.code} message=${cancelAfterSuccessBody.message}`
+  );
+
+  console.log("[shared-smoke] INT-004/INT-005 checks passed");
+  console.log("[shared-smoke] INT-002/INT-005 checks passed");
 }
 
 main().catch((error) => {

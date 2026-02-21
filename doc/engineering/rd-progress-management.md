@@ -129,8 +129,8 @@
 | INT-001 | 契约冻结（字段/错误码/状态机） | 产品+前后端 | 2026-02-24 | 2026-02-28 | In Progress | OpenAPI 冻结并发布 | shared 联调前置 |
 | INT-002 | Header 校验（Authorization/Idempotency-Key/X-Request-Id） | 前后端 | 2026-03-01 | 2026-03-04 | In Review | 三个 Header 行为一致 | shared smoke 脚本已落地，待 shared 域名可达后验收 |
 | INT-003 | 上传 -> 创建任务主链路联调 | 前后端+测试 | 2026-03-05 | 2026-03-12 | In Progress | 端到端成功率 >= 95% | 本地 smoke 已通过，待云端 shared 验收 |
-| INT-004 | 任务中心状态刷新与错误路径联调 | 前后端+测试 | 2026-03-10 | 2026-03-18 | In Progress | 状态渲染与错误码一致 | 本地轮询退避与状态推进已联调，待 shared 验收 |
-| INT-005 | 结果下载与过期策略联调 | 前后端+测试 | 2026-03-14 | 2026-03-20 | In Progress | 过期前提醒与失效行为一致 | 本地结果页链路已打通，待 shared/staging 验收 |
+| INT-004 | 任务中心状态刷新与错误路径联调 | 前后端+测试 | 2026-03-10 | 2026-03-18 | In Progress | 状态渲染与错误码一致 | 本地 smoke 已覆盖状态推进与错误路径，待 shared/staging 验收 |
+| INT-005 | 结果下载与过期策略联调 | 前后端+测试 | 2026-03-14 | 2026-03-20 | In Progress | 过期前提醒与失效行为一致 | 本地 smoke 已覆盖结果下载与 expireAt 校验，待 shared/staging 验收 |
 | INT-006 | 订阅/配额扣减联调 | 前后端+测试+支付 | 2026-03-24 | 2026-04-07 | Backlog | 扣减一致率 100% | 含退款回滚 |
 | INT-007 | Webhook 对接联调（验签/重试/幂等） | 后端+外部系统 | 2026-03-28 | 2026-04-12 | Backlog | 签名校验通过，重试可观测 |  |
 | INT-008 | staging 全链路回归与发布演练 | 全体 | 2026-04-28 | 2026-05-10 | Backlog | 发布准入清单全绿 | 不允许跳过 staging |
@@ -162,7 +162,7 @@
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 编辑页真实绘制交互可完成多端构建（保留包体告警待优化） |
-| shared 联调 smoke（INT-002/INT-003，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 本地地址 `http://127.0.0.1:3000` 联调通过，云端 shared 地址待切换 |
+| shared 联调 smoke（INT-002/INT-005，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 本地地址 `http://127.0.0.1:3000` 已覆盖 Header、上传创建、状态刷新、结果查询与错误路径，云端 shared 地址待切换 |
 | 状态机字面量一致性抽检 | `rg -n "UPLOADED -> QUEUED -> PREPROCESSING -> DETECTING -> INPAINTING -> PACKAGING -> SUCCEEDED\\|FAILED\\|CANCELED" doc \| wc -l` | `6` | 关键文档存在统一字面量 |
 | 幂等约束覆盖抽检 | `rg -n "Idempotency-Key" doc \| wc -l` | `11` | 创建任务幂等约束已在多文档显式出现 |
 | Node+Triton 架构边界抽检 | `rg -n "Node 控制面 \\+ Triton 推理面|Node.*Triton" doc/project-constraints.md doc/prd.md doc/tad.md doc/plan.md` | 命中 `plan.md`、`tad.md` | 架构口径一致，需在实施阶段继续守护 |
@@ -203,7 +203,7 @@
 | BLK-001 | shared 环境 Triton/GPU 资源未完成分配 | 运维 | 视频链路、性能基线 | 24h 回填 | 完成资源配额与可用性验证 |
 | BLK-002 | 支付联调测试账号与回调沙箱待开通 | 支付对接人 | 订阅链路、账务验证 | 24h 回填 | 明确开通时间与替代测试方案 |
 | BLK-003 | [已解除 2026-02-20] `@apps/user-frontend` `build:h5` webpack alias 校验异常（`@tarojs/shared`）已修复 | 前端 | H5 端构建与联调节奏 | 24h 回填 | 跟踪包体告警并推进体积优化 |
-| BLK-004 | [已缓解 2026-02-21] 云端 shared 域名待切换（当前以本地 `127.0.0.1` 执行联调） | 前后端 | `INT-002/INT-003` 云端验收 | 24h 回填 | 等待阿里云地址后执行云端 smoke 验收 |
+| BLK-004 | [已缓解 2026-02-21] 云端 shared 域名待切换（当前以本地 `127.0.0.1` 执行联调） | 前后端 | `INT-002~INT-005` 云端验收 | 24h 回填 | 等待阿里云地址后执行云端 smoke 验收 |
 
 ## 12. 本次执行回填（框架初始化）
 
@@ -537,3 +537,44 @@
 - 下一步：
   - 推进 `INT-004/INT-005` shared/staging 验收并补齐云端证据。
   - 将 `OPT-FE-002`（Canvas 渲染性能优化）排入 MVP 后优化队列。
+
+## 22. 本次执行回填（INT-004/INT-005 本地 smoke 扩展）
+
+- 任务编号：`DEV-20260221-INT-0405`
+- 需求映射：`FR-005/FR-006/FR-007`、`NFR-006`
+- 优化项关联：`OPT-REL-001`（进行中）
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 负责人：前后端联调
+- 截止时间：`2026-02-22`
+- 当前状态：`In Progress`
+- 阻塞项：`BLK-004`（云端 shared 域名待切换）
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/scripts/shared-smoke.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+- 实施摘要：
+  - 扩展 `test:shared-smoke` 覆盖范围，从 `INT-002/INT-003` 扩大至 `INT-004/INT-005` 本地 fallback 验证。
+  - 新增任务链路校验：`创建任务 -> result 未完成前 422 -> 提交蒙版 -> detail 轮询至 SUCCEEDED -> result 返回 resultUrl/expireAt`。
+  - 新增错误路径校验：成功态 `cancel` 返回 `42201`，确保状态机非法迁移语义一致。
+  - 新增状态机轨迹与进度单调性校验，防止联调期间状态倒退。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`10/10`）
+  - 启动本地网关后执行 `pnpm --filter @apps/api-gateway test:shared-smoke`：通过（本地地址 `http://127.0.0.1:3000`）
+- 联调结果：
+  - 本地 fallback 下 `INT-002~INT-005` 关键路径可复现且通过。
+  - 结果链路已验证 `expireAt` 为未来时间，错误码与状态机语义与契约一致。
+- 遗留问题：
+  - 当前仅完成本地 fallback 证据；shared/staging 云端验收待域名切换后补齐。
+  - 结果 URL 仍为联调占位地址，待 MinIO 实际部署后补充真实下载验证。
+- 风险与回滚：
+  - 风险：当前 smoke 仍为单环境脚本，尚未形成 `dev/shared/staging` 一键矩阵。
+  - 回滚：回退 `apps/api-gateway/scripts/shared-smoke.ts` 与本节文档回填。
+- 下一步：
+  - 待阿里云地址提供后，执行同脚本进行 shared/staging 验收并更新 `INT-004/INT-005` 状态。
+  - 推进 `OPT-REL-001` 的多环境矩阵化（环境探测 + 报告输出）。

@@ -1,4 +1,4 @@
-# 变更日志规范（v1.11）
+# 变更日志规范（v1.12）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.12 | 2026-02-21 | 新增 shared-smoke 对 INT-004/INT-005 的本地联调覆盖记录 |
 | v1.11 | 2026-02-21 | 新增 FE-003 真实绘制交互与多端坐标适配执行日志 |
 | v1.10 | 2026-02-21 | 新增 BE-003/BE-004（事务化创建、乐观锁、文件态持久化）与优化台账机制 |
 | v1.9 | 2026-02-21 | 新增 BE-006（cancel/retry 动作幂等与冲突互斥）执行日志 |
@@ -65,6 +66,33 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.7] - 2026-02-21
+
+### Added
+- `apps/api-gateway/scripts/shared-smoke.ts` 新增 `INT-004/INT-005` 校验路径：
+  - 任务详情轮询状态推进至 `SUCCEEDED`
+  - `GET /v1/tasks/{taskId}/result` 成功路径与 `expireAt` 有效性校验
+  - 未完成结果查询与成功态取消的错误路径（`42201`）校验
+
+### Changed
+- `pnpm --filter @apps/api-gateway test:shared-smoke` 覆盖范围由 `INT-002/INT-003` 扩展至 `INT-002~INT-005`（本地 fallback）。
+- `doc/engineering/rd-progress-management.md` 更新 `INT-004/INT-005` 备注、阻塞影响范围与本轮执行回填。
+- `doc/engineering/mvp-optimization-backlog.md` 更新 `OPT-REL-001` 状态为 `In Progress`。
+
+### Fixed
+- 补齐任务中心状态刷新与结果下载链路在本地联调阶段缺少脚本化证据的问题。
+- 修复 smoke 请求头默认 `Content-Type: application/json` 导致空 body 动作请求（`cancel/retry`）返回 400 的误判问题。
+
+### Security
+- 保持 `Authorization`、`Idempotency-Key`、`X-Request-Id` 校验路径，新增错误路径校验不放宽鉴权语义。
+
+### Rollback
+- 回退 `apps/api-gateway/scripts/shared-smoke.ts` 与相关台账文档变更。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.6] - 2026-02-21
 
