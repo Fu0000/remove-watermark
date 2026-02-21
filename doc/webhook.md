@@ -88,6 +88,7 @@
 | `X-Webhook-Event` | 是 | 事件名，如 `task.succeeded` |
 | `X-Webhook-Version` | 是 | 事件版本号 |
 | `X-Webhook-Timestamp` | 是 | Unix 秒级时间戳 |
+| `X-Webhook-Key-Id` | 是 | 当前签名密钥标识（`kid`，用于轮换） |
 | `X-Webhook-Signature` | 是 | HMAC-SHA256 签名值 |
 | `X-Webhook-Trace-Id` | 是 | 链路追踪ID |
 
@@ -97,6 +98,7 @@
 - 算法：`HMAC-SHA256`
 - 签名串：`timestamp + "." + rawBody`
 - 输出格式：`v1=<hex_digest>`
+- 验签：必须使用常量时间比较（timing-safe compare）
 
 ### 8.2 验签伪代码
 
@@ -109,7 +111,7 @@ secure_compare(expected, x_webhook_signature)
 ### 8.3 防重放
 - 要求 `|now - X-Webhook-Timestamp| <= 300 秒`。
 - 若超出窗口，返回 `401`。
-- 客户端应缓存最近 `eventId` 或 `deliveryId` 防重复处理。
+- 客户端应缓存最近 `eventId` 或 `deliveryId` 防重复处理（建议去重 TTL >= 24h）。
 
 ## 9. Payload 契约
 
@@ -241,5 +243,6 @@ secure_compare(expected, x_webhook_signature)
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.2 | 2026-02-21 | 增加 `X-Webhook-Key-Id` 头、常量时间比较与 24h 去重建议 |
 | v1.1 | 2026-02-19 | 补充 executionProfile/riskFlags 字段语义，明确与能力协商/回退链路的对齐关系 |
 | v1.0 | 2026-02-19 | 首版出站Webhook文档，含签名、安全、重试与运维规范 |

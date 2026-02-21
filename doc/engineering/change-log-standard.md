@@ -1,4 +1,4 @@
-# 变更日志规范（v1.33）
+# 变更日志规范（v1.34）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.34 | 2026-02-21 | 新增 BE-008 Webhook 签名协议落地（HMAC-SHA256 + Id/Timestamp/Key-Id）执行记录 |
 | v1.33 | 2026-02-21 | 新增 BE-008/INT-007 第一阶段（Webhook 管理 + test/retry 本地闭环）执行记录 |
 | v1.32 | 2026-02-21 | 新增 INT-006 本地闭环（mock-confirm + 配额门禁 40302 + shared-smoke 校验）执行记录 |
 | v1.31 | 2026-02-21 | 新增 BE-007 第二阶段对账任务（按月聚合 + 小时增量 + 日终全量框架）执行记录 |
@@ -87,6 +88,41 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.29] - 2026-02-21
+
+### Added
+- Webhook 投递新增标准签名头生成与观测：
+  - `X-Webhook-Id`
+  - `X-Webhook-Timestamp`
+  - `X-Webhook-Key-Id`
+  - `X-Webhook-Signature`
+- `apps/api-gateway/src/modules/webhooks/webhooks.service.ts` 新增签名自检能力：
+  - `HMAC-SHA256` + `timestamp.rawBody`
+  - 常量时间比较（timing-safe compare）
+  - `300` 秒窗口校验
+  - `webhookId` 24h 防重缓存
+- `doc/engineering/rd-progress-management.md` 新增第 43 节回填（BE-008 签名协议执行证据）。
+
+### Changed
+- `GET /v1/webhooks/deliveries` 返回增强：`requestHeaders`、`payloadSha256`、`signatureValidated`、`failureCode`。
+- `apps/api-gateway/test/contract.spec.ts` 增加签名字段断言（`v1=<hex>`、关键签名头存在性）。
+- `apps/api-gateway/scripts/shared-smoke.ts` 增加本地签名头校验步骤。
+- `doc/api-spec.md` 补充 Webhook 验签协议细节（`Id/Timestamp/Key-Id/Signature`、常量时间比较、5 分钟窗口、24h 去重）。
+- `doc/webhook.md` 补充 `X-Webhook-Key-Id`、常量时间比较与 24h 去重建议。
+
+### Fixed
+- 修复 `BE-008` 第一阶段中“已有 webhook API 但签名协议细节未在实现层明确固化”的落地缺口。
+
+### Security
+- Webhook 签名与防重放规则已在实现层与文档层双重固化，不放宽现有鉴权边界。
+
+### Rollback
+- 回退签名头生成、自检与 deliveries 观测字段增强，恢复到 0.5.28 的最小闭环实现。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/webhook.md`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.28] - 2026-02-21
 

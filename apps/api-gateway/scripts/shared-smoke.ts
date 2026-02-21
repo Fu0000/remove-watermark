@@ -525,20 +525,39 @@ async function main() {
 
   const failedDeliveriesResp = await request<{
     total: number;
-    items: Array<{ deliveryId: string; status: "FAILED" | "SUCCESS" }>;
+    items: Array<{
+      deliveryId: string;
+      status: "FAILED" | "SUCCESS";
+      requestHeaders: Record<string, string>;
+      signatureValidated: boolean;
+      failureCode?: string;
+    }>;
   }>(`/v1/webhooks/deliveries?endpointId=${endpointId}&status=FAILED&page=1&pageSize=10`, {
     method: "GET",
     token
   });
   const failedDeliveriesBody = failedDeliveriesResp.body as ApiEnvelope<{
     total: number;
-    items: Array<{ deliveryId: string; status: "FAILED" | "SUCCESS" }>;
+    items: Array<{
+      deliveryId: string;
+      status: "FAILED" | "SUCCESS";
+      requestHeaders: Record<string, string>;
+      signatureValidated: boolean;
+      failureCode?: string;
+    }>;
   }>;
   assert(failedDeliveriesResp.status === 200 && failedDeliveriesBody.code === 0, "webhook failed deliveries 查询失败");
+  const failedDelivery = failedDeliveriesBody.data.items.find((item) => item.deliveryId === failedDeliveryId);
+  assert(failedDelivery, "failed deliveries 未包含测试投递记录");
+  assert(failedDelivery.requestHeaders["X-Webhook-Id"] === failedDeliveryId, "X-Webhook-Id 不匹配");
   assert(
-    failedDeliveriesBody.data.items.some((item) => item.deliveryId === failedDeliveryId),
-    "failed deliveries 未包含测试投递记录"
+    /^v1=[a-f0-9]{64}$/.test(failedDelivery.requestHeaders["X-Webhook-Signature"] || ""),
+    "X-Webhook-Signature 格式非法"
   );
+  assert(typeof failedDelivery.requestHeaders["X-Webhook-Timestamp"] === "string", "X-Webhook-Timestamp 缺失");
+  assert(typeof failedDelivery.requestHeaders["X-Webhook-Key-Id"] === "string", "X-Webhook-Key-Id 缺失");
+  assert(failedDelivery.signatureValidated === true, "签名自检未通过");
+  assert(failedDelivery.failureCode === "SIMULATED_DISPATCH_FAILURE", "失败原因未按预期标记");
 
   const patchEndpointResp = await request<{ endpointId: string; status: "ACTIVE" | "PAUSED" }>(
     `/v1/webhooks/endpoints/${endpointId}`,
@@ -564,19 +583,27 @@ async function main() {
 
   const successDeliveriesResp = await request<{
     total: number;
-    items: Array<{ deliveryId: string; status: "FAILED" | "SUCCESS" }>;
+    items: Array<{
+      deliveryId: string;
+      status: "FAILED" | "SUCCESS";
+      requestHeaders: Record<string, string>;
+      signatureValidated: boolean;
+    }>;
   }>(`/v1/webhooks/deliveries?endpointId=${endpointId}&status=SUCCESS&page=1&pageSize=10`, {
     method: "GET",
     token
   });
   const successDeliveriesBody = successDeliveriesResp.body as ApiEnvelope<{
-    items: Array<{ deliveryId: string }>;
+    items: Array<{ deliveryId: string; requestHeaders: Record<string, string>; signatureValidated: boolean }>;
   }>;
   assert(successDeliveriesResp.status === 200 && successDeliveriesBody.code === 0, "webhook success deliveries 查询失败");
+  const successDelivery = successDeliveriesBody.data.items.find((item) => item.deliveryId === retryDeliveryBody.data.deliveryId);
+  assert(successDelivery, "success deliveries 未包含 retry 结果");
   assert(
-    successDeliveriesBody.data.items.some((item) => item.deliveryId === retryDeliveryBody.data.deliveryId),
-    "success deliveries 未包含 retry 结果"
+    /^v1=[a-f0-9]{64}$/.test(successDelivery.requestHeaders["X-Webhook-Signature"] || ""),
+    "retry 后签名格式非法"
   );
+  assert(successDelivery.signatureValidated === true, "retry 后签名自检未通过");
 
   console.log("[shared-smoke] INT-006 checks passed");
   console.log("[shared-smoke] INT-007 prep checks passed");

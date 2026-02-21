@@ -1,7 +1,14 @@
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { Injectable } from "@nestjs/common";
 
 type EndpointStatus = "ACTIVE" | "PAUSED" | "DELETED";
 type DeliveryStatus = "SUCCESS" | "FAILED";
+type DeliveryFailureCode = "SIMULATED_DISPATCH_FAILURE" | "SIGNATURE_VERIFY_FAILED";
+
+const WEBHOOK_SIGNATURE_VERSION = "v1";
+const WEBHOOK_REPLAY_WINDOW_SECONDS = 300;
+const WEBHOOK_REPLAY_CACHE_TTL_SECONDS = 24 * 60 * 60;
+const DEFAULT_KEY_ID = "k1";
 
 interface EndpointRecord {
   endpointId: string;
@@ -12,7 +19,8 @@ interface EndpointRecord {
   events: string[];
   timeoutMs: number;
   maxRetries: number;
-  secret: string;
+  activeKeyId: string;
+  secretByKeyId: Record<string, string>;
   createdAt: string;
   updatedAt: string;
   deletedAt?: string;
@@ -22,9 +30,14 @@ interface DeliveryRecord {
   deliveryId: string;
   userId: string;
   endpointId: string;
+  eventId: string;
   eventType: string;
   status: DeliveryStatus;
   attempt: number;
+  requestHeaders: Record<string, string>;
+  payloadSha256: string;
+  signatureValidated: boolean;
+  failureCode?: DeliveryFailureCode;
   createdAt: string;
   updatedAt: string;
   errorMessage?: string;
@@ -61,9 +74,14 @@ export interface EndpointView {
 export interface DeliveryView {
   deliveryId: string;
   endpointId: string;
+  eventId: string;
   eventType: string;
   status: DeliveryStatus;
   attempt: number;
+  requestHeaders: Record<string, string>;
+  payloadSha256: string;
+  signatureValidated: boolean;
+  failureCode?: DeliveryFailureCode;
   createdAt: string;
   errorMessage?: string;
 }
@@ -86,11 +104,13 @@ export type RetryResult =
 export class WebhooksService {
   private readonly endpoints = new Map<string, EndpointRecord>();
   private readonly deliveries = new Map<string, DeliveryRecord>();
+  private readonly replayCache = new Map<string, number>();
 
   async createEndpoint(userId: string, input: CreateEndpointInput) {
     const now = new Date().toISOString();
     const endpointId = this.buildId("wh_ep");
     const secret = this.buildSecret();
+    const activeKeyId = DEFAULT_KEY_ID;
     const record: EndpointRecord = {
       endpointId,
       userId,
@@ -100,7 +120,10 @@ export class WebhooksService {
       events: [...input.events],
       timeoutMs: input.timeoutMs,
       maxRetries: input.maxRetries,
-      secret,
+      activeKeyId,
+      secretByKeyId: {
+        [activeKeyId]: secret
+      },
       createdAt: now,
       updatedAt: now
     };
@@ -109,6 +132,7 @@ export class WebhooksService {
     return {
       endpointId,
       status: record.status,
+      keyId: activeKeyId,
       secretHint: this.maskSecret(secret)
     };
   }
@@ -217,19 +241,74 @@ export class WebhooksService {
 
   private createDelivery(endpoint: EndpointRecord, eventType: string, attempt: number): DeliveryRecord {
     const now = new Date().toISOString();
-    const shouldFail = endpoint.status !== "ACTIVE" || endpoint.url.includes("fail");
+    const createdAt = new Date(now);
+    const eventId = this.buildId("evt");
+    const deliveryId = this.buildId("wh_dl");
+    const traceId = this.buildId("req");
+    const payload = {
+      eventId,
+      eventType,
+      version: 1,
+      occurredAt: now,
+      traceId,
+      data: {
+        deliveryId,
+        endpointId: endpoint.endpointId,
+        attempt,
+        source: "api-gateway",
+        mode: "local-smoke"
+      }
+    };
+    const rawBody = JSON.stringify(payload);
+    const timestamp = Math.floor(createdAt.getTime() / 1000).toString();
+    const signature = this.signPayload(endpoint.secretByKeyId[endpoint.activeKeyId], `${timestamp}.${rawBody}`);
+    const requestHeaders = {
+      "X-Webhook-Id": deliveryId,
+      "X-Webhook-Event": eventType,
+      "X-Webhook-Version": "1",
+      "X-Webhook-Timestamp": timestamp,
+      "X-Webhook-Key-Id": endpoint.activeKeyId,
+      "X-Webhook-Trace-Id": traceId,
+      "X-Webhook-Signature": `${WEBHOOK_SIGNATURE_VERSION}=${signature}`
+    };
+
+    const verified = this.verifySignature({
+      endpoint,
+      requestHeaders,
+      rawBody,
+      nowEpochSeconds: Number.parseInt(timestamp, 10)
+    });
+    const simulatedDispatchFailure = endpoint.status !== "ACTIVE" || endpoint.url.includes("fail");
+
+    const failureCode: DeliveryFailureCode | undefined = simulatedDispatchFailure
+      ? "SIMULATED_DISPATCH_FAILURE"
+      : verified.ok
+        ? undefined
+        : "SIGNATURE_VERIFY_FAILED";
+    const shouldFail = Boolean(failureCode);
+
     const record: DeliveryRecord = {
-      deliveryId: this.buildId("wh_dl"),
+      deliveryId,
       userId: endpoint.userId,
       endpointId: endpoint.endpointId,
+      eventId,
       eventType,
       status: shouldFail ? "FAILED" : "SUCCESS",
       attempt,
+      requestHeaders,
+      payloadSha256: createHash("sha256").update(rawBody).digest("hex"),
+      signatureValidated: verified.ok,
+      failureCode,
       createdAt: now,
       updatedAt: now,
-      errorMessage: shouldFail ? "simulated webhook dispatch failure" : undefined
+      errorMessage: simulatedDispatchFailure
+        ? "simulated webhook dispatch failure"
+        : verified.ok
+          ? undefined
+          : `signature verification failed: ${verified.reason}`
     };
     this.deliveries.set(record.deliveryId, record);
+    this.cleanupReplayCache(Number.parseInt(timestamp, 10));
     return record;
   }
 
@@ -250,24 +329,98 @@ export class WebhooksService {
     return {
       deliveryId: record.deliveryId,
       endpointId: record.endpointId,
+      eventId: record.eventId,
       eventType: record.eventType,
       status: record.status,
       attempt: record.attempt,
+      requestHeaders: { ...record.requestHeaders },
+      payloadSha256: record.payloadSha256,
+      signatureValidated: record.signatureValidated,
+      failureCode: record.failureCode,
       createdAt: record.createdAt,
       errorMessage: record.errorMessage
     };
   }
 
   private buildId(prefix: string) {
-    return `${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;
+    return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
   }
 
   private buildSecret() {
-    return crypto.randomUUID().replace(/-/g, "");
+    return randomUUID().replace(/-/g, "");
   }
 
   private maskSecret(value: string) {
     const suffix = value.slice(-4);
     return `****${suffix}`;
+  }
+
+  private signPayload(secret: string, payload: string) {
+    return createHmac("sha256", secret).update(payload).digest("hex");
+  }
+
+  private verifySignature(input: {
+    endpoint: EndpointRecord;
+    requestHeaders: Record<string, string>;
+    rawBody: string;
+    nowEpochSeconds: number;
+  }): { ok: boolean; reason?: string } {
+    const webhookId = input.requestHeaders["X-Webhook-Id"];
+    const signatureHeader = input.requestHeaders["X-Webhook-Signature"];
+    const keyId = input.requestHeaders["X-Webhook-Key-Id"];
+    const timestampRaw = input.requestHeaders["X-Webhook-Timestamp"];
+
+    if (!webhookId || !signatureHeader || !keyId || !timestampRaw) {
+      return { ok: false, reason: "missing required webhook signature headers" };
+    }
+
+    const timestamp = Number.parseInt(timestampRaw, 10);
+    if (!Number.isInteger(timestamp)) {
+      return { ok: false, reason: "invalid timestamp" };
+    }
+    if (Math.abs(input.nowEpochSeconds - timestamp) > WEBHOOK_REPLAY_WINDOW_SECONDS) {
+      return { ok: false, reason: "timestamp out of replay window" };
+    }
+    if (this.replayCacheHas(webhookId, input.nowEpochSeconds)) {
+      return { ok: false, reason: "replayed webhook id" };
+    }
+
+    const secret = input.endpoint.secretByKeyId[keyId];
+    if (!secret) {
+      return { ok: false, reason: "unknown key id" };
+    }
+
+    const expected = `${WEBHOOK_SIGNATURE_VERSION}=${this.signPayload(secret, `${timestampRaw}.${input.rawBody}`)}`;
+    if (!this.safeCompare(signatureHeader, expected)) {
+      return { ok: false, reason: "signature mismatch" };
+    }
+
+    this.replayCache.set(webhookId, input.nowEpochSeconds + WEBHOOK_REPLAY_CACHE_TTL_SECONDS);
+    return { ok: true };
+  }
+
+  private safeCompare(left: string, right: string) {
+    const leftBuffer = Buffer.from(left);
+    const rightBuffer = Buffer.from(right);
+    if (leftBuffer.byteLength !== rightBuffer.byteLength) {
+      return false;
+    }
+    return timingSafeEqual(leftBuffer, rightBuffer);
+  }
+
+  private replayCacheHas(webhookId: string, nowEpochSeconds: number) {
+    const expiresAt = this.replayCache.get(webhookId);
+    return typeof expiresAt === "number" && expiresAt > nowEpochSeconds;
+  }
+
+  private cleanupReplayCache(nowEpochSeconds: number) {
+    if (this.replayCache.size < 1000) {
+      return;
+    }
+    for (const [key, expiresAt] of this.replayCache.entries()) {
+      if (expiresAt <= nowEpochSeconds) {
+        this.replayCache.delete(key);
+      }
+    }
   }
 }

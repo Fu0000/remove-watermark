@@ -363,7 +363,23 @@ test("webhook deliveries should support test dispatch and retry", async () => {
   });
   assert.equal(failedList.statusCode, 200);
   assert.equal(failedList.json().data.total >= 1, true);
-  assert.equal(failedList.json().data.items.some((item: { deliveryId: string }) => item.deliveryId === deliveryId), true);
+  const failedItem = failedList
+    .json()
+    .data.items.find((item: { deliveryId: string }) => item.deliveryId === deliveryId) as
+    | {
+        deliveryId: string;
+        requestHeaders: Record<string, string>;
+        signatureValidated: boolean;
+        failureCode?: string;
+      }
+    | undefined;
+  assert.equal(Boolean(failedItem), true);
+  assert.equal(failedItem?.requestHeaders["X-Webhook-Id"], deliveryId);
+  assert.equal(typeof failedItem?.requestHeaders["X-Webhook-Timestamp"], "string");
+  assert.equal(/^v1=[a-f0-9]{64}$/.test(failedItem?.requestHeaders["X-Webhook-Signature"] || ""), true);
+  assert.equal(typeof failedItem?.requestHeaders["X-Webhook-Key-Id"], "string");
+  assert.equal(failedItem?.signatureValidated, true);
+  assert.equal(failedItem?.failureCode, "SIMULATED_DISPATCH_FAILURE");
 
   const patch = await server.inject({
     method: "PATCH",
@@ -399,7 +415,18 @@ test("webhook deliveries should support test dispatch and retry", async () => {
     }
   });
   assert.equal(successList.statusCode, 200);
-  assert.equal(successList.json().data.items.some((item: { deliveryId: string }) => item.deliveryId === retriedDeliveryId), true);
+  const successItem = successList
+    .json()
+    .data.items.find((item: { deliveryId: string }) => item.deliveryId === retriedDeliveryId) as
+    | {
+        deliveryId: string;
+        requestHeaders: Record<string, string>;
+        signatureValidated: boolean;
+      }
+    | undefined;
+  assert.equal(Boolean(successItem), true);
+  assert.equal(/^v1=[a-f0-9]{64}$/.test(successItem?.requestHeaders["X-Webhook-Signature"] || ""), true);
+  assert.equal(successItem?.signatureValidated, true);
 
   await app.close();
 });

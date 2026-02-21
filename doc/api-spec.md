@@ -157,8 +157,15 @@ flowchart LR
 ### 6.4 Webhook 签名规则（出站）
 - 算法：`HMAC-SHA256`
 - 签名字符串：`X-Webhook-Timestamp + "." + rawBody`
-- Header：`X-Webhook-Signature: v1=<hex_digest>`
-- 防重放窗口：`300 秒`
+- 必填 Header：
+  - `X-Webhook-Id`：本次投递唯一 ID（建议等于 `deliveryId`）
+  - `X-Webhook-Timestamp`：Unix 秒级时间戳
+  - `X-Webhook-Key-Id`：当前签名密钥标识（`kid`）
+  - `X-Webhook-Signature`：`v1=<hex_digest>`
+- 验签要求：
+  - 使用常量时间比较（Timing-safe compare）
+  - 防重放窗口：`300 秒`
+  - `X-Webhook-Id` 幂等去重缓存至少 `24h`
 
 ## 7. 任务状态机与一致性规则
 
@@ -566,6 +573,7 @@ Query：
   "data": {
     "endpointId": "wh_ep_001",
     "status": "ACTIVE",
+    "keyId": "k1",
     "secretHint": "****a9f1"
   }
 }
@@ -583,9 +591,15 @@ Query：
 ### `POST /v1/webhooks/endpoints/{endpointId}/test`
 - 发送 `webhook.test` 测试事件，返回 `deliveryId`。
 - `dev/shared` 本地联调口径：若 endpoint URL 包含 `fail`，测试投递将进入失败态，可用于 `retry` 演练。
+- 当前默认签名头：
+  - `X-Webhook-Id`
+  - `X-Webhook-Timestamp`
+  - `X-Webhook-Key-Id`
+  - `X-Webhook-Signature`
 
 ### `GET /v1/webhooks/deliveries`
 - 支持筛选：`endpointId,eventType,status,page,pageSize`。
+- 返回包含签名观测字段：`requestHeaders`、`payloadSha256`、`signatureValidated`、`failureCode`。
 
 ### `POST /v1/webhooks/deliveries/{deliveryId}/retry`
 - 对失败投递发起手动重试，返回新的 `deliveryId`。
@@ -856,6 +870,7 @@ Query：
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.4 | 2026-02-21 | 补充 Webhook 验签协议细节（`X-Webhook-Id/Timestamp/Key-Id/Signature`、常量时间比较、5 分钟窗口、24h 去重） |
 | v1.3 | 2026-02-21 | 补充 Webhook test 本地联调语义（`fail` URL 可触发失败并演练 retry） |
 | v1.2 | 2026-02-21 | 新增 `POST /v1/subscriptions/mock-confirm`（dev/shared 本地联调订阅确认） |
 | v1.1 | 2026-02-19 | 补充系统能力协商接口细则、渲染回退顺序字段与 `taskPolicy` 降级规则 |
