@@ -18,9 +18,22 @@ type TaskStatus =
   | "FAILED"
   | "CANCELED";
 
+const STATUS_OPTIONS: TaskStatus[] = [
+  "UPLOADED",
+  "QUEUED",
+  "PREPROCESSING",
+  "DETECTING",
+  "INPAINTING",
+  "PACKAGING",
+  "SUCCEEDED",
+  "FAILED",
+  "CANCELED"
+];
+
 export default function TasksPage() {
-  const [allTasks, setAllTasks] = useState<TaskItem[]>([]);
-  const [keyword, setKeyword] = useState("");
+  const [items, setItems] = useState<TaskItem[]>([]);
+  const [taskIdFilter, setTaskIdFilter] = useState("");
+  const [userIdFilter, setUserIdFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<TaskStatus | undefined>();
   const [dateRange, setDateRange] = useState<[string, string] | undefined>();
   const [loading, setLoading] = useState(false);
@@ -28,72 +41,55 @@ export default function TasksPage() {
   const [selectedTask, setSelectedTask] = useState<TaskItem | undefined>();
   const [replayReason, setReplayReason] = useState("");
   const [replaying, setReplaying] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [total, setTotal] = useState(0);
   const [apiMessage, contextHolder] = message.useMessage();
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    setError(undefined);
-    try {
-      const data = await listTasks();
-      setAllTasks(data.items);
-    } catch (requestError) {
-      setError(readErrorMessage(requestError));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const reload = useCallback(
+    async (nextPage = page, nextPageSize = pageSize) => {
+      setLoading(true);
+      setError(undefined);
+      try {
+        const data = await listTasks({
+          taskId: taskIdFilter.trim() || undefined,
+          userId: userIdFilter.trim() || undefined,
+          status: statusFilter,
+          from: dateRange?.[0],
+          to: dateRange?.[1],
+          page: nextPage,
+          pageSize: nextPageSize
+        });
+        setItems(data.items);
+        setPage(data.page);
+        setPageSize(data.pageSize);
+        setTotal(data.total);
+      } catch (requestError) {
+        setError(readErrorMessage(requestError));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [dateRange, page, pageSize, statusFilter, taskIdFilter, userIdFilter]
+  );
 
   useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  const filteredTasks = useMemo(() => {
-    return allTasks.filter((item) => {
-      if (keyword.trim()) {
-        const normalizedKeyword = keyword.trim().toLowerCase();
-        const matched =
-          item.taskId.toLowerCase().includes(normalizedKeyword) ||
-          item.userId.toLowerCase().includes(normalizedKeyword) ||
-          item.assetId.toLowerCase().includes(normalizedKeyword);
-        if (!matched) {
-          return false;
-        }
-      }
-
-      if (statusFilter && item.status !== statusFilter) {
-        return false;
-      }
-
-      if (dateRange) {
-        const createdAt = Date.parse(item.createdAt);
-        const from = Date.parse(`${dateRange[0]}T00:00:00.000Z`);
-        const to = Date.parse(`${dateRange[1]}T23:59:59.999Z`);
-        if (Number.isNaN(createdAt) || Number.isNaN(from) || Number.isNaN(to)) {
-          return false;
-        }
-        if (createdAt < from || createdAt > to) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-  }, [allTasks, dateRange, keyword, statusFilter]);
+    void reload(1, pageSize);
+  }, [reload, pageSize]);
 
   const columns: ColumnsType<TaskItem> = useMemo(
     () => [
       { title: "taskId", dataIndex: "taskId", key: "taskId", width: 220 },
-      { title: "userId", dataIndex: "userId", key: "userId", width: 140 },
+      { title: "userId", dataIndex: "userId", key: "userId", width: 160 },
       {
         title: "status",
         dataIndex: "status",
         key: "status",
-        width: 140,
+        width: 150,
         render: (value: string) => <Tag color={statusColor(value)}>{value}</Tag>
       },
-      { title: "mediaType", dataIndex: "mediaType", key: "mediaType", width: 100 },
+      { title: "mediaType", dataIndex: "mediaType", key: "mediaType", width: 120 },
       { title: "progress", dataIndex: "progress", key: "progress", width: 100, render: (value: number) => `${value}%` },
-      { title: "assetId", dataIndex: "assetId", key: "assetId", width: 220 },
       {
         title: "updatedAt",
         dataIndex: "updatedAt",
@@ -128,10 +124,10 @@ export default function TasksPage() {
 
     setReplaying(true);
     try {
-      const result = await replayTask(selectedTask.taskId);
+      const result = await replayTask(selectedTask.taskId, replayReason.trim());
       apiMessage.success(`任务已重放：${result.taskId} -> ${result.status}`);
       closeModal();
-      await reload();
+      await reload(page, pageSize);
     } catch (requestError) {
       apiMessage.error(readErrorMessage(requestError));
     } finally {
@@ -146,10 +142,16 @@ export default function TasksPage() {
         <Card title="任务管理（检索 + 异常重放）">
           <Space style={{ marginBottom: 16, width: "100%" }} wrap>
             <Input
-              placeholder="taskId / userId / assetId"
-              style={{ width: 260 }}
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
+              placeholder="taskId"
+              style={{ width: 220 }}
+              value={taskIdFilter}
+              onChange={(event) => setTaskIdFilter(event.target.value)}
+            />
+            <Input
+              placeholder="userId"
+              style={{ width: 220 }}
+              value={userIdFilter}
+              onChange={(event) => setUserIdFilter(event.target.value)}
             />
             <Select<TaskStatus | undefined>
               allowClear
@@ -157,29 +159,22 @@ export default function TasksPage() {
               style={{ width: 180 }}
               value={statusFilter}
               onChange={(value) => setStatusFilter(value)}
-              options={[
-                "UPLOADED",
-                "QUEUED",
-                "PREPROCESSING",
-                "DETECTING",
-                "INPAINTING",
-                "PACKAGING",
-                "SUCCEEDED",
-                "FAILED",
-                "CANCELED"
-              ].map((status) => ({ label: status, value: status as TaskStatus }))}
+              options={STATUS_OPTIONS.map((status) => ({ label: status, value: status }))}
             />
             <DatePicker.RangePicker
               onChange={(_, dateStrings) =>
                 dateStrings[0] && dateStrings[1] ? setDateRange([dateStrings[0], dateStrings[1]]) : setDateRange(undefined)
               }
             />
-            <Button onClick={() => void reload()} loading={loading}>
+            <Button type="primary" onClick={() => void reload(1, pageSize)} loading={loading}>
+              查询
+            </Button>
+            <Button onClick={() => void reload(page, pageSize)} loading={loading}>
               刷新
             </Button>
           </Space>
           <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-            重放任务为高危操作，需二次确认并填写原因；当前原因用于确认留痕，后续会随 `/admin` 专用接口入库审计。
+            重放任务为高危操作，需二次确认并填写原因，后台将写入审计日志。
           </Typography.Paragraph>
           {error ? (
             <Alert type="error" showIcon style={{ marginBottom: 16 }} message="任务数据加载失败" description={error} />
@@ -187,9 +182,17 @@ export default function TasksPage() {
           <Table
             rowKey="taskId"
             loading={loading}
-            dataSource={filteredTasks}
+            dataSource={items}
             columns={columns}
-            pagination={{ pageSize: 20 }}
+            pagination={{
+              current: page,
+              pageSize,
+              total,
+              showSizeChanger: true,
+              onChange: (nextPage, nextPageSize) => {
+                void handlePagination(nextPage, nextPageSize, setPage, setPageSize, reload);
+              }
+            }}
             scroll={{ x: 1300 }}
           />
         </Card>
@@ -220,6 +223,18 @@ export default function TasksPage() {
       </Modal>
     </AppLayout>
   );
+}
+
+async function handlePagination(
+  nextPage: number,
+  nextPageSize: number,
+  setPage: (page: number) => void,
+  setPageSize: (pageSize: number) => void,
+  reload: (nextPage: number, nextPageSize: number) => Promise<void>
+) {
+  setPage(nextPage);
+  setPageSize(nextPageSize);
+  await reload(nextPage, nextPageSize);
 }
 
 function readErrorMessage(error: unknown) {

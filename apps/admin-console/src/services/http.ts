@@ -22,6 +22,8 @@ const API_BASE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL || "h
 const SHARED_AUTH_CODE = process.env.NEXT_PUBLIC_SHARED_AUTH_CODE || "admin";
 const SHARED_USERNAME = process.env.NEXT_PUBLIC_SHARED_USERNAME || "admin";
 const SHARED_PASSWORD = process.env.NEXT_PUBLIC_SHARED_PASSWORD || "admin123";
+const ADMIN_ROLE = process.env.NEXT_PUBLIC_ADMIN_ROLE || "admin";
+const ADMIN_SECRET = process.env.NEXT_PUBLIC_ADMIN_SECRET || "admin123";
 
 let accessTokenCache: string | undefined;
 let accessTokenInFlight: Promise<string> | undefined;
@@ -67,6 +69,11 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   if (options.requireAuth !== false) {
     const accessToken = await ensureAccessToken();
     headers.Authorization = `Bearer ${accessToken}`;
+  }
+
+  if (isAdminPath(path)) {
+    headers["X-Admin-Role"] = ADMIN_ROLE;
+    headers["X-Admin-Secret"] = ADMIN_SECRET;
   }
 
   const response = await fetch(buildRequestUrl(path, options.query), {
@@ -165,4 +172,8 @@ function buildRequestUrl(path: string, query?: Record<string, string | number | 
   });
 
   return url.toString();
+}
+
+function isAdminPath(path: string) {
+  return path === "/admin" || path.startsWith("/admin/");
 }

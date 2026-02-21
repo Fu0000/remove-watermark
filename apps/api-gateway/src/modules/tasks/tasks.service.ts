@@ -27,6 +27,23 @@ export interface TaskRecord {
   updatedAt: string;
 }
 
+export interface AdminListTasksInput {
+  taskId?: string;
+  userId?: string;
+  status?: TaskStatus;
+  from?: string;
+  to?: string;
+  page: number;
+  pageSize: number;
+}
+
+export interface AdminListTasksResult {
+  items: TaskRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
 interface IdempotencyRecord {
   payloadHash: string;
   taskId: string;
@@ -258,6 +275,58 @@ export class TasksService {
     return [...this.tasks.values()]
       .filter((task) => task.userId === userId)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  async getByTaskId(taskId: string, options: GetTaskOptions = {}): Promise<TaskRecord | undefined> {
+    if (this.usePrismaStore) {
+      return this.getByTaskIdWithPrisma(taskId, options);
+    }
+
+    const task = this.tasks.get(taskId);
+    if (!task) {
+      return undefined;
+    }
+
+    if (options.advance !== false) {
+      this.maybeAdvanceForSimulation(taskId);
+    }
+
+    return this.tasks.get(taskId);
+  }
+
+  async listForAdmin(input: AdminListTasksInput): Promise<AdminListTasksResult> {
+    if (this.usePrismaStore) {
+      return this.listForAdminWithPrisma(input);
+    }
+
+    const page = Math.max(1, input.page);
+    const pageSize = Math.min(100, Math.max(1, input.pageSize));
+    const fromTime = input.from ? new Date(input.from).getTime() : undefined;
+    const toTime = input.to ? new Date(input.to).getTime() : undefined;
+
+    const filtered = [...this.tasks.values()]
+      .filter((task) => (input.taskId ? task.taskId === input.taskId : true))
+      .filter((task) => (input.userId ? task.userId === input.userId : true))
+      .filter((task) => (input.status ? task.status === input.status : true))
+      .filter((task) => {
+        const createdAtTime = new Date(task.createdAt).getTime();
+        if (fromTime !== undefined && createdAtTime < fromTime) {
+          return false;
+        }
+        if (toTime !== undefined && createdAtTime > toTime) {
+          return false;
+        }
+        return true;
+      })
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+    const offset = (page - 1) * pageSize;
+    return {
+      items: filtered.slice(offset, offset + pageSize),
+      page,
+      pageSize,
+      total: filtered.length
+    };
   }
 
   async getByUser(userId: string, taskId: string, options: GetTaskOptions = {}): Promise<TaskRecord | undefined> {
@@ -613,6 +682,65 @@ export class TasksService {
     });
 
     return tasks.map((task) => this.mapDbTask(task));
+  }
+
+  private async getByTaskIdWithPrisma(taskId: string, options: GetTaskOptions = {}): Promise<TaskRecord | undefined> {
+    const prisma = this.ensurePrismaService();
+    const task = await prisma.task.findUnique({
+      where: { taskId }
+    });
+    if (!task) {
+      return undefined;
+    }
+
+    if (options.advance !== false) {
+      this.maybeAdvanceForSimulation(taskId);
+    }
+
+    return this.mapDbTask(task);
+  }
+
+  private async listForAdminWithPrisma(input: AdminListTasksInput): Promise<AdminListTasksResult> {
+    const prisma = this.ensurePrismaService();
+    const page = Math.max(1, input.page);
+    const pageSize = Math.min(100, Math.max(1, input.pageSize));
+    const where: Prisma.TaskWhereInput = {};
+
+    if (input.taskId) {
+      where.taskId = input.taskId;
+    }
+    if (input.userId) {
+      where.userId = input.userId;
+    }
+    if (input.status) {
+      where.status = input.status;
+    }
+    if (input.from || input.to) {
+      where.createdAt = {};
+      if (input.from) {
+        where.createdAt.gte = new Date(input.from);
+      }
+      if (input.to) {
+        where.createdAt.lte = new Date(input.to);
+      }
+    }
+
+    const [total, rows] = await Promise.all([
+      prisma.task.count({ where }),
+      prisma.task.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize
+      })
+    ]);
+
+    return {
+      items: rows.map((item) => this.mapDbTask(item)),
+      page,
+      pageSize,
+      total
+    };
   }
 
   private async getByUserWithPrisma(

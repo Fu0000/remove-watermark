@@ -145,7 +145,7 @@ flowchart LR
 
 ### 6.2 权限模型
 - 用户端：仅可访问本人资源（`userId` 隔离）。
-- 管理端：RBAC（`admin:task:read`、`admin:task:replay`、`admin:plan:write`）。
+- 管理端：RBAC（`admin:task:read`、`admin:task:replay`、`admin:plan:read`、`admin:plan:write`）。
 - 内部 API：`Service Token` + mTLS（可选）。
 
 ### 6.3 安全最佳实践
@@ -249,6 +249,11 @@ flowchart LR
 | POST | `/v1/webhooks/endpoints/{endpointId}/test` | 是 | 是 | 发送测试回调 |
 | GET | `/v1/webhooks/deliveries` | 是 | 否 | 查询投递记录 |
 | POST | `/v1/webhooks/deliveries/{deliveryId}/retry` | 是 | 是 | 手动重试投递 |
+| GET | `/admin/tasks` | 是（管理端） | 否 | 管理端任务检索 |
+| POST | `/admin/tasks/{taskId}/replay` | 是（管理端） | 是 | 管理端异常重放 |
+| GET | `/admin/plans` | 是（管理端） | 否 | 管理端套餐检索 |
+| POST | `/admin/plans` | 是（管理端） | 否 | 管理端新增套餐 |
+| PATCH | `/admin/plans/{planId}` | 是（管理端） | 否 | 管理端更新套餐 |
 
 ## 11. 详细 API 契约
 
@@ -628,6 +633,58 @@ Query：
 ### `POST /v1/webhooks/deliveries/{deliveryId}/retry`
 - 对失败投递发起手动重试，返回新的 `deliveryId`。
 
+## 11.14 管理端 API（`/admin/*`，内网）
+
+### 认证与 RBAC 头（管理端）
+- `Authorization: Bearer <token>`
+- `X-Admin-Role: admin|operator|auditor`
+- `X-Admin-Secret: <shared-secret>`
+- 权限矩阵：
+  - `admin`：`admin:task:read`、`admin:task:replay`、`admin:plan:read`、`admin:plan:write`
+  - `operator`：`admin:task:read`、`admin:task:replay`、`admin:plan:read`
+  - `auditor`：`admin:task:read`、`admin:plan:read`
+
+### `GET /admin/tasks`
+- 查询参数：
+  - `taskId`、`userId`、`status`
+  - `from`、`to`（ISO datetime）
+  - `page`、`pageSize`
+- 返回：`items[] + page + pageSize + total`
+
+### `POST /admin/tasks/{taskId}/replay`
+- Header：`Idempotency-Key` 必填
+- 请求体：
+```json
+{
+  "reason": "manual replay for failed task"
+}
+```
+- 语义：仅允许重放失败任务，写入后台审计动作 `admin.task.replay`
+
+### `GET /admin/plans`
+- 查询参数：`keyword`、`isActive`、`page`、`pageSize`
+- 返回：`items[] + page + pageSize + total`
+- 单项字段：`planId/name/price/currency/monthlyQuota/features/sortOrder/isActive/createdAt/updatedAt`
+
+### `POST /admin/plans`
+- 请求体：
+```json
+{
+  "planId": "enterprise_month",
+  "name": "Enterprise 月付",
+  "price": 199,
+  "monthlyQuota": 3000,
+  "features": ["priority_queue", "team_support"],
+  "sortOrder": 80,
+  "isActive": true
+}
+```
+- 语义：创建套餐并写入审计动作 `admin.plan.create`
+
+### `PATCH /admin/plans/{planId}`
+- 支持更新字段：`name/price/monthlyQuota/features/sortOrder/isActive`
+- 语义：更新套餐并写入审计动作 `admin.plan.update`
+
 ## 12. 实时进度协议（推荐）
 
 ### 12.1 SSE（首选）
@@ -894,6 +951,7 @@ Query：
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.5 | 2026-02-22 | 新增 `/admin/*` 最小运营后台契约（任务检索、异常重放、套餐检索/写入）与 RBAC 头约束 |
 | v1.4 | 2026-02-21 | 补充 Webhook 验签协议细节（`X-Webhook-Id/Timestamp/Key-Id/Signature`、常量时间比较、5 分钟窗口、24h 去重） |
 | v1.3 | 2026-02-21 | 补充 Webhook test 本地联调语义（`fail` URL 可触发失败并演练 retry） |
 | v1.2 | 2026-02-21 | 新增 `POST /v1/subscriptions/mock-confirm`（dev/shared 本地联调订阅确认） |

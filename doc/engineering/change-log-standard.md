@@ -1,4 +1,4 @@
-# 变更日志规范（v1.45）
+# 变更日志规范（v1.46）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.46 | 2026-02-22 | 新增 `/admin/*` 最小契约与 FE-008 后台写入能力（任务检索/重放、套餐新增/编辑） |
 | v1.45 | 2026-02-22 | 新增 FE-008 管理端真实数据流接入（任务检索/异常重放/套餐查询/Webhook 运维） |
 | v1.44 | 2026-02-22 | 新增 FE-007 本地 smoke 证据补齐（shared-smoke 覆盖删除与审计链路） |
 | v1.43 | 2026-02-22 | 新增 FE-007 第三阶段（删除二次确认与成功提示）执行记录 |
@@ -99,6 +100,43 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.41] - 2026-02-22
+
+### Added
+- `apps/api-gateway/src/common/admin-rbac.ts`：新增管理端角色/权限矩阵与 `X-Admin-Role + X-Admin-Secret` 校验。
+- `apps/api-gateway/src/modules/admin/admin.controller.ts`：新增 `/admin/*` 最小契约：
+  - `GET /admin/tasks`
+  - `POST /admin/tasks/{taskId}/replay`
+  - `GET /admin/plans`
+  - `POST /admin/plans`
+  - `PATCH /admin/plans/{planId}`
+- `apps/api-gateway/test/contract.spec.ts` 新增 `/admin/*` 契约与 RBAC 用例（读写权限、错误码、重放路径）。
+
+### Changed
+- `apps/api-gateway/src/modules/tasks/tasks.service.ts` 增加管理端检索能力（按 `taskId/userId/status/time window` + 分页）与按 `taskId` 查询能力。
+- `apps/api-gateway/src/modules/plans/plans.service.ts` 增加管理端套餐检索/新增/编辑能力（Prisma + 内存回退双路径）。
+- `apps/api-gateway/src/modules/compliance/compliance.service.ts` 新增后台操作审计写入入口（`appendAdminAuditLog`）。
+- `apps/admin-console/src/services/http.ts` 对 `/admin/*` 请求自动注入 `X-Admin-Role` 与 `X-Admin-Secret`。
+- `apps/admin-console/src/services/tasks.ts`、`apps/admin-console/src/services/plans.ts` 切换到 `/admin/*` 契约。
+- `apps/admin-console/src/pages/tasks/index.tsx` 改为服务端筛选分页 + 管理端重放（原因必填）。
+- `apps/admin-console/src/pages/plans/index.tsx` 改为管理端套餐检索 + 新增/编辑表单。
+- `doc/api-spec.md` 同步新增 `/admin/*` 契约与 RBAC 头约束。
+- `doc/engineering/rd-progress-management.md` 新增第 55 节回填与测试证据。
+
+### Fixed
+- 修复 FE-008 “套餐写操作待开放”的阻塞，补齐后台新增/编辑可执行路径。
+- 修复 FR-012 中“后台 RBAC 仅前端骨架层有效、后端无 `/admin/*` 契约”缺口。
+
+### Security
+- `/admin/*` 强制要求 `Authorization + X-Admin-Role + X-Admin-Secret`，高危操作写入审计动作。
+
+### Rollback
+- 回退 `admin-rbac`、`admin.controller`、`tasks/plans service` 管理端增量与后台页面 `/admin/*` 接入，恢复到 0.5.40 只读联调版本。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console`、`/Users/codelei/Documents/ai-project/remove-watermark/doc`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.40] - 2026-02-22
 

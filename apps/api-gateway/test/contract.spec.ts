@@ -16,6 +16,14 @@ async function setup(): Promise<INestApplication> {
   return app;
 }
 
+function adminHeaders(role: "admin" | "operator" | "auditor" = "admin") {
+  return {
+    authorization: "Bearer test-token",
+    "x-admin-role": role,
+    "x-admin-secret": "admin123"
+  };
+}
+
 test("GET /v1/system/capabilities should return defaults", async () => {
   const app = await setup();
   const server = app.getHttpAdapter().getInstance();
@@ -1102,6 +1110,165 @@ test("GET /v1/tasks/{taskId}/result should return url after processing", async (
   assert.equal(result.statusCode, 200);
   assert.equal(typeof result.json().data.resultUrl, "string");
   assert.equal(typeof result.json().data.expireAt, "string");
+
+  await app.close();
+});
+
+test("GET /admin/tasks should enforce RBAC and support query", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+  const tasksService = app.get(TasksService);
+
+  await tasksService.seedFailedTask("u_1001", "tsk_admin_contract_1");
+
+  const forbidden = await server.inject({
+    method: "GET",
+    url: "/admin/tasks",
+    headers: {
+      authorization: "Bearer test-token",
+      "x-admin-role": "operator"
+    }
+  });
+  assert.equal(forbidden.statusCode, 403);
+  assert.equal(forbidden.json().code, 40301);
+
+  const list = await server.inject({
+    method: "GET",
+    url: "/admin/tasks?taskId=tsk_admin_contract_1&page=1&pageSize=10",
+    headers: adminHeaders("operator")
+  });
+  assert.equal(list.statusCode, 200);
+  assert.equal(list.json().code, 0);
+  assert.equal(list.json().data.total >= 1, true);
+  assert.equal(list.json().data.items[0].taskId, "tsk_admin_contract_1");
+
+  await app.close();
+});
+
+test("POST /admin/tasks/{taskId}/replay should require reason and update status", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+  const tasksService = app.get(TasksService);
+
+  await tasksService.seedFailedTask("u_1001", "tsk_admin_contract_2");
+
+  const badReason = await server.inject({
+    method: "POST",
+    url: "/admin/tasks/tsk_admin_contract_2/replay",
+    headers: {
+      ...adminHeaders("operator"),
+      "idempotency-key": "idem_admin_contract_replay_bad",
+      "content-type": "application/json"
+    },
+    payload: {
+      reason: ""
+    }
+  });
+  assert.equal(badReason.statusCode, 400);
+  assert.equal(badReason.json().code, 40001);
+
+  const replay = await server.inject({
+    method: "POST",
+    url: "/admin/tasks/tsk_admin_contract_2/replay",
+    headers: {
+      ...adminHeaders("operator"),
+      "idempotency-key": "idem_admin_contract_replay_ok",
+      "content-type": "application/json"
+    },
+    payload: {
+      reason: "manual replay for failed task"
+    }
+  });
+  assert.equal(replay.statusCode, 200);
+  assert.equal(replay.json().code, 0);
+  assert.equal(replay.json().data.taskId, "tsk_admin_contract_2");
+  assert.equal(replay.json().data.status, "QUEUED");
+
+  await app.close();
+});
+
+test("admin plans should support read/write with RBAC", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const listBefore = await server.inject({
+    method: "GET",
+    url: "/admin/plans?page=1&pageSize=20",
+    headers: adminHeaders("auditor")
+  });
+  assert.equal(listBefore.statusCode, 200);
+  assert.equal(listBefore.json().code, 0);
+  assert.equal(listBefore.json().data.total >= 3, true);
+
+  const operatorCreate = await server.inject({
+    method: "POST",
+    url: "/admin/plans",
+    headers: {
+      ...adminHeaders("operator"),
+      "content-type": "application/json"
+    },
+    payload: {
+      planId: "enterprise_month_contract",
+      name: "Enterprise 月付",
+      price: 199,
+      monthlyQuota: 3000,
+      sortOrder: 80,
+      features: ["priority_queue", "team_support"],
+      isActive: true
+    }
+  });
+  assert.equal(operatorCreate.statusCode, 403);
+  assert.equal(operatorCreate.json().code, 40301);
+
+  const create = await server.inject({
+    method: "POST",
+    url: "/admin/plans",
+    headers: {
+      ...adminHeaders("admin"),
+      "content-type": "application/json"
+    },
+    payload: {
+      planId: "enterprise_month_contract",
+      name: "Enterprise 月付",
+      price: 199,
+      monthlyQuota: 3000,
+      sortOrder: 80,
+      features: ["priority_queue", "team_support"],
+      isActive: true
+    }
+  });
+  assert.equal(create.statusCode, 200);
+  assert.equal(create.json().code, 0);
+  assert.equal(create.json().data.planId, "enterprise_month_contract");
+
+  const update = await server.inject({
+    method: "PATCH",
+    url: "/admin/plans/enterprise_month_contract",
+    headers: {
+      ...adminHeaders("admin"),
+      "content-type": "application/json"
+    },
+    payload: {
+      price: 209,
+      monthlyQuota: 3200,
+      isActive: false
+    }
+  });
+  assert.equal(update.statusCode, 200);
+  assert.equal(update.json().code, 0);
+  assert.equal(update.json().data.price, 209);
+  assert.equal(update.json().data.monthlyQuota, 3200);
+  assert.equal(update.json().data.isActive, false);
+
+  const listAfter = await server.inject({
+    method: "GET",
+    url: "/admin/plans?keyword=enterprise_month_contract&page=1&pageSize=10",
+    headers: adminHeaders("admin")
+  });
+  assert.equal(listAfter.statusCode, 200);
+  assert.equal(listAfter.json().code, 0);
+  assert.equal(listAfter.json().data.total, 1);
+  assert.equal(listAfter.json().data.items[0].planId, "enterprise_month_contract");
 
   await app.close();
 });

@@ -126,6 +126,18 @@ export interface ListAuditLogsInput {
   pageSize: number;
 }
 
+export interface AppendAdminAuditInput {
+  action: string;
+  resourceType: string;
+  resourceId?: string;
+  role: "admin" | "operator" | "auditor";
+  reason: string;
+  requestId?: string;
+  ip?: string;
+  userAgent?: string;
+  meta?: Record<string, unknown>;
+}
+
 export interface ProcessDeleteRequestsOptions {
   limit?: number;
   dueOnly?: boolean;
@@ -706,6 +718,24 @@ export class ComplianceService {
       pageSize,
       total: items.length
     };
+  }
+
+  async appendAdminAuditLog(userId: string, input: AppendAdminAuditInput): Promise<void> {
+    await this.appendAuditLog(userId, {
+      action: input.action,
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+      context: {
+        requestId: input.requestId,
+        ip: input.ip,
+        userAgent: input.userAgent
+      },
+      meta: {
+        role: input.role,
+        reason: input.reason,
+        ...(input.meta || {})
+      }
+    });
   }
 
   async processPendingDeleteRequests(options: ProcessDeleteRequestsOptions = {}): Promise<ProcessDeleteRequestsSummary> {

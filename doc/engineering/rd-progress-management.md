@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.8 | 2026-02-22 | 新增 `/admin/*` 最小契约落地与 FE-008 后台写入能力（任务检索/重放、套餐新增/编辑） |
 | v1.7 | 2026-02-22 | 新增 FE-008 管理端真实数据流接入（任务检索/异常重放/套餐查询/Webhook 运维） |
 | v1.6 | 2026-02-22 | 新增 FE-007 本地 smoke 证据补齐（shared-smoke 覆盖删除与审计链路） |
 | v1.5 | 2026-02-22 | 新增 FE-007 第三阶段（删除二次确认与成功提示）执行记录 |
@@ -112,7 +113,7 @@
 | FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | In Review | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 结果查询、预览/复制下载地址、过期提示已联调 |
 | FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | Backlog | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 未开始 |
 | FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | In Review | FR-010/FR-011 | `/v1/account/delete-request*`, `/v1/account/audit-logs`, `DELETE /v1/assets/{assetId}`, `DELETE /v1/tasks/{taskId}` | e2e | 删除申请创建、list/detail、审计日志查询已联调；编辑/任务页删除入口已补齐并新增二次确认与成功提示 |
-| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Progress | FR-012 | `/admin/*` | e2e/smoke | 已接入真实数据流：任务检索+异常重放、套餐查询、Webhook 投递查询/重试；套餐写操作待 `/admin/*` 后端契约开放 |
+| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Review | FR-012 | `/admin/*` | e2e/smoke | `/admin/tasks` 与 `/admin/plans` 最小契约已落地，后台已接入任务检索+异常重放、套餐查询+新增+编辑；待补 e2e 后可进 QA |
 
 ### 7.5 后端研发任务（API + Worker + Billing）
 
@@ -198,6 +199,7 @@
 | FE-007 本地 smoke（本轮） | `SHARED_BASE_URL=http://127.0.0.1:3000 SHARED_USERNAME=admin SHARED_PASSWORD=admin123 SHARED_SMOKE_MAX_POLL_ATTEMPTS=80 SHARED_SMOKE_POLL_INTERVAL_MS=300 pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | `shared-smoke` 已覆盖 FE-007 删除与审计链路（素材删除、任务删除、删除申请 list/detail、审计日志查询） |
 | FE-007 本地 smoke 矩阵（dev-local，本轮） | `SMOKE_MATRIX_TARGETS=dev=http://127.0.0.1:3000 SHARED_SMOKE_MAX_POLL_ATTEMPTS=80 SHARED_SMOKE_POLL_INTERVAL_MS=300 pnpm --filter @apps/api-gateway test:shared-smoke:matrix` | `passed（dev=passed）` | 报告文件：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/.runtime/reports/shared-smoke-matrix-2026-02-21T19-59-34-171Z.md` |
 | FE-008 管理端真实数据流验证（本轮） | `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed` | 已验证管理端任务检索/异常重放、套餐查询、Webhook 投递查询/重试页面可构建并通过类型检查 |
+| FE-008 `/admin/*` 契约与后台写入验证（本轮） | `pnpm --filter @apps/api-gateway typecheck` + `pnpm --filter @apps/api-gateway test:contract` + `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed（contract 25/25）` | 已验证 `/admin/tasks`（检索+重放）与 `/admin/plans`（检索+新增+编辑）RBAC、错误码与页面接入闭环 |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
 | Webhook Dispatcher 本地 smoke（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:smoke` | `passed` | 已验证 outbox `PENDING -> PUBLISHED`、签名头生成与 `webhook_deliveries(SUCCESS)` 持久化闭环 |
@@ -2043,3 +2045,62 @@
   - 回滚：回退 `admin-console` 服务层与三个页面改造，恢复到静态样例版本。
 - 下一步：
   - 推进 `BE/INT` 侧 `/admin/*` 最小契约（任务检索、重放审计、套餐写接口）并将 FE-008 状态推进到 `In Review`。
+
+## 55. 本次执行回填（FE-008 `/admin/*` 最小契约 + 后台写入）
+
+- 任务编号：`DEV-20260222-FE008-ADMIN-CONTRACT`
+- 需求映射：`FR-012`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/prd.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/admin-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 负责人：前后端（后台）
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：`/admin/*` 内网部署与云端联调地址待发布前切换
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/common/admin-rbac.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/admin/admin.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/tasks/tasks.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/plans/plans.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/compliance/compliance.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/app.module.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/contract.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/services/http.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/services/tasks.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/services/plans.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/pages/tasks/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/pages/plans/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 后端新增 `/admin/*` 最小契约：
+    - `GET /admin/tasks`（检索）
+    - `POST /admin/tasks/{taskId}/replay`（异常重放，`Idempotency-Key` + `reason`）
+    - `GET /admin/plans`（检索）
+    - `POST /admin/plans`（新增套餐）
+    - `PATCH /admin/plans/{planId}`（编辑套餐）
+  - 新增管理端 RBAC 头校验：`X-Admin-Role` + `X-Admin-Secret`，权限按 `admin/operator/auditor` 分层。
+  - 套餐服务补齐管理端写能力（Prisma + 内存回退双路径）。
+  - 任务服务补齐管理端检索能力（按任务/用户/状态/时间筛选 + 分页）。
+  - 管理端页面升级：
+    - 任务页切换 `/admin/tasks*`，重放动作写入原因并走后台重放接口。
+    - 套餐页切换 `/admin/plans*`，支持新增/编辑表单操作。
+  - `api-spec` 已同步新增 `/admin/*` 契约与管理端头约束。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`25/25`，含 `/admin/*` 新增用例）
+  - `pnpm --filter @apps/admin-console typecheck`：通过
+  - `pnpm --filter @apps/admin-console build`：通过
+- 联调结果：
+  - 本地地址口径下，FE-008 已形成“后台页面 -> `/admin/*` 契约 -> RBAC/审计”可验证闭环。
+- 遗留问题：
+  - 当前 `X-Admin-Secret` 为阶段性内网口令方案，后续应切换为网关级服务鉴权或 JWT 角色声明。
+- 风险与回滚：
+  - 风险：若口令泄露会导致后台接口暴露风险，需在云端阶段收敛到更强鉴权。
+  - 回滚：回退 `admin.controller` 与后台页面 `/admin/*` 接入改造，恢复至 `v1` 只读联调路径。
+- 下一步：
+  - 在 shared/staging 云端地址上复跑管理端 smoke，用同一套契约验证将 FE-008 推进到 `QA`。

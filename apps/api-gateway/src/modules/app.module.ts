@@ -14,6 +14,7 @@ import { WebhooksController } from "./webhooks/webhooks.controller";
 import { WebhooksService } from "./webhooks/webhooks.service";
 import { AccountController } from "./compliance/account.controller";
 import { ComplianceService } from "./compliance/compliance.service";
+import { AdminController } from "./admin/admin.controller";
 
 @Module({
   controllers: [
@@ -25,7 +26,8 @@ import { ComplianceService } from "./compliance/compliance.service";
     SubscriptionsController,
     UsageController,
     WebhooksController,
-    AccountController
+    AccountController,
+    AdminController
   ],
   providers: [
     PrismaService,
