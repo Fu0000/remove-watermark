@@ -57,7 +57,7 @@ function sleep(ms: number) {
 async function request<T>(
   path: string,
   options: {
-    method: "GET" | "POST";
+    method: "GET" | "POST" | "PATCH" | "DELETE";
     token?: string;
     withRequestId?: boolean;
     idempotencyKey?: string;
@@ -493,9 +493,95 @@ async function main() {
     `取消后 quotaLeft 未回升，hold=${usageAfterHoldBody.data.quotaLeft} cancel=${usageAfterCancelBody.data.quotaLeft}`
   );
 
+  const createEndpointResp = await request<{
+    endpointId: string;
+    status: "ACTIVE";
+    secretHint: string;
+  }>("/v1/webhooks/endpoints", {
+    method: "POST",
+    token,
+    body: {
+      name: `shared-smoke-${Date.now()}`,
+      url: "https://client.example.com/fail",
+      events: ["task.succeeded", "task.failed"],
+      timeoutMs: 5000,
+      maxRetries: 2
+    }
+  });
+  const createEndpointBody = createEndpointResp.body as ApiEnvelope<{
+    endpointId: string;
+    status: string;
+  }>;
+  assert(createEndpointResp.status === 200 && createEndpointBody.code === 0, "webhook endpoint 创建失败");
+  const endpointId = createEndpointBody.data.endpointId;
+
+  const testDeliveryResp = await request<{ deliveryId: string }>(`/v1/webhooks/endpoints/${endpointId}/test`, {
+    method: "POST",
+    token
+  });
+  const testDeliveryBody = testDeliveryResp.body as ApiEnvelope<{ deliveryId: string }>;
+  assert(testDeliveryResp.status === 200 && testDeliveryBody.code === 0, "webhook test delivery 失败");
+  const failedDeliveryId = testDeliveryBody.data.deliveryId;
+
+  const failedDeliveriesResp = await request<{
+    total: number;
+    items: Array<{ deliveryId: string; status: "FAILED" | "SUCCESS" }>;
+  }>(`/v1/webhooks/deliveries?endpointId=${endpointId}&status=FAILED&page=1&pageSize=10`, {
+    method: "GET",
+    token
+  });
+  const failedDeliveriesBody = failedDeliveriesResp.body as ApiEnvelope<{
+    total: number;
+    items: Array<{ deliveryId: string; status: "FAILED" | "SUCCESS" }>;
+  }>;
+  assert(failedDeliveriesResp.status === 200 && failedDeliveriesBody.code === 0, "webhook failed deliveries 查询失败");
+  assert(
+    failedDeliveriesBody.data.items.some((item) => item.deliveryId === failedDeliveryId),
+    "failed deliveries 未包含测试投递记录"
+  );
+
+  const patchEndpointResp = await request<{ endpointId: string; status: "ACTIVE" | "PAUSED" }>(
+    `/v1/webhooks/endpoints/${endpointId}`,
+    {
+      method: "PATCH",
+      token,
+      body: {
+        url: "https://client.example.com/callback",
+        status: "ACTIVE"
+      }
+    }
+  );
+  const patchEndpointBody = patchEndpointResp.body as ApiEnvelope<{ status: "ACTIVE" | "PAUSED" }>;
+  assert(patchEndpointResp.status === 200 && patchEndpointBody.code === 0, "webhook endpoint 更新失败");
+  assert(patchEndpointBody.data.status === "ACTIVE", "webhook endpoint 状态更新失败");
+
+  const retryDeliveryResp = await request<{ deliveryId: string }>(`/v1/webhooks/deliveries/${failedDeliveryId}/retry`, {
+    method: "POST",
+    token
+  });
+  const retryDeliveryBody = retryDeliveryResp.body as ApiEnvelope<{ deliveryId: string }>;
+  assert(retryDeliveryResp.status === 200 && retryDeliveryBody.code === 0, "webhook delivery retry 失败");
+
+  const successDeliveriesResp = await request<{
+    total: number;
+    items: Array<{ deliveryId: string; status: "FAILED" | "SUCCESS" }>;
+  }>(`/v1/webhooks/deliveries?endpointId=${endpointId}&status=SUCCESS&page=1&pageSize=10`, {
+    method: "GET",
+    token
+  });
+  const successDeliveriesBody = successDeliveriesResp.body as ApiEnvelope<{
+    items: Array<{ deliveryId: string }>;
+  }>;
+  assert(successDeliveriesResp.status === 200 && successDeliveriesBody.code === 0, "webhook success deliveries 查询失败");
+  assert(
+    successDeliveriesBody.data.items.some((item) => item.deliveryId === retryDeliveryBody.data.deliveryId),
+    "success deliveries 未包含 retry 结果"
+  );
+
   console.log("[shared-smoke] INT-006 checks passed");
+  console.log("[shared-smoke] INT-007 prep checks passed");
   console.log("[shared-smoke] INT-004/INT-005 checks passed");
-  console.log("[shared-smoke] INT-002/INT-005 checks passed");
+  console.log("[shared-smoke] INT-002/INT-006 checks passed");
 }
 
 main().catch((error) => {

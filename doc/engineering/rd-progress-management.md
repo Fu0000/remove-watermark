@@ -119,7 +119,7 @@
 | BE-005 | 结果交付 | `GET /v1/tasks/{taskId}/result` + 结果 TTL | 后端 | 2026-03-09 | 2026-03-15 | In Review | FR-007 | integration | 契约测试已通过（含结果可用路径） | 结果链接按策略失效 |
 | BE-006 | 失败恢复 | retry/cancel 语义与并发互斥 | 后端 | 2026-03-09 | 2026-03-16 | In Review | FR-005/FR-006 | unit/contract | 动作幂等与冲突路径契约测试已通过 | 重试与取消冲突可控 |
 | BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | In Review | FR-008 | integration/contract | 已补齐本地订阅确认（mock-confirm）+ 任务创建配额门禁（40302）+ 净额扣减口径；真实支付回调/退款回滚待补齐 | 订阅、配额与对账基线可联调 |
-| BE-008 | 通知回调 | webhook endpoint 管理/投递/重试/手动重放 | 后端 | 2026-03-24 | 2026-04-10 | Backlog | FR-009 | integration/contract | 未开始 | DEAD 信队列可运维回放 |
+| BE-008 | 通知回调 | webhook endpoint 管理/投递/重试/手动重放 | 后端 | 2026-03-24 | 2026-04-10 | In Progress | FR-009 | integration/contract | 已落地 endpoint 管理 + test/retry 投递最小闭环（本地内存态），待接入 dispatcher 持久化与验签 | DEAD 信队列可运维回放 |
 | BE-009 | 合规治理 | 素材/任务/账户删除与审计日志链路 | 后端 | 2026-03-30 | 2026-04-12 | Backlog | FR-010/FR-011 | integration/e2e | 未开始 | 删除 SLA <= 24h |
 
 ### 7.6 联调对接任务（FE/BE/QA/OPS）
@@ -132,7 +132,7 @@
 | INT-004 | 任务中心状态刷新与错误路径联调 | 前后端+测试 | 2026-03-10 | 2026-03-18 | In Review | 状态渲染与错误码一致 | 本地 smoke 已覆盖状态推进与错误路径；按阶段例外以本地证据验收，云端认证后置发布前门禁 |
 | INT-005 | 结果下载与过期策略联调 | 前后端+测试 | 2026-03-14 | 2026-03-20 | In Review | 过期前提醒与失效行为一致 | 本地 smoke 已覆盖结果下载与 expireAt 校验；按阶段例外以本地证据验收，云端认证后置发布前门禁 |
 | INT-006 | 订阅/配额扣减联调 | 前后端+测试+支付 | 2026-03-24 | 2026-04-07 | In Progress | 扣减一致率 100% | 本地已覆盖 mock-confirm + 预扣下降 + 取消回升；待真实支付回调与退款回滚 |
-| INT-007 | Webhook 对接联调（验签/重试/幂等） | 后端+外部系统 | 2026-03-28 | 2026-04-12 | Backlog | 签名校验通过，重试可观测 |  |
+| INT-007 | Webhook 对接联调（验签/重试/幂等） | 后端+外部系统 | 2026-03-28 | 2026-04-12 | In Progress | 签名校验通过，重试可观测 | 本地已完成 test/retry/query 预联调，待外部系统签名验证联调 |
 | INT-008 | staging 全链路回归与发布演练 | 全体 | 2026-04-28 | 2026-05-10 | Backlog | 发布准入清单全绿 | 不允许跳过 staging |
 
 ### 7.7 项目治理任务（PM/QA/ALG/OPS）
@@ -157,7 +157,7 @@
 | 用户前端目录规范检查 | `for dir in pages components modules stores services utils; do find apps/user-frontend/src/$dir -type f \\| wc -l; done` | `目录均存在且有文件` | 已对齐 `frontend-framework.md` 目录约束 |
 | 管理端构建验证 | `pnpm --filter @apps/admin-console build` | `Next build passed` | 管理端框架可完成生产构建 |
 | API 网关构建验证 | `pnpm --filter @apps/api-gateway build` | `tsc passed` | 后端网关骨架可完成编译 |
-| API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `16 passed / 0 failed` | 关键契约（含 `/v1/plans`、`/v1/subscriptions/*`、`/v1/usage/me`、`cancel/retry` 幂等与冲突路径、`mock-confirm`、`40302` 配额门禁）可联调 |
+| API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `18 passed / 0 failed` | 关键契约（含 `/v1/plans`、`/v1/subscriptions/*`、`/v1/usage/me`、`/v1/webhooks/*`、`cancel/retry` 幂等与冲突路径、`mock-confirm`、`40302` 配额门禁）可联调 |
 | API 网关单元测试 | `pnpm --filter @apps/api-gateway test:unit` | `2 passed / 0 failed` | `BE-003/BE-004`（事务创建与乐观锁）核心规则可回归 |
 | Prisma 客户端生成校验（本轮） | `pnpm --filter @apps/api-gateway prisma:generate` | `passed` | Prisma schema 与客户端代码生成可用，支持后续 shared DB 联调 |
 | 本地 PostgreSQL 迁移部署验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma` | `passed（No pending migrations）` | 本地库迁移链路可执行，DDL 与 Prisma 迁移记录一致 |
@@ -179,8 +179,8 @@
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15 of 16 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 编辑页真实绘制交互可完成多端构建（保留包体告警待优化） |
-| shared 联调 smoke（INT-002/INT-006，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 本地地址 `http://127.0.0.1:3000` 已覆盖 Header、上传创建、状态刷新、结果查询、订阅确认与配额扣减，云端 shared 地址待切换 |
-| shared 联调 smoke 矩阵（INT-002/INT-006，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke:matrix` | `passed（dev=passed）` | 已支持一键矩阵执行与 Markdown 报告输出，shared/staging 待提供云端地址后接入 |
+| shared 联调 smoke（INT-002/INT-007，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 本地地址 `http://127.0.0.1:3000` 已覆盖 Header、上传创建、状态刷新、结果查询、订阅确认/配额扣减、webhook test/retry，云端 shared 地址待切换 |
+| shared 联调 smoke 矩阵（INT-002/INT-007，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke:matrix` | `passed（dev=passed）` | 已支持一键矩阵执行与 Markdown 报告输出，shared/staging 待提供云端地址后接入 |
 | Billing 对账任务集成测试（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/billing-service test:integration` | `passed（1/1）` | 小时增量 + 月聚合 + 日终全量框架在本地 PostgreSQL 可回归 |
 | Billing 服务类型检查（本轮） | `pnpm --filter @apps/billing-service typecheck` | `passed` | 对账任务代码可通过静态类型校验 |
 | 状态机字面量一致性抽检 | `rg -n "UPLOADED -> QUEUED -> PREPROCESSING -> DETECTING -> INPAINTING -> PACKAGING -> SUCCEEDED\\|FAILED\\|CANCELED" doc \| wc -l` | `6` | 关键文档存在统一字面量 |
@@ -200,9 +200,9 @@
 | 状态 | 数量 | 占比 |
 |---|---:|---:|
 | Done | 1 | 2.3% |
-| In Progress | 7 | 16.3% |
+| In Progress | 9 | 20.9% |
 | Ready | 7 | 16.3% |
-| Backlog | 11 | 25.6% |
+| Backlog | 9 | 20.9% |
 | In Review | 17 | 39.5% |
 | QA | 0 | 0.0% |
 
@@ -1438,3 +1438,50 @@
 - 下一步：
   - 推进真实支付回调适配（`INT-006` 后半程），并补齐退款回滚路径验证。
   - 按计划进入 `BE-008/INT-007` webhook 验签与重试联调。
+
+## 42. 本次执行回填（BE-008/INT-007 第一阶段：Webhook 管理与重试最小闭环）
+
+- 任务编号：`DEV-20260221-BE008-INT007-S1`
+- 需求映射：`FR-009`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+- 负责人：后端
+- 截止时间：`2026-04-12`
+- 当前状态：`In Progress`
+- 阻塞项：外部系统签名验签联调资源待接入
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/webhooks/webhooks.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/webhooks/webhooks.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/app.module.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/contract.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/scripts/shared-smoke.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增 `webhooks` 模块，落地 API：
+    - `POST/GET/PATCH/DELETE /v1/webhooks/endpoints`
+    - `POST /v1/webhooks/endpoints/{endpointId}/test`
+    - `GET /v1/webhooks/deliveries`
+    - `POST /v1/webhooks/deliveries/{deliveryId}/retry`
+  - 新增最小投递模拟策略：本地联调下 URL 包含 `fail` 触发失败，便于演练 `retry` 路径。
+  - `shared-smoke` 新增 INT-007 预联调步骤：创建端点、发送测试投递、查询失败记录、修复端点后重试并校验成功投递。
+  - 契约测试新增 webhook 两组用例，覆盖 endpoint CRUD 与 delivery test/retry 闭环。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`18/18`）
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma SUBSCRIPTIONS_STORE=prisma pnpm --filter @apps/api-gateway test:shared-smoke`（本地双进程）：通过（含 `INT-007 prep checks passed`）
+- 联调结果：
+  - 本地口径已形成 `endpoint create -> test delivery(failed) -> deliveries query -> retry(success)` 可执行闭环。
+- 遗留问题：
+  - 当前为内存态 endpoint/delivery 存储，尚未接入持久化与 `webhook-dispatcher` 统一派发链路。
+  - 外部系统签名验签与重试幂等对齐仍待联调（`INT-007` 后半程）。
+- 风险与回滚：
+  - 风险：若后续签名规范字段与当前最小模拟模型不一致，需要在 dispatcher 接入阶段统一调整 payload 与签名串。
+  - 回滚：回退 `webhooks` 模块与 contract/smoke 增量用例，恢复到 `INT-006` 完成态。
+- 下一步：
+  - 推进 `BE-008` 第二阶段：接入 `webhook-dispatcher`、签名生成/验签、失败重试与死信对齐。
+  - 推进 `INT-007`：与外部系统完成签名校验与幂等重试联调，并补齐 shared/staging 云端证据。

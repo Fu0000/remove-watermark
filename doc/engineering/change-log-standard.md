@@ -1,4 +1,4 @@
-# 变更日志规范（v1.32）
+# 变更日志规范（v1.33）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.33 | 2026-02-21 | 新增 BE-008/INT-007 第一阶段（Webhook 管理 + test/retry 本地闭环）执行记录 |
 | v1.32 | 2026-02-21 | 新增 INT-006 本地闭环（mock-confirm + 配额门禁 40302 + shared-smoke 校验）执行记录 |
 | v1.31 | 2026-02-21 | 新增 BE-007 第二阶段对账任务（按月聚合 + 小时增量 + 日终全量框架）执行记录 |
 | v1.30 | 2026-02-21 | 新增 BE-007 商业化接口最小骨架（subscriptions/usage）执行记录 |
@@ -86,6 +87,44 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.28] - 2026-02-21
+
+### Added
+- 新增 `webhooks` 模块：
+  - `apps/api-gateway/src/modules/webhooks/webhooks.service.ts`
+  - `apps/api-gateway/src/modules/webhooks/webhooks.controller.ts`
+- 新增 API 能力：
+  - `POST/GET/PATCH/DELETE /v1/webhooks/endpoints`
+  - `POST /v1/webhooks/endpoints/{endpointId}/test`
+  - `GET /v1/webhooks/deliveries`
+  - `POST /v1/webhooks/deliveries/{deliveryId}/retry`
+- 新增契约用例：
+  - `webhook endpoints should support create/list/update/delete`
+  - `webhook deliveries should support test dispatch and retry`
+- `doc/engineering/rd-progress-management.md` 新增第 42 节回填（`BE-008/INT-007` 第一阶段执行证据）。
+
+### Changed
+- `apps/api-gateway/src/modules/app.module.ts` 注册 `WebhooksController` 与 `WebhooksService`。
+- `apps/api-gateway/scripts/shared-smoke.ts` 新增 INT-007 预联调校验步骤（endpoint create/test/retry/query），并将收尾日志更新为 `INT-002/INT-006`。
+- `doc/api-spec.md` 补充 webhook test 本地联调语义（URL 包含 `fail` 可触发失败态用于 retry 演练）。
+- `doc/engineering/rd-progress-management.md` 更新：
+  - `BE-008` 由 `Backlog` 调整为 `In Progress`
+  - `INT-007` 由 `Backlog` 调整为 `In Progress`
+  - `API 网关契约测试` 更新为 `18 passed / 0 failed`
+
+### Fixed
+- 补齐 `BE-008` 在当前阶段“仅有 deadletter 运维脚本、缺少用户侧 webhook 管理与重试 API”的联调断点。
+
+### Security
+- 继续保持 `Authorization` 与 `X-Request-Id` 校验边界；本次本地模拟投递仅用于联调，不替代正式签名验签流程。
+
+### Rollback
+- 回退 `webhooks` 模块与 contract/smoke 增量用例，恢复到 `INT-006` 完成态。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.27] - 2026-02-21
 

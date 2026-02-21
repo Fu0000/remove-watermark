@@ -245,6 +245,165 @@ test("POST /v1/tasks should return 40302 when free quota is exceeded", async () 
   await app.close();
 });
 
+test("webhook endpoints should support create/list/update/delete", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const create = await server.inject({
+    method: "POST",
+    url: "/v1/webhooks/endpoints",
+    headers: {
+      authorization: "Bearer test-token",
+      "x-request-id": "req_contract_webhook_create_1",
+      "content-type": "application/json"
+    },
+    payload: {
+      name: "primary-prod",
+      url: "https://client.example.com/callback",
+      events: ["task.succeeded", "task.failed"],
+      timeoutMs: 5000,
+      maxRetries: 6
+    }
+  });
+  assert.equal(create.statusCode, 200);
+  assert.equal(create.json().code, 0);
+  assert.equal(create.json().data.status, "ACTIVE");
+  assert.equal(typeof create.json().data.endpointId, "string");
+  const endpointId = create.json().data.endpointId as string;
+
+  const list = await server.inject({
+    method: "GET",
+    url: "/v1/webhooks/endpoints",
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(list.statusCode, 200);
+  assert.equal(list.json().code, 0);
+  assert.equal(list.json().data.some((item: { endpointId: string }) => item.endpointId === endpointId), true);
+
+  const patch = await server.inject({
+    method: "PATCH",
+    url: `/v1/webhooks/endpoints/${endpointId}`,
+    headers: {
+      authorization: "Bearer test-token",
+      "content-type": "application/json"
+    },
+    payload: {
+      status: "PAUSED",
+      timeoutMs: 6000
+    }
+  });
+  assert.equal(patch.statusCode, 200);
+  assert.equal(patch.json().data.status, "PAUSED");
+  assert.equal(patch.json().data.timeoutMs, 6000);
+
+  const deleted = await server.inject({
+    method: "DELETE",
+    url: `/v1/webhooks/endpoints/${endpointId}`,
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(deleted.statusCode, 200);
+  assert.equal(deleted.json().data.status, "DELETED");
+
+  const listAfterDelete = await server.inject({
+    method: "GET",
+    url: "/v1/webhooks/endpoints",
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(listAfterDelete.statusCode, 200);
+  assert.equal(listAfterDelete.json().data.some((item: { endpointId: string }) => item.endpointId === endpointId), false);
+
+  await app.close();
+});
+
+test("webhook deliveries should support test dispatch and retry", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const create = await server.inject({
+    method: "POST",
+    url: "/v1/webhooks/endpoints",
+    headers: {
+      authorization: "Bearer test-token",
+      "content-type": "application/json"
+    },
+    payload: {
+      name: "failing-endpoint",
+      url: "https://client.example.com/fail",
+      events: ["task.failed"],
+      timeoutMs: 5000,
+      maxRetries: 2
+    }
+  });
+  assert.equal(create.statusCode, 200);
+  const endpointId = create.json().data.endpointId as string;
+
+  const testDelivery = await server.inject({
+    method: "POST",
+    url: `/v1/webhooks/endpoints/${endpointId}/test`,
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(testDelivery.statusCode, 200);
+  const deliveryId = testDelivery.json().data.deliveryId as string;
+  assert.equal(typeof deliveryId, "string");
+
+  const failedList = await server.inject({
+    method: "GET",
+    url: `/v1/webhooks/deliveries?endpointId=${endpointId}&status=FAILED&page=1&pageSize=10`,
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(failedList.statusCode, 200);
+  assert.equal(failedList.json().data.total >= 1, true);
+  assert.equal(failedList.json().data.items.some((item: { deliveryId: string }) => item.deliveryId === deliveryId), true);
+
+  const patch = await server.inject({
+    method: "PATCH",
+    url: `/v1/webhooks/endpoints/${endpointId}`,
+    headers: {
+      authorization: "Bearer test-token",
+      "content-type": "application/json"
+    },
+    payload: {
+      url: "https://client.example.com/callback",
+      status: "ACTIVE"
+    }
+  });
+  assert.equal(patch.statusCode, 200);
+
+  const retry = await server.inject({
+    method: "POST",
+    url: `/v1/webhooks/deliveries/${deliveryId}/retry`,
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(retry.statusCode, 200);
+  const retriedDeliveryId = retry.json().data.deliveryId as string;
+  assert.equal(typeof retriedDeliveryId, "string");
+  assert.notEqual(retriedDeliveryId, deliveryId);
+
+  const successList = await server.inject({
+    method: "GET",
+    url: `/v1/webhooks/deliveries?endpointId=${endpointId}&status=SUCCESS&page=1&pageSize=10`,
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(successList.statusCode, 200);
+  assert.equal(successList.json().data.items.some((item: { deliveryId: string }) => item.deliveryId === retriedDeliveryId), true);
+
+  await app.close();
+});
+
 test("POST /v1/tasks should require Idempotency-Key", async () => {
   const app = await setup();
   const server = app.getHttpAdapter().getInstance();
