@@ -1,0 +1,140 @@
+.account-section {
+  margin-top: 16rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.account-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.account-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.account-kv {
+  font-size: 24rpx;
+  color: #52606d;
+}
+
+.account-reason-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 136rpx;
+  padding: 16rpx;
+  border: 2rpx solid #d9e1ec;
+  border-radius: 12rpx;
+  background: #ffffff;
+  font-size: 26rpx;
+}
+
+.account-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 68rpx;
+  border: 2rpx solid #d9e1ec;
+  border-radius: 12rpx;
+  padding: 0 16rpx;
+  background: #ffffff;
+}
+
+.account-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8rpx 0;
+  color: #35465a;
+  font-size: 24rpx;
+}
+
+.account-picker-value {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 68rpx;
+  border: 2rpx solid #d9e1ec;
+  border-radius: 12rpx;
+  padding: 16rpx;
+  color: #35465a;
+  background: #ffffff;
+}
+
+.account-list-scroll {
+  max-height: 360rpx;
+  padding-right: 4rpx;
+}
+
+.account-item {
+  border: 1px solid #e6edf5;
+  border-radius: 12rpx;
+  padding: 14rpx;
+  margin-top: 10rpx;
+  background: #ffffff;
+}
+
+.account-item-active {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2rpx rgba(26, 115, 232, 0.15);
+}
+
+.account-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.account-item-id {
+  font-size: 22rpx;
+  color: #2b3a4b;
+  word-break: break-all;
+}
+
+.account-item-line {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: #52606d;
+  word-break: break-all;
+}
+
+.account-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  font-size: 24rpx;
+  color: #2b3a4b;
+}
+
+.account-empty {
+  margin-top: 8rpx;
+  color: #7a8796;
+  font-size: 24rpx;
+}
+
+.account-error {
+  margin-top: 8rpx;
+  color: #d93025;
+  font-size: 24rpx;
+}
+
+.account-hint {
+  color: #1a73e8;
+  font-size: 24rpx;
+}
+
+.platform-h5 .account-reason-input {
+  min-height: 96px;
+  font-size: 14px;
+}
+
+.platform-h5 .account-input {
+  height: 40px;
+}
+
+.platform-h5 .account-title {
+  font-size: 18px;
+}

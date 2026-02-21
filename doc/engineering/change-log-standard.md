@@ -1,4 +1,4 @@
-# 变更日志规范（v1.40）
+# 变更日志规范（v1.41）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.41 | 2026-02-22 | 新增 FE-007（账户隐私页：删除申请与审计查询）执行记录 |
 | v1.40 | 2026-02-22 | 新增 BE-009 第二阶段（删除申请执行态、查询与保留策略）执行记录 |
 | v1.39 | 2026-02-22 | 新增 BE-009 第一阶段（删除与审计最小闭环）执行记录 |
 | v1.38 | 2026-02-22 | 新增 INT-007 本地映射矩阵脚本（dev/shared/staging 一键验签）执行记录 |
@@ -94,6 +95,38 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.36] - 2026-02-22
+
+### Added
+- 新增前端合规服务层：
+  - `apps/user-frontend/src/services/compliance.ts`
+  - 覆盖 `POST /v1/account/delete-request`、`GET /v1/account/delete-requests*`、`GET /v1/account/audit-logs`
+- 新增账户页样式文件：
+  - `apps/user-frontend/src/pages/account/index.scss`
+
+### Changed
+- `apps/user-frontend/src/pages/account/index.tsx` 从占位页升级为可联调页面：
+  - 删除申请提交（原因 + 不可恢复确认）
+  - 删除申请列表/详情（状态筛选）
+  - 审计日志查询（action/resourceType 过滤）
+- `doc/engineering/rd-progress-management.md`：
+  - `FE-007` 状态由 `Backlog` 更新为 `In Review`
+  - 增补 FE-007 测试证据与第 50 节回填记录
+
+### Fixed
+- 修复用户端“账户与隐私页仅占位、无法覆盖 BE-009 查询接口”的联调缺口。
+
+### Security
+- 账户删除申请创建继续透传 `Idempotency-Key`，避免重复提交导致的业务歧义。
+- 页面仅展示审计元信息，不放宽后端鉴权与错误码语义。
+
+### Rollback
+- 回退 `apps/user-frontend/src/services/compliance.ts` 与 `apps/user-frontend/src/pages/account/*` 及台账更新，恢复到 0.5.35 占位页版本。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.35] - 2026-02-22
 
