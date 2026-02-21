@@ -166,6 +166,7 @@
 | Worker 编排类型检查（本轮） | `pnpm --filter @apps/worker-orchestrator typecheck` | `passed` | `worker-orchestrator` 编排循环可编译 |
 | 双进程联调 smoke（API + Worker，本轮） | `启动 api-gateway(TASKS_STORE=prisma) + worker-orchestrator 后执行 pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 状态由 Worker 推进，API 查询路径不再承担推进副作用 |
 | BullMQ 依赖与消息驱动校验（本轮） | `worker-orchestrator 引入 bullmq` + `outbox dispatch log` | `passed（published>0）` | 已验证 outbox 事件可发布到 Redis 队列并被 consumer 消费 |
+| Worker deadletter/retry 策略校验（本轮） | `pnpm --filter @apps/worker-orchestrator typecheck` + `pnpm --filter @apps/api-gateway test:shared-smoke`（双进程） | `passed` | 已落地 `maxRetries=2`、指数退避+jitter、不可重试直入死信、outbox 超限转 `DEAD` 与死信告警阈值基线 |
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 编辑页真实绘制交互可完成多端构建（保留包体告警待优化） |
@@ -817,3 +818,48 @@
 - 下一步：
   - 补充 shared/staging 双进程 smoke 与云端 Redis 连通验证。
   - 推进 deadletter/重试上限与告警指标（`queue_depth`、`dispatch_fail_rate`）。
+
+## 28. 本次执行回填（OPT-ARCH-002 deadletter/retry 策略落地）
+
+- 任务编号：`DEV-20260221-ARCH-02-DLQ`
+- 需求映射：`FR-005/FR-006/FR-007`、`NFR-006/NFR-007`
+- 优化项关联：`OPT-ARCH-002`（`In Review`）
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-service-framework.md`
+- 负责人：后端
+- 截止时间：`2026-02-22`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator/src/main.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+- 实施摘要：
+  - 新增 Worker 重试策略配置并落地默认值：`ORCHESTRATOR_MAX_RETRIES=2`（总尝试 3 次）、指数退避、`ORCHESTRATOR_RETRY_JITTER_RATIO=0.2`。
+  - 将不可重试场景（如 `NOT_FOUND`、`NO_PLAN`）改为抛出 `UnrecoverableError`，直接进入死信队列，不再走重试链路。
+  - 新增 deadletter 队列（默认 `QUEUE_NAME.deadletter`）与死信持久化负载，覆盖 Worker 最终失败与 outbox 超重试上限场景。
+  - outbox 分发新增 `ORCHESTRATOR_OUTBOX_MAX_RETRIES=2`，超过阈值时将事件状态更新为 `DEAD` 并写入 deadletter。
+  - 新增死信告警窗口基线：`600s` 窗口、`1%` 比例阈值、最小样本数门槛，超过阈值输出告警日志。
+- 测试证据：
+  - `pnpm --filter @apps/worker-orchestrator typecheck`：通过
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:unit`：通过（`2/2`）
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`10/10`）
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma`：通过
+  - 启动 `api-gateway(TASKS_STORE=prisma)` + `worker-orchestrator(REDIS_URL=redis://127.0.0.1:6379)` 后执行 `pnpm --filter @apps/api-gateway test:shared-smoke`：通过
+- 联调结果：
+  - 本地双进程 smoke 继续通过，`INT-002~INT-005` 主链路无回归。
+  - 队列失败治理路径从“仅日志”升级为“可重试 + 可死信 + 可告警”。
+- 遗留问题：
+  - 当前仅落地 deadletter 持久化与告警，尚未提供运维侧“手动重放”命令封装。
+  - shared/staging 云端 Redis 双进程证据仍需在发布前门禁补齐。
+- 风险与回滚：
+  - 风险：重试与死信阈值配置不当会影响失败恢复速度与队列噪声。
+  - 回滚：回退 `apps/worker-orchestrator/src/main.ts` 本轮策略改动，恢复上一版 queue consumer 行为。
+- 下一步：
+  - 增加 deadletter 手动重放脚本（按 `taskId/eventId` 重投）并补充运维 SOP。
+  - 在 shared/staging 按同策略执行双进程 smoke，补齐云端验收证据。

@@ -1,4 +1,4 @@
-# 变更日志规范（v1.18）
+# 变更日志规范（v1.19）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.19 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter/retry 策略落地执行记录 |
 | v1.18 | 2026-02-21 | 新增 OPT-ARCH-002 Redis/BullMQ 消息驱动编排执行记录 |
 | v1.17 | 2026-02-21 | 新增 OPT-ARCH-002（Worker 编排去副作用）执行记录与双进程 smoke 证据 |
 | v1.16 | 2026-02-21 | 新增 OPT-ARCH-001 本地 PostgreSQL integration/smoke 证据与重启持久化验证记录 |
@@ -72,6 +73,35 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.14] - 2026-02-21
+
+### Added
+- `apps/worker-orchestrator/src/main.ts` 新增 deadletter/retry 治理能力：
+  - 默认重试策略：`ORCHESTRATOR_MAX_RETRIES=2`（总尝试 3 次）
+  - 重试退避策略：指数退避 + `ORCHESTRATOR_RETRY_JITTER_RATIO`
+  - deadletter 队列：`QUEUE_DEADLETTER_NAME`（默认 `QUEUE_NAME.deadletter`）
+- 新增 outbox 超限处理：`ORCHESTRATOR_OUTBOX_MAX_RETRIES=2`，超过阈值将事件置为 `DEAD` 并写入 deadletter。
+- 新增死信告警阈值配置：`ORCHESTRATOR_DEADLETTER_ALERT_WINDOW_SEC`、`ORCHESTRATOR_DEADLETTER_ALERT_RATE`、`ORCHESTRATOR_DEADLETTER_ALERT_MIN_SAMPLES`。
+- `doc/engineering/rd-progress-management.md` 新增第 28 节执行回填（deadletter/retry 策略 + 本地双进程 smoke 证据）。
+
+### Changed
+- `OPT-ARCH-002` 当前现状从“消息驱动”升级为“消息驱动 + 失败治理（重试/死信/告警）”。
+- `doc/engineering/mvp-optimization-backlog.md` 更新 `OPT-ARCH-002` 验收口径，新增死信与阈值告警要求。
+
+### Fixed
+- 修复队列失败路径仅日志记录、缺少持久化治理的问题。
+- 修复 outbox 分发失败无限重试风险，新增上限转 `DEAD` 语义。
+
+### Security
+- 保持 `Authorization`、`Idempotency-Key`、`X-Request-Id` 校验链路不变；仅增强失败治理能力，不放宽鉴权边界。
+
+### Rollback
+- 回退 `apps/worker-orchestrator/src/main.ts` 本轮 deadletter/retry 策略改动与相关台账更新。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.13] - 2026-02-21
 
