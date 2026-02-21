@@ -1149,3 +1149,49 @@
 - 下一步：
   - 获取云端地址后复跑同矩阵命令，补齐发布前门禁证据。
   - 若云端同样通过，将 `OPT-ARCH-002` 状态推进到 `Done`。
+
+## 36. 本次执行回填（OPT-ARCH-002 收尾发布前检查清单-可 Done 版）
+
+- 任务编号：`DEV-20260221-ARCH-02-DOD-CHECKLIST`
+- 需求映射：`FR-005/FR-006/FR-007`、`NFR-006/NFR-007`
+- 优化项关联：`OPT-ARCH-002`（`Done`）
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/project-constraints.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-service-framework.md`
+- 负责人：后端
+- 截止时间：`2026-02-22`
+- 当前状态：`Done`
+- 阻塞项：无（云端部署认证保留在 `BLK-004` 发布前门禁执行）
+- 风险等级：低
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+- 实施摘要：
+  - 基于既有 `deadletter` 治理能力、重放能力、一键演练脚本、矩阵脚本与本地映射三目标结果，形成 `OPT-ARCH-002` 收尾版发布前检查清单。
+  - 按 `DoD` 与发布门禁模板逐项核验，明确“可 Done”与“云端最终认证”边界。
+  - 将优化台账状态更新为 `Done`，并保持发布前云端复验任务在门禁清单中独立追踪。
+- 测试证据：
+  - `pnpm -r typecheck`：通过
+  - `pnpm -r lint`：通过
+  - `DEV_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark DEV_REDIS_URL=redis://127.0.0.1:6379 SHARED_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark SHARED_REDIS_URL=redis://127.0.0.1:6379 STAGING_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark STAGING_REDIS_URL=redis://127.0.0.1:6379 pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill:matrix`：通过（`dev/shared/staging-local` 全绿）
+  - 报告文件：`apps/worker-orchestrator/.runtime/reports/deadletter-guard-drill-matrix-2026-02-21T14-40-27-957Z.md`
+- 联调结果：
+  - 当前迭代范围内，`worker-orchestrator` 已满足状态机推进与失败治理闭环，联调口径可进入发布前门禁阶段。
+- 发布前检查清单（可 Done 版本）：
+  - [x] 真源一致性检查通过
+  - [x] 关键链路测试通过
+  - [x] P0/P1 清零（当前范围：`OPT-ARCH-002`）
+  - [x] 联调阻塞项已清零或有审批例外（`BLK-004` 已转发布前门禁）
+  - [x] 回填记录完整
+  - [x] 回滚方案可执行
+- 遗留问题：
+  - 发布前最后一步需在云端地址执行同矩阵命令，补齐部署与认证边界证据。
+- 风险与回滚：
+  - 风险：若云端网络或鉴权策略与本地映射不一致，可能出现发布前门禁失败。
+  - 回滚：回退 `OPT-ARCH-002` 状态至 `In Review`，并按 `BLK-004` 流程补齐修复后再评审。
+- 下一步：
+  - 等待你提供阿里云地址后，执行云端矩阵复验并追加证据。
+  - 保持 `OPT-ARCH-002` 为 `Done`，云端证据归并到发布前总验收记录。

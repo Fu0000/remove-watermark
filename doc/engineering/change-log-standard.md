@@ -1,4 +1,4 @@
-# 变更日志规范（v1.26）
+# 变更日志规范（v1.27）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.27 | 2026-02-21 | 新增 OPT-ARCH-002 发布前检查清单（可 Done 版本）收尾记录 |
 | v1.26 | 2026-02-21 | 新增 OPT-ARCH-002 shared/staging 本地映射矩阵验收执行记录 |
 | v1.25 | 2026-02-21 | 新增 OPT-ARCH-002 guard-drill 矩阵与报告能力执行记录 |
 | v1.24 | 2026-02-21 | 新增 OPT-ARCH-002 阻断/放行一键演练脚本执行记录 |
@@ -80,6 +81,31 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.22] - 2026-02-21
+
+### Added
+- `doc/engineering/rd-progress-management.md` 新增第 36 节执行回填，沉淀 `OPT-ARCH-002` 收尾发布前检查清单（可 Done 版本）。
+- 新增发布前检查清单逐项结论（真源一致性、关键链路、P0/P1、阻塞例外、回滚能力）。
+- 新增本轮矩阵报告引用：
+  - `apps/worker-orchestrator/.runtime/reports/deadletter-guard-drill-matrix-2026-02-21T14-40-27-957Z.md`
+
+### Changed
+- `doc/engineering/mvp-optimization-backlog.md` 中 `OPT-ARCH-002` 状态由 `In Review` 更新为 `Done`，并补充“发布前检查清单可执行”验收口径。
+- 将云端复验动作明确收敛到 `BLK-004` 发布前门禁，不阻塞本次优化项收口。
+
+### Fixed
+- 修复 `OPT-ARCH-002` 已具备收尾条件但缺少统一发布前检查清单版本的问题。
+
+### Security
+- 保持“本地映射验收 + 发布前云端复验”双门禁，不放宽认证与环境边界要求。
+
+### Rollback
+- 回退第 36 节回填与 `OPT-ARCH-002` 状态更新，恢复 `In Review` 并按原路径继续评审。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.21] - 2026-02-21
 
