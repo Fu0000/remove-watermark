@@ -1,4 +1,4 @@
-# 变更日志规范（v1.34）
+# 变更日志规范（v1.35）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.35 | 2026-02-22 | 新增 BE-008 第二阶段（webhook dispatcher 持久化派发）执行记录 |
 | v1.34 | 2026-02-21 | 新增 BE-008 Webhook 签名协议落地（HMAC-SHA256 + Id/Timestamp/Key-Id）执行记录 |
 | v1.33 | 2026-02-21 | 新增 BE-008/INT-007 第一阶段（Webhook 管理 + test/retry 本地闭环）执行记录 |
 | v1.32 | 2026-02-21 | 新增 INT-006 本地闭环（mock-confirm + 配额门禁 40302 + shared-smoke 校验）执行记录 |
@@ -88,6 +89,38 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.30] - 2026-02-22
+
+### Added
+- 新增 webhook 持久化模型与迁移：
+  - `apps/api-gateway/prisma/schema.prisma` 增加 `WebhookEndpoint/WebhookDelivery`
+  - `apps/api-gateway/prisma/migrations/20260222030000_add_webhook_tables/migration.sql`
+- 新增 `webhook-dispatcher` 实际派发能力：
+  - `apps/webhook-dispatcher/src/dispatcher.ts`（outbox 轮询、签名派发、重试窗口、状态收敛）
+  - `apps/webhook-dispatcher/src/main.ts`（常驻/单次运行）
+  - `apps/webhook-dispatcher/src/smoke.ts`（本地 PostgreSQL smoke）
+  - `apps/webhook-dispatcher/.env.example`
+- `doc/engineering/rd-progress-management.md` 新增第 44 节回填（BE-008 第二阶段执行证据）。
+
+### Changed
+- `apps/api-gateway/src/modules/webhooks/webhooks.service.ts` 切换为 Prisma 优先存储（保留内存兜底），并扩展 dispatcher 失败码兼容显示。
+- `apps/api-gateway/.env.example` 增加 `WEBHOOKS_STORE=prisma`。
+- `apps/webhook-dispatcher/package.json` 新增 `@prisma/client` 依赖与 `test:smoke` 命令。
+- `doc/engineering/rd-progress-management.md` 更新 `SVC-004/BE-008/INT-007` 进度描述与测试看板。
+
+### Fixed
+- 修复 `BE-008` “endpoint/delivery 仅内存态、dispatcher 未接入”的关键联调断点。
+
+### Security
+- 出站派发沿用 `HMAC-SHA256` + `X-Webhook-Id/Timestamp/Key-Id/Signature` 规范，不放宽签名与鉴权边界。
+
+### Rollback
+- 回退 `webhook` Prisma 模型/迁移与 `webhook-dispatcher` 新增逻辑，恢复到 0.5.29 的 API 内 test/retry 最小闭环。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/webhook-dispatcher`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.29] - 2026-02-21
 
