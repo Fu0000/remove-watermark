@@ -36,6 +36,7 @@ interface ReplayFilters {
 
 const DEFAULT_REPLAY_CONCURRENCY_CAP = 10;
 const ELEVATED_REPLAY_CONCURRENCY_CAP = 20;
+const DEFAULT_HIGH_CONCURRENCY_BULK_REJECT_THRESHOLD = 50;
 
 function parsePositiveInt(value: string, fallback: number) {
   const parsed = Number.parseInt(value, 10);
@@ -271,6 +272,14 @@ async function main() {
   const lookbackMinutes = parsePositiveInt(readEnv("DLQ_LOOKBACK_MINUTES", "0"), 0);
   const dryRun = parseBoolean(readEnv("DLQ_DRY_RUN", "true"), true);
   const deleteAfterReplay = parseBoolean(readEnv("DLQ_DELETE_AFTER_REPLAY", "false"), false);
+  const highConcurrencyBulkRejectThreshold = parsePositiveInt(
+    readEnv("DLQ_HIGH_CONCURRENCY_BULK_REJECT_THRESHOLD", String(DEFAULT_HIGH_CONCURRENCY_BULK_REJECT_THRESHOLD)),
+    DEFAULT_HIGH_CONCURRENCY_BULK_REJECT_THRESHOLD
+  );
+  const allowHighConcurrencyBulkReplay = parseBoolean(
+    readEnv("DLQ_ALLOW_HIGH_CONCURRENCY_BULK_REPLAY", "false"),
+    false
+  );
   const source = parseSource(readEnv("DLQ_SOURCE", "all"), "all");
 
   const createdAfterFromEnv = parseDateMillis(readEnv("DLQ_CREATED_AFTER", ""));
@@ -308,6 +317,8 @@ async function main() {
       replayConcurrency,
       replayConcurrencyCap,
       allowHighConcurrency,
+      highConcurrencyBulkRejectThreshold,
+      allowHighConcurrencyBulkReplay,
       lookbackMinutes,
       matched: matched.length,
       filters: {
@@ -330,6 +341,27 @@ async function main() {
         replayConcurrency
       },
       "replay concurrency exceeds cap, clamped to safe limit"
+    );
+  }
+
+  if (
+    !dryRun &&
+    allowHighConcurrency &&
+    replayConcurrency > DEFAULT_REPLAY_CONCURRENCY_CAP &&
+    matched.length >= highConcurrencyBulkRejectThreshold &&
+    !allowHighConcurrencyBulkReplay
+  ) {
+    logger.error(
+      {
+        matched: matched.length,
+        replayConcurrency,
+        highConcurrencyBulkRejectThreshold,
+        allowHighConcurrencyBulkReplay
+      },
+      "high-concurrency bulk replay blocked by guard"
+    );
+    throw new Error(
+      "high-concurrency bulk replay is blocked; set DLQ_ALLOW_HIGH_CONCURRENCY_BULK_REPLAY=true to confirm"
     );
   }
 

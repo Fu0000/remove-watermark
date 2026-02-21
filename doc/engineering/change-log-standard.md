@@ -1,4 +1,4 @@
-# 变更日志规范（v1.22）
+# 变更日志规范（v1.23）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.23 | 2026-02-21 | 新增 OPT-ARCH-002 高并发批量阻断保护执行记录 |
 | v1.22 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter 并发上限保护执行记录 |
 | v1.21 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter 批量重放增强执行记录 |
 | v1.20 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter 手动重放能力执行记录 |
@@ -76,6 +77,32 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.18] - 2026-02-21
+
+### Added
+- `apps/worker-orchestrator/src/ops/deadletter-replay.ts` 新增“高并发+大批量”联动阻断参数：
+  - `DLQ_HIGH_CONCURRENCY_BULK_REJECT_THRESHOLD`（默认 `50`）
+  - `DLQ_ALLOW_HIGH_CONCURRENCY_BULK_REPLAY`（默认 `false`，显式确认后才允许放行）
+- 新增阻断行为：高并发（> 默认上限）且匹配重放量达到阈值时，脚本直接拒绝执行并返回失败。
+- `doc/engineering/rd-progress-management.md` 新增第 32 节执行回填（阻断策略与预期失败验证证据）。
+
+### Changed
+- deadletter 重放从“高并发可控提权”进一步升级为“高并发提权 + 大批量默认阻断 + 显式二次确认”。
+- `doc/engineering/mvp-optimization-backlog.md` 更新 `OPT-ARCH-002` 现状与验收口径，纳入联动阻断机制。
+
+### Fixed
+- 修复高并发批量重放在误操作场景下可能直接执行的问题，新增硬性阻断门槛。
+
+### Security
+- 保持默认保守策略：未显式开启二次确认时，高并发批量重放会被拒绝执行。
+
+### Rollback
+- 回退 `apps/worker-orchestrator/src/ops/deadletter-replay.ts` 联动阻断逻辑与相关台账更新。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.17] - 2026-02-21
 
