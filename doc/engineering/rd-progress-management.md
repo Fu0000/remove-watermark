@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.7 | 2026-02-22 | 新增 FE-008 管理端真实数据流接入（任务检索/异常重放/套餐查询/Webhook 运维） |
 | v1.6 | 2026-02-22 | 新增 FE-007 本地 smoke 证据补齐（shared-smoke 覆盖删除与审计链路） |
 | v1.5 | 2026-02-22 | 新增 FE-007 第三阶段（删除二次确认与成功提示）执行记录 |
 | v1.4 | 2026-02-22 | 新增 FE-007 第二阶段（编辑/任务页删除入口）执行记录 |
@@ -111,7 +112,7 @@
 | FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | In Review | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 结果查询、预览/复制下载地址、过期提示已联调 |
 | FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | Backlog | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 未开始 |
 | FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | In Review | FR-010/FR-011 | `/v1/account/delete-request*`, `/v1/account/audit-logs`, `DELETE /v1/assets/{assetId}`, `DELETE /v1/tasks/{taskId}` | e2e | 删除申请创建、list/detail、审计日志查询已联调；编辑/任务页删除入口已补齐并新增二次确认与成功提示 |
-| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Progress | FR-012 | `/admin/*` | e2e/smoke | 页面与 RBAC 骨架已完成 |
+| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Progress | FR-012 | `/admin/*` | e2e/smoke | 已接入真实数据流：任务检索+异常重放、套餐查询、Webhook 投递查询/重试；套餐写操作待 `/admin/*` 后端契约开放 |
 
 ### 7.5 后端研发任务（API + Worker + Billing）
 
@@ -196,6 +197,7 @@
 | FE-007 第三阶段（本轮）删除确认交互验证 | `pnpm --filter @apps/user-frontend typecheck` + `pnpm --filter @apps/user-frontend build:h5` | `passed（build 含 2 条包体告警）` | 删除动作新增二次确认弹窗与成功提示，降低误触风险 |
 | FE-007 本地 smoke（本轮） | `SHARED_BASE_URL=http://127.0.0.1:3000 SHARED_USERNAME=admin SHARED_PASSWORD=admin123 SHARED_SMOKE_MAX_POLL_ATTEMPTS=80 SHARED_SMOKE_POLL_INTERVAL_MS=300 pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | `shared-smoke` 已覆盖 FE-007 删除与审计链路（素材删除、任务删除、删除申请 list/detail、审计日志查询） |
 | FE-007 本地 smoke 矩阵（dev-local，本轮） | `SMOKE_MATRIX_TARGETS=dev=http://127.0.0.1:3000 SHARED_SMOKE_MAX_POLL_ATTEMPTS=80 SHARED_SMOKE_POLL_INTERVAL_MS=300 pnpm --filter @apps/api-gateway test:shared-smoke:matrix` | `passed（dev=passed）` | 报告文件：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/.runtime/reports/shared-smoke-matrix-2026-02-21T19-59-34-171Z.md` |
+| FE-008 管理端真实数据流验证（本轮） | `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed` | 已验证管理端任务检索/异常重放、套餐查询、Webhook 投递查询/重试页面可构建并通过类型检查 |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
 | Webhook Dispatcher 本地 smoke（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:smoke` | `passed` | 已验证 outbox `PENDING -> PUBLISHED`、签名头生成与 `webhook_deliveries(SUCCESS)` 持久化闭环 |
@@ -1997,3 +1999,47 @@
   - 回滚：回退 `shared-smoke.ts` 的 FE-007 增量断言，恢复到 FE-007 之前的 smoke 覆盖口径。
 - 下一步：
   - 拿到 shared/staging 云端地址后，复用同命令补齐 FE-007 云端 smoke 证据并推进 `QA`。
+
+## 54. 本次执行回填（FE-008 管理端真实数据流接入）
+
+- 任务编号：`DEV-20260222-FE008-DATAFLOW`
+- 需求映射：`FR-012`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/prd.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/admin-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 负责人：前端（后台）
+- 截止时间：`2026-04-10`
+- 当前状态：`In Progress`
+- 阻塞项：`/admin/*` 后端专用契约尚未开放（当前接入 `v1` 现有接口）
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/services/http.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/services/tasks.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/services/plans.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/services/webhooks.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/pages/tasks/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/pages/plans/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/pages/webhooks/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/components/layout.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 管理端新增统一 API 客户端：自动注入 `Authorization`、`X-Request-Id`、`Idempotency-Key`，并支持本地地址默认值 `http://127.0.0.1:3000`。
+  - `Tasks` 页面从静态样例改为真实查询，支持关键字/状态/时间筛选，并接入 `POST /v1/tasks/{taskId}/retry` 异常重放（含二次确认+必填原因）。
+  - `Plans` 页面接入 `GET /v1/plans` 套餐查询，保留“写操作待 `/admin/plans` 契约开放”的显式提示。
+  - `Webhooks` 页面接入 `GET /v1/webhooks/deliveries` 与 `POST /v1/webhooks/deliveries/{deliveryId}/retry`，支持筛选、分页与失败投递重试。
+  - `Layout` 增强路由高亮与小屏折叠侧栏，保证后台页面在窄屏下可用。
+- 测试证据：
+  - `pnpm --filter @apps/admin-console typecheck`：通过
+  - `pnpm --filter @apps/admin-console build`：通过
+- 联调结果：
+  - 本地地址口径下，FE-008 已具备“任务检索 + 异常重放 + 套餐查询 + Webhook 运维”真实数据闭环。
+- 遗留问题：
+  - 套餐写操作与后台审计落库需等待 `/admin/*` 后端契约落地后补齐。
+- 风险与回滚：
+  - 风险：当前复用 `v1` 用户侧接口，后台专用 RBAC 仅在页面层生效，接口层权限隔离仍待后端补齐。
+  - 回滚：回退 `admin-console` 服务层与三个页面改造，恢复到静态样例版本。
+- 下一步：
+  - 推进 `BE/INT` 侧 `/admin/*` 最小契约（任务检索、重放审计、套餐写接口）并将 FE-008 状态推进到 `In Review`。

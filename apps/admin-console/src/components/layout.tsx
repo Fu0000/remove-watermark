@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Layout, Menu, Typography } from "antd";
 import type { PropsWithChildren } from "react";
+import { useRouter } from "next/router";
 
 const items = [
   { key: "/tasks", label: <Link href="/tasks">任务管理</Link> },
@@ -11,15 +12,18 @@ const items = [
 ];
 
 export function AppLayout({ children }: PropsWithChildren) {
+  const router = useRouter();
+  const selectedMenuKey = router.pathname === "/" ? "" : router.pathname;
+
   return (
     <Layout style={{ minHeight: "100vh" }}>
-      <Layout.Sider width={220} theme="light">
+      <Layout.Sider width={220} theme="light" breakpoint="lg" collapsedWidth={0}>
         <Typography.Title level={4} style={{ margin: 16 }}>
           Admin Console
         </Typography.Title>
-        <Menu mode="inline" items={items} />
+        <Menu mode="inline" items={items} selectedKeys={selectedMenuKey ? [selectedMenuKey] : []} />
       </Layout.Sider>
-      <Layout.Content style={{ padding: 24 }}>{children}</Layout.Content>
+      <Layout.Content style={{ padding: 24, overflowX: "auto" }}>{children}</Layout.Content>
     </Layout>
   );
 }

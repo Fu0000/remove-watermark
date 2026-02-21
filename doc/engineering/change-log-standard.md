@@ -1,4 +1,4 @@
-# 变更日志规范（v1.44）
+# 变更日志规范（v1.45）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.45 | 2026-02-22 | 新增 FE-008 管理端真实数据流接入（任务检索/异常重放/套餐查询/Webhook 运维） |
 | v1.44 | 2026-02-22 | 新增 FE-007 本地 smoke 证据补齐（shared-smoke 覆盖删除与审计链路） |
 | v1.43 | 2026-02-22 | 新增 FE-007 第三阶段（删除二次确认与成功提示）执行记录 |
 | v1.42 | 2026-02-22 | 新增 FE-007 第二阶段（编辑/任务页删除入口）执行记录 |
@@ -98,6 +99,38 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.40] - 2026-02-22
+
+### Added
+- `apps/admin-console/src/services/tasks.ts`：新增任务列表查询与异常重放接口封装。
+- `apps/admin-console/src/services/plans.ts`：新增套餐列表查询接口封装。
+- `apps/admin-console/src/services/webhooks.ts`：新增投递查询与重试接口封装。
+
+### Changed
+- `apps/admin-console/src/services/http.ts` 升级为统一 API 客户端：
+  - 自动注入 `Authorization`、`X-Request-Id`、`Idempotency-Key`
+  - 默认对接本地地址 `http://127.0.0.1:3000`
+  - 统一 `ApiError` 与请求 ID 透传
+- `apps/admin-console/src/pages/tasks/index.tsx` 从静态样例升级为真实数据页：
+  - 任务检索（关键字/状态/时间）与异常重放（二次确认 + 必填原因）
+- `apps/admin-console/src/pages/plans/index.tsx` 接入真实套餐查询并标注写接口待开放。
+- `apps/admin-console/src/pages/webhooks/index.tsx` 接入投递查询、分页筛选与失败重试。
+- `apps/admin-console/src/components/layout.tsx` 增加路由高亮与小屏侧栏折叠。
+- `doc/engineering/rd-progress-management.md` 新增第 54 节回填并补充 FE-008 本轮验证证据。
+
+### Fixed
+- 修复 FE-008 仅有静态占位页面、缺少真实联调数据流的问题。
+
+### Security
+- 管理端请求继续沿用 `Authorization` 与关键操作幂等约束；未放宽后端鉴权语义。
+
+### Rollback
+- 回退 `admin-console` 服务层与 `tasks/plans/webhooks` 页面改造，恢复到 0.5.39 的静态骨架版本。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.39] - 2026-02-22
 
