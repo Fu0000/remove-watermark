@@ -127,7 +127,7 @@
 | Task ID | 对接项 | Owner | Start | End | 状态 | 验收标准 | 备注 |
 |---|---|---|---|---|---|---|---|
 | INT-001 | 契约冻结（字段/错误码/状态机） | 产品+前后端 | 2026-02-24 | 2026-02-28 | In Progress | OpenAPI 冻结并发布 | shared 联调前置 |
-| INT-002 | Header 校验（Authorization/Idempotency-Key/X-Request-Id） | 前后端 | 2026-03-01 | 2026-03-04 | In Review | 三个 Header 行为一致 | 请求层统一已落地，待 shared 验收 |
+| INT-002 | Header 校验（Authorization/Idempotency-Key/X-Request-Id） | 前后端 | 2026-03-01 | 2026-03-04 | In Review | 三个 Header 行为一致 | shared smoke 脚本已落地，待 shared 域名可达后验收 |
 | INT-003 | 上传 -> 创建任务主链路联调 | 前后端+测试 | 2026-03-05 | 2026-03-12 | Backlog | 端到端成功率 >= 95% | 图片优先 |
 | INT-004 | 任务中心状态刷新与错误路径联调 | 前后端+测试 | 2026-03-10 | 2026-03-18 | Backlog | 状态渲染与错误码一致 | 含 retry/cancel |
 | INT-005 | 结果下载与过期策略联调 | 前后端+测试 | 2026-03-14 | 2026-03-20 | Backlog | 过期前提醒与失效行为一致 |  |
@@ -145,7 +145,7 @@
 | ALG-001 | FAST/QUALITY 模型路由及风险标记 | 算法 | Backlog | 2026-03-22 | 高 | 输出质量/成本基线报告 |
 | OPS-001 | 扩缩容与降级阈值告警（queue_depth、INPAINTING P95） | 运维 | Ready | 2026-03-15 | 中 | 完成告警模板与演练 |
 
-## 8. 测试情况与证据（截至 2026-02-20）
+## 8. 测试情况与证据（截至 2026-02-21）
 
 ### 8.1 已执行检查（文档与约束一致性）
 
@@ -161,6 +161,7 @@
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮修复） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | H5 构建链路已恢复，`BLK-003` 已解除（保留包体告警待优化） |
+| shared 联调 smoke（INT-002/INT-003） | `pnpm --filter @apps/api-gateway test:shared-smoke` | `failed（ENOTFOUND chuhaibox.com）` | shared 环境域名当前不可解析，已登记阻塞并待环境确认 |
 | 状态机字面量一致性抽检 | `rg -n "UPLOADED -> QUEUED -> PREPROCESSING -> DETECTING -> INPAINTING -> PACKAGING -> SUCCEEDED\\|FAILED\\|CANCELED" doc \| wc -l` | `6` | 关键文档存在统一字面量 |
 | 幂等约束覆盖抽检 | `rg -n "Idempotency-Key" doc \| wc -l` | `11` | 创建任务幂等约束已在多文档显式出现 |
 | Node+Triton 架构边界抽检 | `rg -n "Node 控制面 \\+ Triton 推理面|Node.*Triton" doc/project-constraints.md doc/prd.md doc/tad.md doc/plan.md` | 命中 `plan.md`、`tad.md` | 架构口径一致，需在实施阶段继续守护 |
@@ -171,7 +172,7 @@
 - shared/staging：`integration + e2e + regression + performance smoke`。
 - 发布前：`NFR-001~NFR-007` 验证与 `P0/P1=0`。
 
-## 9. 完成状态看板（截至 2026-02-20）
+## 9. 完成状态看板（截至 2026-02-21）
 
 统计口径：本节任务清单（ENV/DATA/SVC/FE/BE/INT/治理）共 `43` 项。
 
@@ -201,6 +202,7 @@
 | BLK-001 | shared 环境 Triton/GPU 资源未完成分配 | 运维 | 视频链路、性能基线 | 24h 回填 | 完成资源配额与可用性验证 |
 | BLK-002 | 支付联调测试账号与回调沙箱待开通 | 支付对接人 | 订阅链路、账务验证 | 24h 回填 | 明确开通时间与替代测试方案 |
 | BLK-003 | [已解除 2026-02-20] `@apps/user-frontend` `build:h5` webpack alias 校验异常（`@tarojs/shared`）已修复 | 前端 | H5 端构建与联调节奏 | 24h 回填 | 跟踪包体告警并推进体积优化 |
+| BLK-004 | shared 联调域名 `chuhaibox.com` 在当前执行环境 DNS 不可解析（`ENOTFOUND`） | 前后端 | `INT-002/INT-003` shared 验收 | 24h 回填 | 确认可访问 API 域名/网络前置（VPN 或 hosts） |
 
 ## 12. 本次执行回填（框架初始化）
 
@@ -307,3 +309,30 @@
 - 下一步：
   - 在 shared 环境验证 `INT-002` Header 一致性并推进 `INT-003`
   - 制定 H5 包体优化方案（按页面拆包、依赖裁剪）
+
+## 16. 本次执行回填（shared 联调接入准备）
+
+- 任务编号：`DEV-20260221-INT-01`
+- 需求映射：`FR-001/FR-002/FR-005/FR-006`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/frontend-framework.md`
+- 实施摘要：
+  - 新增 shared 联调 smoke 脚本：`apps/api-gateway/scripts/shared-smoke.ts`
+  - 新增命令：`pnpm --filter @apps/api-gateway test:shared-smoke`，覆盖 `INT-002/INT-003` 最小验收路径
+  - 用户前端接入 shared 环境运行时配置：`API Base URL`、固定联调账号参数（`admin/admin123`）
+  - 前端首页登录链路改为读取运行时配置并透传 shared 联调参数
+- 测试证据：
+  - `pnpm --filter @apps/user-frontend typecheck`：通过
+  - `pnpm --filter @apps/user-frontend build:h5`：通过（含 2 条包体告警）
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（5/5）
+  - `pnpm -r typecheck`：通过（15/15）
+  - `pnpm --filter @apps/api-gateway test:shared-smoke`：失败（`ENOTFOUND chuhaibox.com`）
+- 风险与回滚：
+  - 风险：shared 域名不可解析导致 `INT-002/INT-003` 无法完成环境验收
+  - 回滚：回退 `apps/api-gateway/scripts/shared-smoke.ts` 与 `apps/user-frontend/src/config/runtime.ts` 及相关调用
+- 当前状态：`In Progress`
+- 下一步：
+  - 获取可解析且可访问的 shared API 域名（或网络前置条件）
+  - 执行 shared smoke 并回填 `INT-002/INT-003` 验收结果

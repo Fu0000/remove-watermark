@@ -1,4 +1,4 @@
-# 变更日志规范（v1.4）
+# 变更日志规范（v1.5）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.5 | 2026-02-21 | 新增 shared 联调 smoke 脚本与环境接入准备回填 |
 | v1.4 | 2026-02-20 | 新增 FE 联调主链路与 H5 构建阻塞修复执行日志 |
 | v1.3 | 2026-02-20 | 新增 api-gateway 契约闭环执行日志与测试证据回填 |
 | v1.2 | 2026-02-19 | 新增框架初始化阶段执行日志（Monorepo、前后端骨架、测试与阻塞回填） |
@@ -58,6 +59,31 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.0] - 2026-02-21
+
+### Added
+- 新增 shared 联调 smoke 脚本：`apps/api-gateway/scripts/shared-smoke.ts`。
+- 新增执行命令：`pnpm --filter @apps/api-gateway test:shared-smoke`（覆盖 `INT-002/INT-003` 最小验收路径）。
+- 新增用户前端运行时配置：`apps/user-frontend/src/config/runtime.ts` 与 `apps/user-frontend/.env.example`。
+
+### Changed
+- `apps/user-frontend/src/services/auth.ts` 登录请求支持透传 shared 联调参数（`code/username/password`）。
+- `apps/user-frontend/src/pages/home/index.tsx` 改为基于运行时配置触发登录并展示当前 API 地址。
+- `doc/engineering/rd-progress-management.md` 增加 shared smoke 测试证据与 `BLK-004` 阻塞记录。
+
+### Fixed
+- 将 shared 联调验收从“手工触发”升级为“脚本化可复用流程”，减少环境切换时的验证遗漏。
+
+### Security
+- 继续保持 `Authorization`、`Idempotency-Key`、`X-Request-Id` 关键头验证路径。
+
+### Rollback
+- 回退 `apps/api-gateway/scripts/shared-smoke.ts`、`apps/user-frontend/src/config/runtime.ts`、`apps/user-frontend/src/services/auth.ts`、`apps/user-frontend/src/pages/home/index.tsx` 与台账更新。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.4.0] - 2026-02-20
 

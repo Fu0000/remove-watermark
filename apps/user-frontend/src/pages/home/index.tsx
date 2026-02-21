@@ -5,6 +5,7 @@ import { PageShell } from "@/modules/common/page-shell";
 import { wechatLogin } from "@/services/auth";
 import { ApiError } from "@/services/http";
 import { useAuthStore } from "@/stores/auth.store";
+import { API_BASE_URL, SHARED_AUTH_CODE, SHARED_PASSWORD, SHARED_USERNAME } from "@/config/runtime";
 
 export default function HomePage() {
   const [loading, setLoading] = useState(false);
@@ -17,7 +18,11 @@ export default function HomePage() {
     setErrorText("");
     try {
       if (!user) {
-        const response = await wechatLogin("dev-auth-code");
+        const response = await wechatLogin({
+          code: SHARED_AUTH_CODE,
+          username: SHARED_USERNAME,
+          password: SHARED_PASSWORD
+        });
         setSession(response.data);
       }
 
@@ -40,6 +45,9 @@ export default function HomePage() {
       </View>
       <View>
         <Text>{user ? `剩余额度：${user.quotaLeft}` : "首次进入会自动创建联调会话"}</Text>
+      </View>
+      <View>
+        <Text>当前 API：{API_BASE_URL}</Text>
       </View>
       <View>
         <Button loading={loading} onClick={handleStart}>

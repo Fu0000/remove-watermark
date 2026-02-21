@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "echo 'lint api-gateway: pending eslint setup'",
-    "test:contract": "node --test --import tsx test/contract.spec.ts"
+    "test:contract": "node --test --import tsx test/contract.spec.ts",
+    "test:shared-smoke": "tsx scripts/shared-smoke.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.7",

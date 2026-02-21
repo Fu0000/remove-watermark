@@ -1,8 +1,7 @@
 import Taro from "@tarojs/taro";
 import type { ApiResponse } from "@packages/contracts";
 import { buildRequestId } from "@/utils/request-id";
-
-const API_BASE_URL = process.env.TARO_APP_API_BASE_URL || "http://127.0.0.1:3000";
+import { API_BASE_URL } from "@/config/runtime";
 
 type TokenAccessor = () => string | undefined;
 let tokenAccessor: TokenAccessor = () => undefined;

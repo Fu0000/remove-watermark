@@ -1,5 +1,13 @@
 import { request } from "./http";
 
+interface WechatLoginRequest {
+  code: string;
+  username?: string;
+  password?: string;
+  deviceId?: string;
+  clientVersion?: string;
+}
+
 interface WechatLoginResponse {
   accessToken: string;
   refreshToken: string;
@@ -11,14 +19,16 @@ interface WechatLoginResponse {
   };
 }
 
-export function wechatLogin(code: string) {
+export function wechatLogin(payload: WechatLoginRequest) {
   return request<WechatLoginResponse>("/v1/auth/wechat-login", {
     method: "POST",
     requireAuth: false,
     data: {
-      code,
-      deviceId: "dev_user_frontend",
-      clientVersion: "0.1.0"
+      code: payload.code,
+      username: payload.username,
+      password: payload.password,
+      deviceId: payload.deviceId || "dev_user_frontend",
+      clientVersion: payload.clientVersion || "0.1.0"
     }
   });
 }
