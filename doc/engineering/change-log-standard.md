@@ -1,4 +1,4 @@
-# 变更日志规范（v1.15）
+# 变更日志规范（v1.16）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.16 | 2026-02-21 | 新增 OPT-ARCH-001 本地 PostgreSQL integration/smoke 证据与重启持久化验证记录 |
 | v1.15 | 2026-02-21 | 新增 OPT-ARCH-001（Prisma 持久化基座）执行记录与流程门禁补充 |
 | v1.14 | 2026-02-21 | 调整 INT-004/INT-005 验收口径为“本地证据先行、云端认证发布前执行” |
 | v1.13 | 2026-02-21 | 新增 shared-smoke 多环境矩阵脚本与报告输出能力 |
@@ -69,6 +70,28 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.11] - 2026-02-21
+
+### Changed
+- `doc/engineering/rd-progress-management.md` 补充 `OPT-ARCH-001` 本地 PostgreSQL 运行时证据：
+  - Prisma 迁移部署验证（`migrate deploy`）
+  - Prisma 模式下本地 `shared-smoke` 验证（`INT-002~INT-005`）
+  - 网关重启后任务持久化读取与核心表计数核对
+- 第 25 节执行回填更新“测试证据/联调结果/遗留问题”，将“缺少 DB 运行时证据”收敛为“缺少 shared/staging 云端证据”。
+
+### Fixed
+- 补齐 `OPT-ARCH-001` 在本地 PostgreSQL 场景下缺少 integration/smoke 证据的问题。
+
+### Security
+- 本地 integration/smoke 继续保持 `Authorization`、`Idempotency-Key`、`X-Request-Id` 校验链路，无鉴权策略放宽。
+
+### Rollback
+- 回退 `doc/engineering/rd-progress-management.md` 的本轮证据回填，恢复到仅“代码就绪”的记录状态。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.10] - 2026-02-21
 

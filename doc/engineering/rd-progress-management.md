@@ -160,6 +160,9 @@
 | API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `10 passed / 0 failed` | 关键契约（含 `cancel/retry` 幂等与冲突路径）可联调 |
 | API 网关单元测试 | `pnpm --filter @apps/api-gateway test:unit` | `2 passed / 0 failed` | `BE-003/BE-004`（事务创建与乐观锁）核心规则可回归 |
 | Prisma 客户端生成校验（本轮） | `pnpm --filter @apps/api-gateway prisma:generate` | `passed` | Prisma schema 与客户端代码生成可用，支持后续 shared DB 联调 |
+| 本地 PostgreSQL 迁移部署验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma` | `passed（No pending migrations）` | 本地库迁移链路可执行，DDL 与 Prisma 迁移记录一致 |
+| Prisma 模式 shared smoke（本轮，本地） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | `INT-002~INT-005` 在 Prisma 持久化分支可通过 |
+| Prisma 持久化重启校验（本轮） | `重启网关后 GET /v1/tasks` + `psql count` | `passed（tasks=2, task_masks=1, idempotency_keys=2, usage_ledger=3, outbox_events=3）` | 本地重启后任务与幂等相关数据不丢失 |
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 编辑页真实绘制交互可完成多端构建（保留包体告警待优化） |
@@ -698,14 +701,17 @@
   - 修复 `seedFailedTask` 在 Prisma 分支的异步等待问题，避免测试与调用提前返回。
 - 测试证据：
   - `pnpm --filter @apps/api-gateway prisma:generate`：通过
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma`：通过（`No pending migrations`）
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma pnpm --filter @apps/api-gateway test:shared-smoke`：通过
   - `pnpm --filter @apps/api-gateway typecheck`：通过
   - `pnpm --filter @apps/api-gateway test:unit`：通过（`2/2`）
   - `pnpm --filter @apps/api-gateway test:contract`：通过（`10/10`）
 - 联调结果：
   - 在 `NODE_ENV=test` 路径下，现有契约与幂等行为保持兼容，无回归。
-  - Prisma 持久化分支可编译并可生成客户端代码，满足下一步 shared DB 联调准备。
+  - Prisma 持久化分支在本地 PostgreSQL + 本地 smoke 路径可稳定通过（含 `INT-002~INT-005`）。
+  - 服务重启后通过接口仍可读取已创建任务（`GET /v1/tasks total=2`），验证持久化生效。
 - 遗留问题：
-  - 尚未在真实 PostgreSQL 上执行端到端 smoke，当前缺少 DB 运行时证据。
+  - shared/staging 云端 PostgreSQL 尚未执行 smoke，对应环境证据待发布前门禁补齐。
   - Worker 队列化推进（`OPT-ARCH-002`）尚未接入，状态推进仍有 API 模拟路径。
 - 风险与回滚：
   - 风险：若直接切换 `TASKS_STORE=prisma` 且 DB 连接不可用，会导致 API 启动后首次持久化访问失败。
