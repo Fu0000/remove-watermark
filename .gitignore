@@ -12,3 +12,4 @@ apps/user-frontend/.temp
 apps/user-frontend/.taro
 apps/user-frontend/.swc
 apps/api-gateway/.runtime/
+apps/worker-orchestrator/.runtime/

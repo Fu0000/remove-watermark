@@ -172,6 +172,7 @@
 | Deadletter 并发上限保护校验（本轮） | `DLQ_REPLAY_CONCURRENCY=20` 分别在 `DLQ_ALLOW_HIGH_CONCURRENCY=false/true` 下执行 `ops:deadletter:replay` | `passed` | 默认并发上限 `10`；仅在显式开启高并发开关时允许提升至 `20` |
 | Deadletter 高并发批量阻断校验（本轮） | `DLQ_DRY_RUN=false + DLQ_ALLOW_HIGH_CONCURRENCY=true + DLQ_REPLAY_CONCURRENCY=20 + DLQ_HIGH_CONCURRENCY_BULK_REJECT_THRESHOLD=1` 执行 `ops:deadletter:replay` | `passed（预期阻断）` | 达到阈值且未显式二次确认时，脚本会直接拒绝执行 |
 | Deadletter 阻断/放行一键演练校验（本轮） | `DATABASE_URL=... REDIS_URL=... pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill` | `passed` | 已脚本化“构造样本 -> 阻断验证 -> 放行验证 -> 自动清理”闭环，可直接用于 shared/staging 演练 |
+| Deadletter 演练矩阵校验（本轮） | `DEV_DATABASE_URL=... DEV_REDIS_URL=... pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill:matrix` | `passed（dev）` | 已支持多环境矩阵执行与报告输出，shared/staging 待补充目标地址 |
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 编辑页真实绘制交互可完成多端构建（保留包体告警待优化） |
@@ -1068,3 +1069,47 @@
 - 下一步：
   - 切换 shared/staging 后执行同一命令生成云端演练证据并回填。
   - 基于云端数据决定 `DLQ_HIGH_CONCURRENCY_BULK_REJECT_THRESHOLD` 默认值是否调整。
+
+## 34. 本次执行回填（OPT-ARCH-002 演练矩阵与报告能力）
+
+- 任务编号：`DEV-20260221-ARCH-02-REPLAY-MATRIX`
+- 需求映射：`FR-005/FR-006/FR-007`、`NFR-006/NFR-007`
+- 优化项关联：`OPT-ARCH-002`（`In Review`）
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-service-framework.md`
+- 负责人：后端
+- 截止时间：`2026-02-22`
+- 当前状态：`In Review`
+- 阻塞项：shared/staging 数据库与 Redis 地址待提供
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator/src/ops/deadletter-guard-drill-matrix.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/.gitignore`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+- 实施摘要：
+  - 新增矩阵命令：`pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill:matrix`。
+  - 支持默认目标解析：
+    - `dev`：`DEV_DATABASE_URL/DEV_REDIS_URL`（或回退 `DATABASE_URL/REDIS_URL`）
+    - `shared`：`SHARED_DATABASE_URL/SHARED_REDIS_URL`
+    - `staging`：`STAGING_DATABASE_URL/STAGING_REDIS_URL`
+  - 支持自定义目标：`DRILL_MATRIX_TARGETS=name=databaseUrl|redisUrl,...`。
+  - 支持报告输出：默认写入 `apps/worker-orchestrator/.runtime/reports/`（可用 `DRILL_MATRIX_WRITE_REPORT=0` 关闭写文件）。
+  - `.gitignore` 新增 `apps/worker-orchestrator/.runtime/`，避免运行产物污染仓库。
+- 测试证据：
+  - `pnpm --filter @apps/worker-orchestrator typecheck`：通过
+  - `DEV_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark DEV_REDIS_URL=redis://127.0.0.1:6379 DRILL_MATRIX_WRITE_REPORT=0 pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill:matrix`：通过（`dev=passed`）
+- 联调结果：
+  - 本地已可一键输出矩阵执行结果；同命令可迁移至 shared/staging 补齐云端证据。
+- 遗留问题：
+  - shared/staging 目标环境变量未提供，当前仅完成 dev 证据。
+- 风险与回滚：
+  - 风险：若目标配置错误，矩阵命令会按失败退出并阻断流程。
+  - 回滚：回退 `deadletter-guard-drill-matrix.ts`、`package.json` 命令和 `.gitignore` 调整。
+- 下一步：
+  - 提供 shared/staging DB 与 Redis 地址后，执行矩阵命令并回填云端证据。
+  - 若云端稳定，推进 `OPT-ARCH-002` 进入 `Done` 评审。

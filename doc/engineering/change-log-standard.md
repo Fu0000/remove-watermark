@@ -1,4 +1,4 @@
-# 变更日志规范（v1.24）
+# 变更日志规范（v1.25）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.25 | 2026-02-21 | 新增 OPT-ARCH-002 guard-drill 矩阵与报告能力执行记录 |
 | v1.24 | 2026-02-21 | 新增 OPT-ARCH-002 阻断/放行一键演练脚本执行记录 |
 | v1.23 | 2026-02-21 | 新增 OPT-ARCH-002 高并发批量阻断保护执行记录 |
 | v1.22 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter 并发上限保护执行记录 |
@@ -78,6 +79,35 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.20] - 2026-02-21
+
+### Added
+- 新增矩阵脚本：`apps/worker-orchestrator/src/ops/deadletter-guard-drill-matrix.ts`。
+- 新增命令：`pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill:matrix`。
+- 矩阵脚本支持：
+  - 默认目标：`dev/shared/staging`（按环境变量可用性自动解析）
+  - 自定义目标：`DRILL_MATRIX_TARGETS=name=databaseUrl|redisUrl,...`
+  - Markdown 报告输出（默认 `apps/worker-orchestrator/.runtime/reports/`）
+- `.gitignore` 新增 `apps/worker-orchestrator/.runtime/`，避免矩阵报告污染仓库。
+- `doc/engineering/rd-progress-management.md` 新增第 34 节执行回填（矩阵命令与 dev 证据）。
+
+### Changed
+- deadletter guard drill 从单环境执行扩展为矩阵执行与可归档报告能力。
+- `doc/engineering/mvp-optimization-backlog.md` 更新 `OPT-ARCH-002` 验收口径，纳入矩阵报告能力。
+
+### Fixed
+- 修复云端演练证据需要手工汇总的问题，改为脚本自动汇总。
+
+### Security
+- 矩阵脚本仅透传指定环境变量，不引入新的鉴权绕过路径；报告目录默认忽略提交。
+
+### Rollback
+- 回退 `deadletter-guard-drill-matrix.ts`、`package.json` 新增命令、`.gitignore` 与相关台账更新。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.19] - 2026-02-21
 
