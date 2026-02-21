@@ -1,4 +1,4 @@
-# 变更日志规范（v1.13）
+# 变更日志规范（v1.14）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.14 | 2026-02-21 | 调整 INT-004/INT-005 验收口径为“本地证据先行、云端认证发布前执行” |
 | v1.13 | 2026-02-21 | 新增 shared-smoke 多环境矩阵脚本与报告输出能力 |
 | v1.12 | 2026-02-21 | 新增 shared-smoke 对 INT-004/INT-005 的本地联调覆盖记录 |
 | v1.11 | 2026-02-21 | 新增 FE-003 真实绘制交互与多端坐标适配执行日志 |
@@ -67,6 +68,25 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.9] - 2026-02-21
+
+### Changed
+- `doc/engineering/rd-progress-management.md` 调整 `INT-004/INT-005` 当前阶段验收口径：
+  - 本地 smoke 证据作为当前迭代验收依据
+  - 云端 shared/staging 认证与验收后置到发布前最终门禁
+- `INT-004`、`INT-005` 状态由 `In Progress` 更新为 `In Review`。
+- `BLK-004` 影响范围由“当前联调阻塞”调整为“发布前云端部署认证门禁”。
+
+### Security
+- 保持发布前必须执行云端认证与 smoke 验收的门禁要求，不取消最终环境验证。
+
+### Rollback
+- 回退 `doc/engineering/rd-progress-management.md` 与本次验收口径调整记录。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.8] - 2026-02-21
 

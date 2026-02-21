@@ -129,8 +129,8 @@
 | INT-001 | 契约冻结（字段/错误码/状态机） | 产品+前后端 | 2026-02-24 | 2026-02-28 | In Progress | OpenAPI 冻结并发布 | shared 联调前置 |
 | INT-002 | Header 校验（Authorization/Idempotency-Key/X-Request-Id） | 前后端 | 2026-03-01 | 2026-03-04 | In Review | 三个 Header 行为一致 | shared smoke 脚本已落地，待 shared 域名可达后验收 |
 | INT-003 | 上传 -> 创建任务主链路联调 | 前后端+测试 | 2026-03-05 | 2026-03-12 | In Progress | 端到端成功率 >= 95% | 本地 smoke 已通过，待云端 shared 验收 |
-| INT-004 | 任务中心状态刷新与错误路径联调 | 前后端+测试 | 2026-03-10 | 2026-03-18 | In Progress | 状态渲染与错误码一致 | 本地 smoke 已覆盖状态推进与错误路径，待 shared/staging 验收 |
-| INT-005 | 结果下载与过期策略联调 | 前后端+测试 | 2026-03-14 | 2026-03-20 | In Progress | 过期前提醒与失效行为一致 | 本地 smoke 已覆盖结果下载与 expireAt 校验，待 shared/staging 验收 |
+| INT-004 | 任务中心状态刷新与错误路径联调 | 前后端+测试 | 2026-03-10 | 2026-03-18 | In Review | 状态渲染与错误码一致 | 本地 smoke 已覆盖状态推进与错误路径；按阶段例外以本地证据验收，云端认证后置发布前门禁 |
+| INT-005 | 结果下载与过期策略联调 | 前后端+测试 | 2026-03-14 | 2026-03-20 | In Review | 过期前提醒与失效行为一致 | 本地 smoke 已覆盖结果下载与 expireAt 校验；按阶段例外以本地证据验收，云端认证后置发布前门禁 |
 | INT-006 | 订阅/配额扣减联调 | 前后端+测试+支付 | 2026-03-24 | 2026-04-07 | Backlog | 扣减一致率 100% | 含退款回滚 |
 | INT-007 | Webhook 对接联调（验签/重试/幂等） | 后端+外部系统 | 2026-03-28 | 2026-04-12 | Backlog | 签名校验通过，重试可观测 |  |
 | INT-008 | staging 全链路回归与发布演练 | 全体 | 2026-04-28 | 2026-05-10 | Backlog | 发布准入清单全绿 | 不允许跳过 staging |
@@ -181,10 +181,10 @@
 | 状态 | 数量 | 占比 |
 |---|---:|---:|
 | Done | 1 | 2.3% |
-| In Progress | 7 | 16.3% |
+| In Progress | 5 | 11.6% |
 | Ready | 8 | 18.6% |
 | Backlog | 14 | 32.6% |
-| In Review | 13 | 30.2% |
+| In Review | 15 | 34.9% |
 | QA | 0 | 0.0% |
 
 ## 10. 关键结果（KR）跟踪（v1.0）
@@ -204,7 +204,7 @@
 | BLK-001 | shared 环境 Triton/GPU 资源未完成分配 | 运维 | 视频链路、性能基线 | 24h 回填 | 完成资源配额与可用性验证 |
 | BLK-002 | 支付联调测试账号与回调沙箱待开通 | 支付对接人 | 订阅链路、账务验证 | 24h 回填 | 明确开通时间与替代测试方案 |
 | BLK-003 | [已解除 2026-02-20] `@apps/user-frontend` `build:h5` webpack alias 校验异常（`@tarojs/shared`）已修复 | 前端 | H5 端构建与联调节奏 | 24h 回填 | 跟踪包体告警并推进体积优化 |
-| BLK-004 | [已缓解 2026-02-21] 云端 shared 域名待切换（当前以本地 `127.0.0.1` 执行联调） | 前后端 | `INT-002~INT-005` 云端验收 | 24h 回填 | 等待阿里云地址后执行云端 smoke 验收 |
+| BLK-004 | [已转发布前门禁 2026-02-21] 云端 shared/staging 域名与认证待切换（当前以本地 `127.0.0.1` 执行联调） | 前后端 | 发布前云端部署认证 | 24h 回填 | 发布前最后一步执行云端 smoke + 认证验收 |
 
 ## 12. 本次执行回填（框架初始化）
 
@@ -625,3 +625,36 @@
 - 下一步：
   - 等待你提供阿里云 shared/staging 地址后，执行完整矩阵并回填环境对比结果。
   - 根据结果评估是否把矩阵脚本接入 CI 发布前 smoke 门禁。
+
+## 24. 本次执行回填（INT-004/INT-005 验收口径调整）
+
+- 任务编号：`DEV-20260221-INT-0405-EXCEPTION`
+- 需求映射：`FR-005/FR-006/FR-007`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+- 负责人：前后端联调
+- 截止时间：`2026-02-21`
+- 当前状态：`In Review`
+- 阻塞项：`BLK-004`（已转发布前门禁，不阻塞当前阶段联调推进）
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 根据项目阶段决策，`INT-004/INT-005` 当前阶段采用本地 smoke 证据作为验收依据。
+  - 将云端 shared/staging 验证调整为发布前最终门禁执行，不作为当前迭代阻塞项。
+  - 更新任务状态：`INT-004/INT-005` 从 `In Progress` 调整为 `In Review`。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway test:shared-smoke`：通过（本地 fallback）
+  - `pnpm --filter @apps/api-gateway test:shared-smoke:matrix`：通过（`dev=passed`）
+- 联调结果：
+  - 本地联调覆盖 `INT-002~INT-005` 关键链路，当前阶段验收条件满足。
+- 遗留问题：
+  - 云端域名与认证链路尚未执行；需在发布前最后一步补齐并留存证据。
+- 风险与回滚：
+  - 风险：若发布前云端认证与本地行为存在差异，可能引入临发布修正成本。
+  - 回滚：恢复 `INT-004/INT-005` 为 `In Progress` 并恢复 `BLK-004` 为当前阻塞项。
+- 下一步：
+  - 发布前最后一步执行 shared/staging 云端 smoke 与认证验收并回填结果。
