@@ -10,6 +10,8 @@
     "lint": "echo 'lint worker-orchestrator: pending eslint setup'"
   },
   "dependencies": {
-    "@packages/shared": "workspace:*"
+    "@packages/contracts": "workspace:*",
+    "@packages/shared": "workspace:*",
+    "@prisma/client": "^5.22.0"
   }
 }

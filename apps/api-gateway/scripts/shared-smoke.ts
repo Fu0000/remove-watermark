@@ -50,6 +50,10 @@ function buildRequestId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function request<T>(
   path: string,
   options: {
@@ -300,6 +304,7 @@ async function main() {
   let previousStatusOrder = -1;
   let previousProgress = -1;
   const observedStatus: TaskStatus[] = [];
+  const pollIntervalMs = Number.parseInt(process.env.SHARED_SMOKE_POLL_INTERVAL_MS || "250", 10);
 
   for (let index = 0; index < 8; index += 1) {
     const detailResp = await request<{
@@ -333,6 +338,8 @@ async function main() {
       finalStatus = currentStatus;
       break;
     }
+
+    await sleep(Number.isFinite(pollIntervalMs) && pollIntervalMs > 0 ? pollIntervalMs : 250);
   }
 
   assert(finalStatus === "SUCCEEDED", `任务未在预期轮次内成功，状态轨迹=${observedStatus.join(" -> ")}`);

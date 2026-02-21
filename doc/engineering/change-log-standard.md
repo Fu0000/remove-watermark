@@ -1,4 +1,4 @@
-# 变更日志规范（v1.16）
+# 变更日志规范（v1.17）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.17 | 2026-02-21 | 新增 OPT-ARCH-002（Worker 编排去副作用）执行记录与双进程 smoke 证据 |
 | v1.16 | 2026-02-21 | 新增 OPT-ARCH-001 本地 PostgreSQL integration/smoke 证据与重启持久化验证记录 |
 | v1.15 | 2026-02-21 | 新增 OPT-ARCH-001（Prisma 持久化基座）执行记录与流程门禁补充 |
 | v1.14 | 2026-02-21 | 调整 INT-004/INT-005 验收口径为“本地证据先行、云端认证发布前执行” |
@@ -70,6 +71,37 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.12] - 2026-02-21
+
+### Added
+- `apps/worker-orchestrator/src/main.ts` 新增可运行编排循环：
+  - 按状态机逐步推进任务（`QUEUED -> PREPROCESSING -> DETECTING -> INPAINTING -> PACKAGING -> SUCCEEDED`）
+  - 在 `SUCCEEDED` 写入 `usage_ledger(COMMITTED)` 与 `outbox_events(task.succeeded)`
+- `apps/worker-orchestrator/package.json` 新增依赖：`@prisma/client`、`@packages/contracts`。
+
+### Changed
+- `apps/api-gateway/src/modules/tasks/tasks.service.ts` 调整 Prisma 查询路径：
+  - `GET /v1/tasks` 与 `GET /v1/tasks/{taskId}` 不再触发状态推进
+  - 状态推进职责转移至 Worker 编排进程
+- `apps/api-gateway/scripts/shared-smoke.ts` 增加轮询间隔（`SHARED_SMOKE_POLL_INTERVAL_MS`），适配异步状态推进时序。
+- `doc/engineering/rd-progress-management.md` 更新：
+  - `SVC-003` 状态进入 `In Progress`
+  - 新增第 26 节 `OPT-ARCH-002` 执行回填与双进程 smoke 证据
+- `doc/engineering/mvp-optimization-backlog.md` 更新 `OPT-ARCH-002` 为 `In Progress`，执行时机调整为 MVP 内前置执行。
+
+### Fixed
+- 收敛 Prisma 模式下“任务状态由 API 查询驱动推进”的副作用问题，明确推进来源为 Worker。
+
+### Security
+- 双进程 smoke 保持 `Authorization`、`Idempotency-Key`、`X-Request-Id` 校验链路，不放宽鉴权约束。
+
+### Rollback
+- 回退 `apps/worker-orchestrator/*` 与 `apps/api-gateway/src/modules/tasks/tasks.service.ts`、`apps/api-gateway/scripts/shared-smoke.ts` 相关改动，恢复 API 查询推进模式。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.11] - 2026-02-21
 

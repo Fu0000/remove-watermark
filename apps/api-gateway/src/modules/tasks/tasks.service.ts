@@ -596,16 +596,7 @@ export class TasksService {
       orderBy: { createdAt: "desc" }
     });
 
-    for (const task of tasks) {
-      await this.maybeAdvanceForSimulationWithPrisma(task.taskId);
-    }
-
-    const refreshed = await prisma.task.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" }
-    });
-
-    return refreshed.map((task) => this.mapDbTask(task));
+    return tasks.map((task) => this.mapDbTask(task));
   }
 
   private async getByUserWithPrisma(
@@ -613,6 +604,7 @@ export class TasksService {
     taskId: string,
     options: GetTaskOptions = {}
   ): Promise<TaskRecord | undefined> {
+    void options;
     const prisma = this.ensurePrismaService();
     const task = await prisma.task.findUnique({
       where: { taskId }
@@ -622,19 +614,7 @@ export class TasksService {
       return undefined;
     }
 
-    if (options.advance !== false) {
-      await this.maybeAdvanceForSimulationWithPrisma(taskId);
-    }
-
-    const refreshed = await prisma.task.findUnique({
-      where: { taskId }
-    });
-
-    if (!refreshed || refreshed.userId !== userId) {
-      return undefined;
-    }
-
-    return this.mapDbTask(refreshed);
+    return this.mapDbTask(task);
   }
 
   private async applyTaskActionWithPrisma(

@@ -164,9 +164,15 @@ importers:
 
   apps/worker-orchestrator:
     dependencies:
+      '@packages/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@packages/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@prisma/client':
+        specifier: ^5.22.0
+        version: 5.22.0(prisma@5.22.0)
 
   apps/worker-result:
     dependencies:
