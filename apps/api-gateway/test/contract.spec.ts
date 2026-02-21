@@ -119,6 +119,61 @@ test("GET /v1/subscriptions/me should return current subscription", async () => 
   await app.close();
 });
 
+test("POST /v1/subscriptions/mock-confirm should activate pending subscription", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const checkout = await server.inject({
+    method: "POST",
+    url: "/v1/subscriptions/checkout",
+    headers: {
+      authorization: "Bearer test-token",
+      "x-request-id": "req_contract_sub_confirm_checkout_1",
+      "content-type": "application/json"
+    },
+    payload: {
+      planId: "pro_month",
+      channel: "wechat_pay",
+      clientReturnUrl: "https://app.example.com/pay/result"
+    }
+  });
+  assert.equal(checkout.statusCode, 200);
+  const orderId = checkout.json().data.orderId as string;
+
+  const confirm = await server.inject({
+    method: "POST",
+    url: "/v1/subscriptions/mock-confirm",
+    headers: {
+      authorization: "Bearer test-token",
+      "x-request-id": "req_contract_sub_confirm_1",
+      "content-type": "application/json"
+    },
+    payload: {
+      orderId
+    }
+  });
+
+  assert.equal(confirm.statusCode, 200);
+  const confirmBody = confirm.json();
+  assert.equal(confirmBody.code, 0);
+  assert.equal(confirmBody.data.status, "ACTIVE");
+  assert.equal(confirmBody.data.planId, "pro_month");
+  assert.equal(typeof confirmBody.data.effectiveAt, "string");
+
+  const mine = await server.inject({
+    method: "GET",
+    url: "/v1/subscriptions/me",
+    headers: {
+      authorization: "Bearer test-token",
+      "x-request-id": "req_contract_sub_confirm_me_1"
+    }
+  });
+  assert.equal(mine.statusCode, 200);
+  assert.equal(mine.json().data.status, "ACTIVE");
+
+  await app.close();
+});
+
 test("GET /v1/usage/me should return usage summary", async () => {
   const app = await setup();
   const server = app.getHttpAdapter().getInstance();
@@ -141,6 +196,51 @@ test("GET /v1/usage/me should return usage summary", async () => {
   assert.equal(typeof body.data.periodStart, "string");
   assert.equal(typeof body.data.periodEnd, "string");
   assert.equal(Array.isArray(body.data.ledgerItems), true);
+
+  await app.close();
+});
+
+test("POST /v1/tasks should return 40302 when free quota is exceeded", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  for (let index = 0; index < 20; index += 1) {
+    const response = await server.inject({
+      method: "POST",
+      url: "/v1/tasks",
+      headers: {
+        authorization: "Bearer test-token",
+        "idempotency-key": `idem_contract_quota_${index}`,
+        "content-type": "application/json"
+      },
+      payload: {
+        assetId: `ast_quota_${index}`,
+        mediaType: "IMAGE",
+        taskPolicy: "FAST"
+      }
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().code, 0);
+  }
+
+  const overflow = await server.inject({
+    method: "POST",
+    url: "/v1/tasks",
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_quota_overflow",
+      "content-type": "application/json"
+    },
+    payload: {
+      assetId: "ast_quota_overflow",
+      mediaType: "IMAGE",
+      taskPolicy: "FAST"
+    }
+  });
+
+  assert.equal(overflow.statusCode, 403);
+  assert.equal(overflow.json().code, 40302);
 
   await app.close();
 });

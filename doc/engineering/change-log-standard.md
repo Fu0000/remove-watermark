@@ -1,4 +1,4 @@
-# 变更日志规范（v1.31）
+# 变更日志规范（v1.32）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.32 | 2026-02-21 | 新增 INT-006 本地闭环（mock-confirm + 配额门禁 40302 + shared-smoke 校验）执行记录 |
 | v1.31 | 2026-02-21 | 新增 BE-007 第二阶段对账任务（按月聚合 + 小时增量 + 日终全量框架）执行记录 |
 | v1.30 | 2026-02-21 | 新增 BE-007 商业化接口最小骨架（subscriptions/usage）执行记录 |
 | v1.29 | 2026-02-21 | 新增 DATA-003 去重索引校验与账务防重写入策略执行记录 |
@@ -85,6 +86,42 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.27] - 2026-02-21
+
+### Added
+- 新增订阅本地确认接口：`POST /v1/subscriptions/mock-confirm`（用于 dev/shared 本地联调，模拟支付确认并激活订阅）。
+- 新增配额超限保护错误：任务创建超限返回 `40302`。
+- 新增契约用例：
+  - `POST /v1/subscriptions/mock-confirm should activate pending subscription`
+  - `POST /v1/tasks should return 40302 when free quota is exceeded`
+- `doc/engineering/rd-progress-management.md` 新增第 41 节回填（`INT-006` 本地闭环执行证据）。
+
+### Changed
+- `apps/api-gateway/src/modules/tasks/tasks.service.ts`：
+  - 任务创建接入配额门禁；
+  - 配额统计切换为任务维度净额口径：`COMMITTED` 优先，否则 `max(HELD-RELEASED, 0)`。
+- `apps/api-gateway/src/modules/subscriptions/subscriptions.service.ts`：
+  - 增加 `confirmCheckout`；
+  - `usage` 计算改为“有效 ACTIVE 订阅 + 净额扣减”口径，避免 `PENDING` 误计入。
+- `apps/api-gateway/scripts/shared-smoke.ts` 增补 INT-006 校验步骤（订阅确认、配额下降、取消回升）。
+- `doc/api-spec.md` 增加 `mock-confirm` 接口说明与用途边界（本地联调用）。
+- `doc/engineering/rd-progress-management.md` 更新：
+  - `INT-006` 由 `Backlog` 调整为 `In Progress`
+  - `API 网关契约测试` 更新为 `16 passed / 0 failed`
+
+### Fixed
+- 修复本地联调阶段“订阅已购买但任务创建未做配额门禁”的一致性缺口，补齐 `usage` 与创建门禁口径。
+
+### Security
+- 新增 `mock-confirm` 仅用于本地联调，不改变正式支付回调验签与鉴权边界；关键接口继续要求 `Authorization/X-Request-Id`。
+
+### Rollback
+- 回退 `mock-confirm` 接口、任务创建配额门禁与净额扣减改造，恢复到 BE-007 第二阶段之前实现。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.26] - 2026-02-21
 

@@ -1,8 +1,8 @@
 import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post } from "@nestjs/common";
 import { ensureAuthorization } from "../../common/auth";
-import { badRequest, conflict, notFound, unprocessableEntity } from "../../common/http-errors";
+import { badRequest, conflict, forbidden, notFound, unprocessableEntity } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
-import { TasksService } from "./tasks.service";
+import { QuotaExceededError, TasksService } from "./tasks.service";
 import type { TaskPolicy } from "@packages/contracts";
 
 interface CreateTaskRequest {
@@ -41,7 +41,15 @@ export class TasksController {
       badRequest(40001, "参数非法", requestIdHeader);
     }
 
-    const result = await this.tasksService.createTask("u_1001", idempotencyKey, body);
+    let result: Awaited<ReturnType<TasksService["createTask"]>>;
+    try {
+      result = await this.tasksService.createTask("u_1001", idempotencyKey, body);
+    } catch (error) {
+      if (error instanceof QuotaExceededError) {
+        forbidden(40302, `配额不足（quota=${error.quotaTotal}, used=${error.usedUnits}）`, requestIdHeader);
+      }
+      throw error;
+    }
 
     if (!result.created) {
       const samePayload =

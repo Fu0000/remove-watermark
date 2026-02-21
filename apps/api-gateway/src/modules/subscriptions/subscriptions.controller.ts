@@ -10,6 +10,10 @@ interface CheckoutRequest {
   clientReturnUrl: string;
 }
 
+interface ConfirmRequest {
+  orderId: string;
+}
+
 @Controller("v1/subscriptions")
 export class SubscriptionsController {
   constructor(@Inject(SubscriptionsService) private readonly subscriptionsService: SubscriptionsService) {}
@@ -52,6 +56,26 @@ export class SubscriptionsController {
   ) {
     ensureAuthorization(authorization, requestIdHeader);
     const result = await this.subscriptionsService.getMySubscription("u_1001");
+    return ok(result, requestIdHeader);
+  }
+
+  @Post("mock-confirm")
+  @HttpCode(200)
+  async mockConfirm(
+    @Headers("authorization") authorization: string | undefined,
+    @Headers("x-request-id") requestIdHeader: string | undefined,
+    @Body() body: ConfirmRequest
+  ) {
+    ensureAuthorization(authorization, requestIdHeader);
+    if (!body.orderId) {
+      badRequest(40001, "参数非法：orderId", requestIdHeader);
+    }
+
+    const result = await this.subscriptionsService.confirmCheckout("u_1001", body.orderId);
+    if (!result) {
+      badRequest(40001, "参数非法：orderId 不存在", requestIdHeader);
+    }
+
     return ok(result, requestIdHeader);
   }
 }

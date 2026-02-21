@@ -225,6 +225,7 @@ flowchart LR
 | GET | `/v1/tasks/{taskId}/result` | 是 | 否 | 获取结果 |
 | GET | `/v1/plans` | 是 | 否 | 套餐列表 |
 | POST | `/v1/subscriptions/checkout` | 是 | 是 | 发起订阅 |
+| POST | `/v1/subscriptions/mock-confirm` | 是 | 是 | 本地联调：模拟支付回调并激活订阅 |
 | GET | `/v1/subscriptions/me` | 是 | 否 | 当前订阅 |
 | GET | `/v1/usage/me` | 是 | 否 | 配额与流水 |
 | DELETE | `/v1/assets/{assetId}` | 是 | 是 | 删除素材 |
@@ -490,6 +491,20 @@ Query：
   }
 }
 ```
+
+### `POST /v1/subscriptions/mock-confirm`
+- 仅用于 `dev/shared` 本地联调，模拟支付回调确认。
+
+请求：
+
+```json
+{
+  "orderId": "ord_9001"
+}
+```
+
+响应：
+- 返回：`status`, `planId`, `effectiveAt`, `expireAt`, `autoRenew`。
 
 ### `GET /v1/subscriptions/me`
 - 返回：`status`, `planId`, `effectiveAt`, `expireAt`, `autoRenew`。
@@ -840,5 +855,6 @@ Query：
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.2 | 2026-02-21 | 新增 `POST /v1/subscriptions/mock-confirm`（dev/shared 本地联调订阅确认） |
 | v1.1 | 2026-02-19 | 补充系统能力协商接口细则、渲染回退顺序字段与 `taskPolicy` 降级规则 |
 | v1.0 | 2026-02-19 | 首版 API 规格，覆盖任务、订阅、配额、Webhook 与事件类型定义 |

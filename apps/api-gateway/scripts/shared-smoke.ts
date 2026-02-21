@@ -379,6 +379,121 @@ async function main() {
     `成功态取消未按预期返回 42201，status=${cancelAfterSuccessResp.status} code=${cancelAfterSuccessBody.code} message=${cancelAfterSuccessBody.message}`
   );
 
+  const checkoutResp = await request<{
+    orderId: string;
+    paymentPayload: { nonceStr: string; timeStamp: string; sign: string };
+  }>("/v1/subscriptions/checkout", {
+    method: "POST",
+    token,
+    body: {
+      planId: "pro_month",
+      channel: "wechat_pay",
+      clientReturnUrl: `${baseUrl}/pay/result`
+    }
+  });
+  const checkoutBody = checkoutResp.body as ApiEnvelope<{
+    orderId: string;
+    paymentPayload: { nonceStr: string; timeStamp: string; sign: string };
+  }>;
+  assert(checkoutResp.status === 200 && checkoutBody.code === 0, "subscriptions checkout 失败");
+  assert(typeof checkoutBody.data?.orderId === "string" && checkoutBody.data.orderId.length > 0, "checkout 缺少 orderId");
+
+  const confirmResp = await request<{
+    status: string;
+    planId: string;
+    effectiveAt: string | null;
+    expireAt: string | null;
+    autoRenew: boolean;
+  }>("/v1/subscriptions/mock-confirm", {
+    method: "POST",
+    token,
+    body: {
+      orderId: checkoutBody.data.orderId
+    }
+  });
+  const confirmBody = confirmResp.body as ApiEnvelope<{
+    status: string;
+    planId: string;
+    effectiveAt: string | null;
+  }>;
+  assert(confirmResp.status === 200 && confirmBody.code === 0, "subscriptions mock-confirm 失败");
+  assert(confirmBody.data.status === "ACTIVE", `订阅未生效，status=${confirmBody.data.status}`);
+
+  const usageBeforeResp = await request<{
+    quotaTotal: number;
+    quotaLeft: number;
+    ledgerItems: Array<{ status: string; source: string }>;
+  }>("/v1/usage/me", {
+    method: "GET",
+    token
+  });
+  const usageBeforeBody = usageBeforeResp.body as ApiEnvelope<{
+    quotaTotal: number;
+    quotaLeft: number;
+    ledgerItems: Array<{ status: string; source: string }>;
+  }>;
+  assert(usageBeforeResp.status === 200 && usageBeforeBody.code === 0, "usage 查询失败");
+  assert(usageBeforeBody.data.quotaTotal >= 300, `订阅配额异常，quotaTotal=${usageBeforeBody.data.quotaTotal}`);
+
+  const quotaTaskResp = await request<{ taskId: string; status: TaskStatus }>("/v1/tasks", {
+    method: "POST",
+    token,
+    idempotencyKey: buildRequestId("idem_quota"),
+    body: {
+      assetId: uploadBody.data.assetId,
+      mediaType: "IMAGE",
+      taskPolicy: "FAST"
+    }
+  });
+  const quotaTaskBody = quotaTaskResp.body as ApiEnvelope<{ taskId: string }>;
+  assert(quotaTaskResp.status === 200 && quotaTaskBody.code === 0, "订阅生效后创建任务失败");
+  const quotaTaskId = quotaTaskBody.data.taskId;
+
+  const usageAfterHoldResp = await request<{
+    quotaTotal: number;
+    quotaLeft: number;
+    ledgerItems: Array<{ status: string; source: string }>;
+  }>("/v1/usage/me", {
+    method: "GET",
+    token
+  });
+  const usageAfterHoldBody = usageAfterHoldResp.body as ApiEnvelope<{
+    quotaLeft: number;
+    ledgerItems: Array<{ status: string; source: string }>;
+  }>;
+  assert(usageAfterHoldResp.status === 200 && usageAfterHoldBody.code === 0, "预扣后 usage 查询失败");
+  assert(
+    usageAfterHoldBody.data.quotaLeft <= usageBeforeBody.data.quotaLeft - 1,
+    `预扣后 quotaLeft 未下降，before=${usageBeforeBody.data.quotaLeft} after=${usageAfterHoldBody.data.quotaLeft}`
+  );
+
+  const quotaCancelResp = await request<{ taskId: string; status: TaskStatus }>(`/v1/tasks/${quotaTaskId}/cancel`, {
+    method: "POST",
+    token,
+    idempotencyKey: buildRequestId("idem_quota_cancel")
+  });
+  const quotaCancelBody = quotaCancelResp.body as ApiEnvelope<{ status: TaskStatus }>;
+  assert(quotaCancelResp.status === 200 && quotaCancelBody.code === 0, "预扣任务取消失败");
+
+  const usageAfterCancelResp = await request<{
+    quotaTotal: number;
+    quotaLeft: number;
+    ledgerItems: Array<{ status: string; source: string }>;
+  }>("/v1/usage/me", {
+    method: "GET",
+    token
+  });
+  const usageAfterCancelBody = usageAfterCancelResp.body as ApiEnvelope<{
+    quotaLeft: number;
+    ledgerItems: Array<{ status: string; source: string }>;
+  }>;
+  assert(usageAfterCancelResp.status === 200 && usageAfterCancelBody.code === 0, "取消后 usage 查询失败");
+  assert(
+    usageAfterCancelBody.data.quotaLeft >= usageAfterHoldBody.data.quotaLeft,
+    `取消后 quotaLeft 未回升，hold=${usageAfterHoldBody.data.quotaLeft} cancel=${usageAfterCancelBody.data.quotaLeft}`
+  );
+
+  console.log("[shared-smoke] INT-006 checks passed");
   console.log("[shared-smoke] INT-004/INT-005 checks passed");
   console.log("[shared-smoke] INT-002/INT-005 checks passed");
 }
