@@ -119,7 +119,7 @@
 | BE-005 | 结果交付 | `GET /v1/tasks/{taskId}/result` + 结果 TTL | 后端 | 2026-03-09 | 2026-03-15 | In Review | FR-007 | integration | 契约测试已通过（含结果可用路径） | 结果链接按策略失效 |
 | BE-006 | 失败恢复 | retry/cancel 语义与并发互斥 | 后端 | 2026-03-09 | 2026-03-16 | In Review | FR-005/FR-006 | unit/contract | 动作幂等与冲突路径契约测试已通过 | 重试与取消冲突可控 |
 | BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | In Review | FR-008 | integration/contract | 已补齐本地订阅确认（mock-confirm）+ 任务创建配额门禁（40302）+ 净额扣减口径；真实支付回调/退款回滚待补齐 | 订阅、配额与对账基线可联调 |
-| BE-008 | 通知回调 | webhook endpoint 管理/投递/重试/手动重放 | 后端 | 2026-03-24 | 2026-04-10 | In Progress | FR-009 | integration/contract | 已落地 endpoint 管理 + test/retry + HMAC-SHA256 签名头，并接入 dispatcher（outbox 轮询、签名出站、delivery 持久化）；待外部系统验签联调 | DEAD 信队列可运维回放 |
+| BE-008 | 通知回调 | webhook endpoint 管理/投递/重试/手动重放 | 后端 | 2026-03-24 | 2026-04-10 | In Progress | FR-009 | integration/contract | 已落地 endpoint 管理 + test/retry + HMAC-SHA256 签名头，并接入 dispatcher（outbox 轮询、签名出站、delivery 持久化）；本地外部验签联调已通过，待 shared/staging 云端验收 | DEAD 信队列可运维回放 |
 | BE-009 | 合规治理 | 素材/任务/账户删除与审计日志链路 | 后端 | 2026-03-30 | 2026-04-12 | Backlog | FR-010/FR-011 | integration/e2e | 未开始 | 删除 SLA <= 24h |
 
 ### 7.6 联调对接任务（FE/BE/QA/OPS）
@@ -132,7 +132,7 @@
 | INT-004 | 任务中心状态刷新与错误路径联调 | 前后端+测试 | 2026-03-10 | 2026-03-18 | In Review | 状态渲染与错误码一致 | 本地 smoke 已覆盖状态推进与错误路径；按阶段例外以本地证据验收，云端认证后置发布前门禁 |
 | INT-005 | 结果下载与过期策略联调 | 前后端+测试 | 2026-03-14 | 2026-03-20 | In Review | 过期前提醒与失效行为一致 | 本地 smoke 已覆盖结果下载与 expireAt 校验；按阶段例外以本地证据验收，云端认证后置发布前门禁 |
 | INT-006 | 订阅/配额扣减联调 | 前后端+测试+支付 | 2026-03-24 | 2026-04-07 | In Progress | 扣减一致率 100% | 本地已覆盖 mock-confirm + 预扣下降 + 取消回升；待真实支付回调与退款回滚 |
-| INT-007 | Webhook 对接联调（验签/重试/幂等） | 后端+外部系统 | 2026-03-28 | 2026-04-12 | In Progress | 签名校验通过，重试可观测 | 本地已完成 test/retry/query + dispatcher outbox 派发 smoke，待外部系统签名验证联调 |
+| INT-007 | Webhook 对接联调（验签/重试/幂等） | 后端+外部系统 | 2026-03-28 | 2026-04-12 | In Progress | 签名校验通过，重试可观测 | 本地已完成 test/retry/query + dispatcher outbox 派发 smoke + 外部验签幂等脚本，待 shared/staging 云端联调 |
 | INT-008 | staging 全链路回归与发布演练 | 全体 | 2026-04-28 | 2026-05-10 | Backlog | 发布准入清单全绿 | 不允许跳过 staging |
 
 ### 7.7 项目治理任务（PM/QA/ALG/OPS）
@@ -183,6 +183,7 @@
 | shared 联调 smoke 矩阵（INT-002/INT-007，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke:matrix` | `passed（dev=passed）` | 已支持一键矩阵执行与 Markdown 报告输出，shared/staging 待提供云端地址后接入 |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 本地 smoke（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:smoke` | `passed` | 已验证 outbox `PENDING -> PUBLISHED`、签名头生成与 `webhook_deliveries(SUCCESS)` 持久化闭环 |
+| INT-007 外部验签/重试/幂等本地联调（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:int007-local` | `passed` | 已验证“首投递处理后 503 -> retry 成功”场景下，外部验签通过且同 `eventId` 业务副作用仅执行一次 |
 | Billing 对账任务集成测试（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/billing-service test:integration` | `passed（1/1）` | 小时增量 + 月聚合 + 日终全量框架在本地 PostgreSQL 可回归 |
 | Billing 服务类型检查（本轮） | `pnpm --filter @apps/billing-service typecheck` | `passed` | 对账任务代码可通过静态类型校验 |
 | 状态机字面量一致性抽检 | `rg -n "UPLOADED -> QUEUED -> PREPROCESSING -> DETECTING -> INPAINTING -> PACKAGING -> SUCCEEDED\\|FAILED\\|CANCELED" doc \| wc -l` | `6` | 关键文档存在统一字面量 |
@@ -1584,3 +1585,41 @@
 - 下一步：
   - 推进 `INT-007` 外部系统验签联调，补齐 shared/staging 证据。
   - 增加 dispatcher 指标采集（`webhook_success_rate/webhook_retry_total`）并对接告警阈值。
+
+## 45. 本次执行回填（INT-007 本地外部验签联调：重试与幂等）
+
+- 任务编号：`DEV-20260222-INT007-LOCAL-VERIFY`
+- 需求映射：`FR-009`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/webhook.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+- 负责人：后端
+- 截止时间：`2026-04-12`
+- 当前状态：`In Progress`
+- 阻塞项：shared/staging 云端地址与外部系统真实回执待接入
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/webhook-dispatcher/src/int007-local.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/webhook-dispatcher/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增 `test:int007-local` 本地联调脚本，启动本地外部接收方并执行真实验签。
+  - 脚本覆盖场景：
+    - 首次投递：验签通过，业务副作用已执行但返回 `503`；
+    - 重试投递：同 `eventId` 进入幂等去重并返回 `200`；
+    - 校验 `delivery` 两次记录（`attempt=1 FAILED`、`attempt=2 SUCCESS`）与 `outbox` 最终 `PUBLISHED`。
+- 测试证据：
+  - `pnpm --filter @apps/webhook-dispatcher typecheck`：通过
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:int007-local`：通过
+- 联调结果：
+  - 本地外部验签与重试幂等闭环已形成，可复现“验签成功 + 幂等一次性副作用”行为。
+- 遗留问题：
+  - 仍缺 shared/staging 云端联调证据与真实外部系统回执日志。
+- 风险与回滚：
+  - 风险：外部系统若采用不同去重主键（非 `eventId`）需在联调阶段统一语义。
+  - 回滚：移除 `test:int007-local` 脚本与相关台账更新，恢复到 dispatcher smoke 验证口径。
+- 下一步：
+  - 将同一脚本能力映射到 shared/staging 地址，补齐云端证据。
+  - 与外部系统确认去重键固定为 `eventId` 并补充对接说明。

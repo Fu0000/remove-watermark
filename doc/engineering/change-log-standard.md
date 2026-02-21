@@ -1,4 +1,4 @@
-# 变更日志规范（v1.35）
+# 变更日志规范（v1.36）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.36 | 2026-02-22 | 新增 INT-007 本地外部验签联调（重试+幂等）执行记录 |
 | v1.35 | 2026-02-22 | 新增 BE-008 第二阶段（webhook dispatcher 持久化派发）执行记录 |
 | v1.34 | 2026-02-21 | 新增 BE-008 Webhook 签名协议落地（HMAC-SHA256 + Id/Timestamp/Key-Id）执行记录 |
 | v1.33 | 2026-02-21 | 新增 BE-008/INT-007 第一阶段（Webhook 管理 + test/retry 本地闭环）执行记录 |
@@ -89,6 +90,33 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.31] - 2026-02-22
+
+### Added
+- 新增 `INT-007` 本地外部验签联调脚本：
+  - `apps/webhook-dispatcher/src/int007-local.ts`
+  - `apps/webhook-dispatcher/package.json` 新增 `test:int007-local` 命令。
+- `doc/engineering/rd-progress-management.md` 新增第 45 节回填（外部验签/重试/幂等本地证据）。
+
+### Changed
+- `doc/engineering/rd-progress-management.md` 更新：
+  - `BE-008` 备注补充“本地外部验签联调已通过，待 shared/staging 云端验收”；
+  - `INT-007` 备注补充“已完成本地外部验签幂等脚本”；
+  - 测试看板新增 `test:int007-local` 证据行。
+
+### Fixed
+- 补齐 `INT-007` 在“外部接收方真实验签 + 重试幂等语义”上的本地可复现证据缺口。
+
+### Security
+- 本地联调脚本使用真实 `HMAC-SHA256` 验签与 300 秒窗口校验，继续保持签名防重放边界不放宽。
+
+### Rollback
+- 回退 `int007-local.ts` 与 `package.json` 新增命令及台账更新，恢复到仅 dispatcher smoke 校验口径。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/webhook-dispatcher`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.30] - 2026-02-22
 

@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:smoke": "tsx src/smoke.ts",
+    "test:int007-local": "tsx src/int007-local.ts",
     "lint": "echo 'lint webhook-dispatcher: pending eslint setup'"
   },
   "dependencies": {
