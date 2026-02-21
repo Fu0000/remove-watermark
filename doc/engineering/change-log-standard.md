@@ -1,4 +1,4 @@
-# 变更日志规范（v1.20）
+# 变更日志规范（v1.21）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.21 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter 批量重放增强执行记录 |
 | v1.20 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter 手动重放能力执行记录 |
 | v1.19 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter/retry 策略落地执行记录 |
 | v1.18 | 2026-02-21 | 新增 OPT-ARCH-002 Redis/BullMQ 消息驱动编排执行记录 |
@@ -74,6 +75,33 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.16] - 2026-02-21
+
+### Added
+- `apps/worker-orchestrator/src/ops/deadletter-replay.ts` 新增批量重放参数：
+  - `DLQ_SOURCE=all|task.progress|outbox.dispatch`
+  - `DLQ_LOOKBACK_MINUTES`
+  - `DLQ_CREATED_AFTER` / `DLQ_CREATED_BEFORE`
+  - `DLQ_REPLAY_CONCURRENCY`
+- `doc/engineering/rd-progress-management.md` 新增第 30 节执行回填（批量重放增强与 dry-run 证据）。
+
+### Changed
+- deadletter 重放从“单条串行”升级为“按批次并发执行”，并支持按来源/时间窗口收敛目标集。
+- `doc/engineering/mvp-optimization-backlog.md` 更新 `OPT-ARCH-002` 现状与验收口径，纳入批量重放能力。
+
+### Fixed
+- 修复死信重放在大量积压场景下需要逐条筛选、恢复效率低的问题。
+
+### Security
+- 继续保持默认 `DLQ_DRY_RUN=true`，批量参数不改变默认安全执行策略。
+
+### Rollback
+- 回退 `apps/worker-orchestrator/src/ops/deadletter-replay.ts` 本轮参数增强与台账更新。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.15] - 2026-02-21
 

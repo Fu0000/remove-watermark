@@ -23,6 +23,17 @@ interface DeadletterJobData {
   createdAt: string;
 }
 
+type DeadletterSource = DeadletterJobData["source"];
+
+interface ReplayFilters {
+  jobId?: string;
+  taskId?: string;
+  eventId?: string;
+  source: DeadletterSource | "all";
+  createdAfterMs?: number;
+  createdBeforeMs?: number;
+}
+
 function parsePositiveInt(value: string, fallback: number) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -42,6 +53,32 @@ function parseBoolean(value: string, fallback: boolean) {
   }
 
   return fallback;
+}
+
+function parseSource(value: string, fallback: ReplayFilters["source"]): ReplayFilters["source"] {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "all") {
+    return "all";
+  }
+  if (normalized === "task.progress" || normalized === "outbox.dispatch") {
+    return normalized;
+  }
+
+  return fallback;
+}
+
+function parseDateMillis(value: string): number | undefined {
+  const input = value.trim();
+  if (!input) {
+    return undefined;
+  }
+
+  const ms = Date.parse(input);
+  if (!Number.isFinite(ms)) {
+    return undefined;
+  }
+
+  return ms;
 }
 
 function parseRedisConnection(redisUrl: string) {
@@ -77,7 +114,7 @@ function parseRedisConnection(redisUrl: string) {
 
 function matchJob(
   job: Job<DeadletterJobData, void, "task.deadletter">,
-  filters: { jobId?: string; taskId?: string; eventId?: string }
+  filters: ReplayFilters
 ) {
   const rawJobId = String(job.id);
   if (filters.jobId && rawJobId !== filters.jobId) {
@@ -85,14 +122,130 @@ function matchJob(
   }
 
   const data = job.data;
+  if (filters.source !== "all" && data.source !== filters.source) {
+    return false;
+  }
   if (filters.taskId && data.taskId !== filters.taskId) {
     return false;
   }
   if (filters.eventId && data.eventId !== filters.eventId) {
     return false;
   }
+  if (typeof filters.createdAfterMs === "number" || typeof filters.createdBeforeMs === "number") {
+    const createdAtMs = parseDateMillis(data.createdAt ?? "");
+    if (!createdAtMs) {
+      return false;
+    }
+    if (typeof filters.createdAfterMs === "number" && createdAtMs < filters.createdAfterMs) {
+      return false;
+    }
+    if (typeof filters.createdBeforeMs === "number" && createdAtMs > filters.createdBeforeMs) {
+      return false;
+    }
+  }
 
   return true;
+}
+
+function chunkJobs<T>(input: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let i = 0; i < input.length; i += size) {
+    chunks.push(input.slice(i, i + size));
+  }
+
+  return chunks;
+}
+
+type ReplayOutcome = "replayed" | "skipped" | "failed";
+
+async function replayOneJob(input: {
+  logger: ReturnType<typeof createLogger>;
+  prisma: PrismaClient;
+  queue: Queue<OrchestratorJobData, void, "task.progress">;
+  dryRun: boolean;
+  deleteAfterReplay: boolean;
+  job: Job<DeadletterJobData, void, "task.deadletter">;
+}): Promise<ReplayOutcome> {
+  const { logger, prisma, queue, dryRun, deleteAfterReplay, job } = input;
+  const data = job.data;
+
+  try {
+    if (data.source === "task.progress") {
+      if (!data.taskId) {
+        logger.warn({ jobId: job.id, data }, "skip task.progress deadletter: missing taskId");
+        return "skipped";
+      }
+
+      if (!dryRun) {
+        await queue.add(
+          "task.progress",
+          {
+            taskId: data.taskId,
+            reason: "followup",
+            triggerEventId: data.triggerEventId
+          },
+          {
+            jobId: `replay_${data.deadletterId}_${Date.now()}`,
+            removeOnComplete: true,
+            removeOnFail: 100
+          }
+        );
+      }
+    } else if (data.source === "outbox.dispatch") {
+      if (!data.eventId) {
+        logger.warn({ jobId: job.id, data }, "skip outbox.dispatch deadletter: missing eventId");
+        return "skipped";
+      }
+
+      if (!dryRun) {
+        const updated = await prisma.outboxEvent.updateMany({
+          where: {
+            eventId: data.eventId
+          },
+          data: {
+            status: "PENDING",
+            retryCount: 0
+          }
+        });
+        if (updated.count !== 1) {
+          throw new Error(`outbox event not found for replay: ${data.eventId}`);
+        }
+      }
+    } else {
+      logger.warn({ jobId: job.id, data }, "skip deadletter: unsupported source");
+      return "skipped";
+    }
+
+    if (!dryRun && deleteAfterReplay) {
+      await job.remove();
+    }
+
+    logger.info(
+      {
+        jobId: job.id,
+        deadletterId: data.deadletterId,
+        source: data.source,
+        taskId: data.taskId,
+        eventId: data.eventId,
+        dryRun
+      },
+      "deadletter replayed"
+    );
+    return "replayed";
+  } catch (error) {
+    logger.error(
+      {
+        jobId: job.id,
+        deadletterId: data.deadletterId,
+        source: data.source,
+        taskId: data.taskId,
+        eventId: data.eventId,
+        error
+      },
+      "failed to replay deadletter"
+    );
+    return "failed";
+  }
 }
 
 async function main() {
@@ -106,13 +259,24 @@ async function main() {
 
   const maxScan = parsePositiveInt(readEnv("DLQ_REPLAY_MAX_SCAN", "200"), 200);
   const maxReplay = parsePositiveInt(readEnv("DLQ_REPLAY_MAX_COUNT", "20"), 20);
+  const replayConcurrency = parsePositiveInt(readEnv("DLQ_REPLAY_CONCURRENCY", "1"), 1);
+  const lookbackMinutes = parsePositiveInt(readEnv("DLQ_LOOKBACK_MINUTES", "0"), 0);
   const dryRun = parseBoolean(readEnv("DLQ_DRY_RUN", "true"), true);
   const deleteAfterReplay = parseBoolean(readEnv("DLQ_DELETE_AFTER_REPLAY", "false"), false);
+  const source = parseSource(readEnv("DLQ_SOURCE", "all"), "all");
 
-  const filters = {
+  const createdAfterFromEnv = parseDateMillis(readEnv("DLQ_CREATED_AFTER", ""));
+  const createdBeforeFromEnv = parseDateMillis(readEnv("DLQ_CREATED_BEFORE", ""));
+  const createdAfterFromLookback =
+    lookbackMinutes > 0 ? Date.now() - lookbackMinutes * 60 * 1000 : undefined;
+
+  const filters: ReplayFilters = {
     jobId: process.env.DLQ_JOB_ID,
     taskId: process.env.DLQ_TASK_ID,
-    eventId: process.env.DLQ_EVENT_ID
+    eventId: process.env.DLQ_EVENT_ID,
+    source,
+    createdAfterMs: createdAfterFromEnv ?? createdAfterFromLookback,
+    createdBeforeMs: createdBeforeFromEnv
   };
 
   const queue = new Queue<OrchestratorJobData, void, "task.progress">(queueName, { connection });
@@ -132,8 +296,16 @@ async function main() {
       deleteAfterReplay,
       maxScan,
       maxReplay,
+      replayConcurrency,
+      lookbackMinutes,
       matched: matched.length,
-      filters
+      filters: {
+        ...filters,
+        createdAfter: filters.createdAfterMs ? new Date(filters.createdAfterMs).toISOString() : undefined,
+        createdBefore: filters.createdBeforeMs
+          ? new Date(filters.createdBeforeMs).toISOString()
+          : undefined
+      }
     },
     "deadletter replay started"
   );
@@ -142,87 +314,28 @@ async function main() {
   let skipped = 0;
   let failed = 0;
 
-  for (const job of matched) {
-    const data = job.data;
-    try {
-      if (data.source === "task.progress") {
-        if (!data.taskId) {
-          skipped += 1;
-          logger.warn({ jobId: job.id, data }, "skip task.progress deadletter: missing taskId");
-          continue;
-        }
-
-        if (!dryRun) {
-          await queue.add(
-            "task.progress",
-            {
-              taskId: data.taskId,
-              reason: "followup",
-              triggerEventId: data.triggerEventId
-            },
-            {
-              jobId: `replay_${data.deadletterId}_${Date.now()}`,
-              removeOnComplete: true,
-              removeOnFail: 100
-            }
-          );
-        }
-      } else if (data.source === "outbox.dispatch") {
-        if (!data.eventId) {
-          skipped += 1;
-          logger.warn({ jobId: job.id, data }, "skip outbox.dispatch deadletter: missing eventId");
-          continue;
-        }
-
-        if (!dryRun) {
-          const updated = await prisma.outboxEvent.updateMany({
-            where: {
-              eventId: data.eventId
-            },
-            data: {
-              status: "PENDING",
-              retryCount: 0
-            }
-          });
-          if (updated.count !== 1) {
-            throw new Error(`outbox event not found for replay: ${data.eventId}`);
-          }
-        }
-      } else {
+  const chunks = chunkJobs(matched, replayConcurrency);
+  for (const chunk of chunks) {
+    const outcomes = await Promise.all(
+      chunk.map((job) =>
+        replayOneJob({
+          logger,
+          prisma,
+          queue,
+          dryRun,
+          deleteAfterReplay,
+          job
+        })
+      )
+    );
+    for (const outcome of outcomes) {
+      if (outcome === "replayed") {
+        replayed += 1;
+      } else if (outcome === "skipped") {
         skipped += 1;
-        logger.warn({ jobId: job.id, data }, "skip deadletter: unsupported source");
-        continue;
+      } else {
+        failed += 1;
       }
-
-      if (!dryRun && deleteAfterReplay) {
-        await job.remove();
-      }
-
-      replayed += 1;
-      logger.info(
-        {
-          jobId: job.id,
-          deadletterId: data.deadletterId,
-          source: data.source,
-          taskId: data.taskId,
-          eventId: data.eventId,
-          dryRun
-        },
-        "deadletter replayed"
-      );
-    } catch (error) {
-      failed += 1;
-      logger.error(
-        {
-          jobId: job.id,
-          deadletterId: data.deadletterId,
-          source: data.source,
-          taskId: data.taskId,
-          eventId: data.eventId,
-          error
-        },
-        "failed to replay deadletter"
-      );
     }
   }
 
