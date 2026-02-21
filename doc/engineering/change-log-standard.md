@@ -1,4 +1,4 @@
-# 变更日志规范（v1.39）
+# 变更日志规范（v1.40）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.40 | 2026-02-22 | 新增 BE-009 第二阶段（删除申请执行态、查询与保留策略）执行记录 |
 | v1.39 | 2026-02-22 | 新增 BE-009 第一阶段（删除与审计最小闭环）执行记录 |
 | v1.38 | 2026-02-22 | 新增 INT-007 本地映射矩阵脚本（dev/shared/staging 一键验签）执行记录 |
 | v1.37 | 2026-02-22 | 新增 BE-008 指标与阈值告警（webhook_success_rate/webhook_retry_total）执行记录 |
@@ -93,6 +94,42 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.35] - 2026-02-22
+
+### Added
+- 新增账户删除执行与保留策略运维入口：
+  - `apps/api-gateway/scripts/account-delete-reconcile.ts`
+  - `apps/api-gateway/scripts/audit-retention.ts`
+- 新增合规单元测试：
+  - `apps/api-gateway/test/compliance.service.spec.ts`
+- `doc/api-spec.md` 新增/更新删除申请查询与审计查询契约：
+  - `GET /v1/account/delete-requests`
+  - `GET /v1/account/delete-requests/{requestId}`
+  - `GET /v1/account/audit-logs`
+
+### Changed
+- `apps/api-gateway/src/modules/compliance/compliance.service.ts` 扩展删除申请执行态（`PENDING/PROCESSING/DONE/FAILED`）及事务化执行流程。
+- `apps/api-gateway/src/modules/compliance/account.controller.ts` 扩展删除申请列表/详情与审计日志查询接口。
+- `apps/api-gateway/prisma/schema.prisma` 增加 `account_delete_requests.startedAt/finishedAt/errorMessage/summaryJson` 字段。
+- 新增迁移：`apps/api-gateway/prisma/migrations/20260222104000_account_delete_request_lifecycle/migration.sql`。
+- `apps/api-gateway/package.json` 增加 `ops:account-delete:reconcile` 与 `ops:audit:retention` 命令。
+- `doc/engineering/rd-progress-management.md` 新增第 49 节回填并更新 BE-009 第二阶段证据。
+
+### Fixed
+- 修复 `BE-009` 第一阶段仅能“创建删除申请”、缺少“执行态推进与查询可观测”的问题。
+- 修复审计日志缺少统一保留清理入口的问题。
+
+### Security
+- 删除申请与查询链路继续强制 `Authorization`，创建操作继续强制 `Idempotency-Key`。
+- 审计日志保留策略默认 180 天，降低长期保留敏感访问元信息风险。
+
+### Rollback
+- 回退 lifecycle 迁移、`compliance` 扩展接口、执行/保留脚本与测试改动，恢复到 0.5.34（BE-009 第一阶段）口径。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.34] - 2026-02-22
 

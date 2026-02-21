@@ -1,0 +1,5 @@
+ALTER TABLE account_delete_requests
+  ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS finished_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS error_message TEXT,
+  ADD COLUMN IF NOT EXISTS summary_json JSONB;

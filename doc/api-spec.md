@@ -238,6 +238,9 @@ flowchart LR
 | DELETE | `/v1/assets/{assetId}` | 是 | 是 | 删除素材 |
 | DELETE | `/v1/tasks/{taskId}` | 是 | 是 | 删除任务记录 |
 | POST | `/v1/account/delete-request` | 是 | 是 | 账户删除申请 |
+| GET | `/v1/account/delete-requests` | 是 | 否 | 删除申请列表查询 |
+| GET | `/v1/account/delete-requests/{requestId}` | 是 | 否 | 删除申请详情查询 |
+| GET | `/v1/account/audit-logs` | 是 | 否 | 审计日志查询 |
 | GET | `/v1/notifications` | 是 | 否 | 通知列表 |
 | POST | `/v1/webhooks/endpoints` | 是 | 是 | 创建回调端点 |
 | GET | `/v1/webhooks/endpoints` | 是 | 否 | 查询回调端点 |
@@ -538,6 +541,27 @@ Query：
 ```
 
 响应：返回删除申请单 `requestId/status/eta`。
+
+删除申请状态流转：
+- `PENDING -> PROCESSING -> DONE|FAILED`
+- `eta` 用于表达目标完成时间（默认 `24h` SLA），实际完成时间由 `finishedAt` 返回。
+
+### `GET /v1/account/delete-requests`
+- 查询当前用户删除申请列表，支持：
+  - `status`：`PENDING|PROCESSING|DONE|FAILED`
+  - `page`、`pageSize`
+- 响应：`items[] + page + pageSize + total`，其中单项包含 `requestId/status/reason/eta/startedAt/finishedAt/errorMessage/createdAt/updatedAt`。
+
+### `GET /v1/account/delete-requests/{requestId}`
+- 查询指定删除申请状态详情。
+
+### `GET /v1/account/audit-logs`
+- 查询当前用户审计日志，支持：
+  - `action`
+  - `resourceType`
+  - `from`、`to`（ISO datetime）
+  - `page`、`pageSize`
+- 响应：`items[] + page + pageSize + total`，单项包含 `auditId/traceId/requestId/ip/userAgent/action/resourceType/resourceId/meta/createdAt`。
 
 ## 11.12 通知 API
 
@@ -848,8 +872,8 @@ Query：
 | FR-007 结果交付 | `/v1/tasks/{taskId}/result` |
 | FR-008 订阅与配额 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` |
 | FR-009 通知 | `/v1/notifications*`, `/v1/webhooks/*` |
-| FR-010 数据管理 | `DELETE /v1/assets/{assetId}`, `DELETE /v1/tasks/{taskId}`, `POST /v1/account/delete-request` |
-| FR-011 风控审计 | 限流、审计日志、内部风控中间件 |
+| FR-010 数据管理 | `DELETE /v1/assets/{assetId}`, `DELETE /v1/tasks/{taskId}`, `POST /v1/account/delete-request`, `GET /v1/account/delete-requests*` |
+| FR-011 风控审计 | 限流、审计日志、内部风控中间件、`GET /v1/account/audit-logs` |
 | FR-012 运营后台 | `/admin/*`（内网） |
 
 ## 20. 附录：建议依赖版本（Node）

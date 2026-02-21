@@ -1,6 +1,6 @@
-import { Body, Controller, Headers, HttpCode, Inject, Post } from "@nestjs/common";
+import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Query } from "@nestjs/common";
 import { ensureAuthorization } from "../../common/auth";
-import { badRequest, conflict } from "../../common/http-errors";
+import { badRequest, conflict, notFound } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
 import { ComplianceService } from "./compliance.service";
 
@@ -47,6 +47,78 @@ export class AccountController {
 
     return ok(result.data, requestIdHeader);
   }
+
+  @Get("delete-requests")
+  async listDeleteRequests(
+    @Headers("authorization") authorization: string | undefined,
+    @Headers("x-request-id") requestIdHeader: string | undefined,
+    @Query("status") status: string | undefined,
+    @Query("page") pageRaw: string | undefined,
+    @Query("pageSize") pageSizeRaw: string | undefined
+  ) {
+    ensureAuthorization(authorization, requestIdHeader);
+    const page = parsePositiveInt(pageRaw, 1);
+    const pageSize = parsePositiveInt(pageSizeRaw, 20);
+    const normalizedStatus = normalizeDeleteStatus(status);
+    if (status && !normalizedStatus) {
+      badRequest(40001, "status must be one of PENDING/PROCESSING/DONE/FAILED", requestIdHeader);
+    }
+
+    const result = await this.complianceService.listAccountDeleteRequests("u_1001", {
+      status: normalizedStatus,
+      page,
+      pageSize
+    });
+
+    return ok(result, requestIdHeader);
+  }
+
+  @Get("delete-requests/:requestId")
+  async getDeleteRequest(
+    @Headers("authorization") authorization: string | undefined,
+    @Headers("x-request-id") requestIdHeader: string | undefined,
+    @Param("requestId") requestId: string
+  ) {
+    ensureAuthorization(authorization, requestIdHeader);
+    const result = await this.complianceService.getAccountDeleteRequest("u_1001", requestId);
+    if (!result) {
+      notFound(40401, "资源不存在", requestIdHeader);
+    }
+    return ok(result, requestIdHeader);
+  }
+
+  @Get("audit-logs")
+  async listAuditLogs(
+    @Headers("authorization") authorization: string | undefined,
+    @Headers("x-request-id") requestIdHeader: string | undefined,
+    @Query("action") action: string | undefined,
+    @Query("resourceType") resourceType: string | undefined,
+    @Query("from") from: string | undefined,
+    @Query("to") to: string | undefined,
+    @Query("page") pageRaw: string | undefined,
+    @Query("pageSize") pageSizeRaw: string | undefined
+  ) {
+    ensureAuthorization(authorization, requestIdHeader);
+    const page = parsePositiveInt(pageRaw, 1);
+    const pageSize = parsePositiveInt(pageSizeRaw, 20);
+
+    if (from && Number.isNaN(new Date(from).getTime())) {
+      badRequest(40001, "from is invalid datetime", requestIdHeader);
+    }
+    if (to && Number.isNaN(new Date(to).getTime())) {
+      badRequest(40001, "to is invalid datetime", requestIdHeader);
+    }
+
+    const result = await this.complianceService.listAuditLogs("u_1001", {
+      action,
+      resourceType,
+      from,
+      to,
+      page,
+      pageSize
+    });
+    return ok(result, requestIdHeader);
+  }
 }
 
 function parseForwardedIp(forwardedFor: string | undefined): string | undefined {
@@ -56,4 +128,29 @@ function parseForwardedIp(forwardedFor: string | undefined): string | undefined 
 
   const first = forwardedFor.split(",")[0]?.trim();
   return first && first.length > 0 ? first : undefined;
+}
+
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  if (!raw) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function normalizeDeleteStatus(status: string | undefined): "PENDING" | "PROCESSING" | "DONE" | "FAILED" | undefined {
+  if (!status) {
+    return undefined;
+  }
+
+  if (status === "PENDING" || status === "PROCESSING" || status === "DONE" || status === "FAILED") {
+    return status;
+  }
+
+  return undefined;
 }

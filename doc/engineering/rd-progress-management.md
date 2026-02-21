@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.2 | 2026-02-22 | 新增 BE-009 第二阶段（删除申请执行态+审计查询+保留策略）执行记录 |
 | v1.1 | 2026-02-19 | 新增 v1.0 执行版研发任务清单、联调计划、测试证据、完成状态与关键结果看板 |
 | v1.0 | 2026-02-19 | 首版研发进度管理规范与模板 |
 
@@ -120,7 +121,7 @@
 | BE-006 | 失败恢复 | retry/cancel 语义与并发互斥 | 后端 | 2026-03-09 | 2026-03-16 | In Review | FR-005/FR-006 | unit/contract | 动作幂等与冲突路径契约测试已通过 | 重试与取消冲突可控 |
 | BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | In Review | FR-008 | integration/contract | 已补齐本地订阅确认（mock-confirm）+ 任务创建配额门禁（40302）+ 净额扣减口径；真实支付回调/退款回滚待补齐 | 订阅、配额与对账基线可联调 |
 | BE-008 | 通知回调 | webhook endpoint 管理/投递/重试/手动重放 | 后端 | 2026-03-24 | 2026-04-10 | In Progress | FR-009 | integration/contract | 已落地 endpoint 管理 + test/retry + HMAC-SHA256 签名头，并接入 dispatcher（outbox 轮询、签名出站、delivery 持久化、指标告警）；本地外部验签联调已通过，待 shared/staging 云端验收 | DEAD 信队列可运维回放 |
-| BE-009 | 合规治理 | 素材/任务/账户删除与审计日志链路 | 后端 | 2026-03-30 | 2026-04-12 | In Progress | FR-010/FR-011 | integration/e2e | 已落地删除素材/删除任务展示/账户删除申请 API 与审计日志链路（Prisma + 内存回退），待 shared/staging 云端验收 | 删除 SLA <= 24h（接口已返回 `eta`） |
+| BE-009 | 合规治理 | 素材/任务/账户删除与审计日志链路 | 后端 | 2026-03-30 | 2026-04-12 | In Review | FR-010/FR-011 | integration/e2e | 已补齐删除申请状态查询（list/detail）、执行态流转（PENDING->PROCESSING->DONE/FAILED）、审计查询与 180 天保留清理脚本；本地 Prisma 证据完成，待 shared/staging 云端验收 | 删除 SLA <= 24h（`eta + finishedAt` 可追踪） |
 
 ### 7.6 联调对接任务（FE/BE/QA/OPS）
 
@@ -183,6 +184,9 @@
 | shared 联调 smoke 矩阵（INT-002/INT-007，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke:matrix` | `passed（dev=passed）` | 已支持一键矩阵执行与 Markdown 报告输出，shared/staging 待提供云端地址后接入 |
 | BE-009 合规链路迁移与契约回归（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma` + `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma SUBSCRIPTIONS_STORE=prisma WEBHOOKS_STORE=prisma COMPLIANCE_STORE=prisma pnpm --filter @apps/api-gateway test:contract` | `passed（migrate deploy + contract 21/21）` | 已在 Prisma 路径覆盖 `DELETE /v1/assets/{assetId}`、`DELETE /v1/tasks/{taskId}`、`POST /v1/account/delete-request` 与幂等冲突路径 |
 | BE-009 Prisma 双进程 smoke（本轮） | `启动 api-gateway(TASKS/SUBSCRIPTIONS/WEBHOOKS/COMPLIANCE_STORE=prisma) + worker-orchestrator 后执行 pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 本地 PostgreSQL + Redis 下主链路联调通过，删除/审计改造未破坏既有链路 |
+| BE-009 第二阶段（本轮）单元与契约回归 | `pnpm --filter @apps/api-gateway typecheck && pnpm --filter @apps/api-gateway test:unit && pnpm --filter @apps/api-gateway test:contract` | `passed（unit 4/4, contract 22/22）` | 已覆盖删除申请 `list/detail`、执行态流转（service 级）与审计查询接口 |
+| BE-009 第二阶段 Prisma 隔离 schema 契约回归（本轮） | `DATABASE_URL=postgresql://.../remove_watermark?schema=contract_phase2_<ts> pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma && DATABASE_URL=... TASKS/SUBSCRIPTIONS/WEBHOOKS/COMPLIANCE_STORE=prisma pnpm --filter @apps/api-gateway test:contract` | `passed（22/22）` | 使用临时 schema 隔离历史幂等键，获得稳定 Prisma 合约证据（避免固定库历史数据噪音） |
+| BE-009 运维脚本校验（本轮） | `COMPLIANCE_STORE=prisma pnpm --filter @apps/api-gateway ops:account-delete:reconcile` + `COMPLIANCE_STORE=prisma AUDIT_LOG_RETENTION_DAYS=180 pnpm --filter @apps/api-gateway ops:audit:retention` | `passed` | 已具备删除申请批处理与审计日志保留清理执行入口 |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
 | Webhook Dispatcher 本地 smoke（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:smoke` | `passed` | 已验证 outbox `PENDING -> PUBLISHED`、签名头生成与 `webhook_deliveries(SUCCESS)` 持久化闭环 |
@@ -207,10 +211,10 @@
 | 状态 | 数量 | 占比 |
 |---|---:|---:|
 | Done | 1 | 2.3% |
-| In Progress | 11 | 25.6% |
+| In Progress | 10 | 23.3% |
 | Ready | 7 | 16.3% |
 | Backlog | 7 | 16.3% |
-| In Review | 17 | 39.5% |
+| In Review | 18 | 41.9% |
 | QA | 0 | 0.0% |
 
 ## 10. 关键结果（KR）跟踪（v1.0）
@@ -1770,3 +1774,57 @@
 - 下一步：
   - 在本地/共享环境补齐 migration 执行证据（`prisma migrate` + smoke）。
   - 推进 `BE-009` 第二阶段：删除申请执行态流转、审计查询口径与保留策略落地。
+
+## 49. 本次执行回填（BE-009 第二阶段：执行态流转 + 审计查询 + 保留策略）
+
+- 任务编号：`DEV-20260222-BE009-COMPLIANCE-PHASE2`
+- 需求映射：`FR-010`、`FR-011`、`NFR-005`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/prd.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/project-constraints.md`
+- 负责人：后端
+- 截止时间：`2026-04-12`
+- 当前状态：`In Review`
+- 阻塞项：shared/staging 云端 PostgreSQL 与域名验证后置（发布前门禁执行）
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/compliance/compliance.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/compliance/account.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/schema.prisma`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/migrations/20260222104000_account_delete_request_lifecycle/migration.sql`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/scripts/account-delete-reconcile.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/scripts/audit-retention.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/compliance.service.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/contract.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 删除申请链路扩展为执行态状态机：`PENDING -> PROCESSING -> DONE|FAILED`，新增 `startedAt/finishedAt/errorMessage/summary` 字段。
+  - 新增查询接口：`GET /v1/account/delete-requests`、`GET /v1/account/delete-requests/{requestId}`、`GET /v1/account/audit-logs`。
+  - 新增执行与保留策略脚本：`ops:account-delete:reconcile`、`ops:audit:retention`，默认审计保留 180 天。
+  - Prisma 路径下删除执行过程改为事务化：素材软删除 + 任务视图删除 + 请求状态收敛 + 审计落点。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway prisma:generate`：通过
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:unit`：通过（`4/4`）
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`22/22`）
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma`：通过（应用 `20260222104000_account_delete_request_lifecycle`）
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark?schema=contract_phase2_<ts> TASKS_STORE=prisma SUBSCRIPTIONS_STORE=prisma WEBHOOKS_STORE=prisma COMPLIANCE_STORE=prisma pnpm --filter @apps/api-gateway test:contract`：通过（`22/22`）
+  - `COMPLIANCE_STORE=prisma pnpm --filter @apps/api-gateway ops:account-delete:reconcile`：通过
+  - `COMPLIANCE_STORE=prisma AUDIT_LOG_RETENTION_DAYS=180 pnpm --filter @apps/api-gateway ops:audit:retention`：通过
+- 联调结果：
+  - 本地 PostgreSQL + Prisma 路径可稳定覆盖删除申请“创建-查询-执行-审计”闭环。
+  - 双进程 smoke 下未引入主链路回归（上传/任务/结果链路保持通过）。
+- 遗留问题：
+  - 云端 shared/staging 证据尚未执行（按阶段约定后置至发布前门禁）。
+  - 审计清理任务当前为运维命令入口，定时调度编排待平台侧落地。
+- 风险与回滚：
+  - 风险：固定共享库内历史幂等键会影响重复契约执行稳定性，需使用隔离 schema 或预清理策略。
+  - 回滚：回退 lifecycle 迁移、执行脚本与查询接口扩展，恢复到 BE-009 第一阶段口径。
+- 下一步：
+  - 推进 `FE-007` 账户隐私页，接入删除申请查询与审计查询接口。
+  - 在发布前门禁统一补齐 shared/staging 云端 `integration/smoke` 证据。

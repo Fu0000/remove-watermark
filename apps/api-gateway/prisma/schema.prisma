@@ -265,6 +265,10 @@ model AccountDeleteRequest {
   reason    String
   status    String   @db.VarChar(16)
   etaAt     DateTime @map("eta_at")
+  startedAt DateTime? @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+  errorMessage String? @map("error_message")
+  summaryJson Json? @map("summary_json")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @map("updated_at")
 

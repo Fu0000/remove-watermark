@@ -6,6 +6,7 @@ import { FastifyAdapter } from "@nestjs/platform-fastify";
 import type { INestApplication } from "@nestjs/common";
 import { AppModule } from "../src/modules/app.module";
 import { TasksService } from "../src/modules/tasks/tasks.service";
+import { ComplianceService } from "../src/modules/compliance/compliance.service";
 
 async function setup(): Promise<INestApplication> {
   const app = await NestFactory.create(AppModule, new FastifyAdapter());
@@ -861,6 +862,88 @@ test("POST /v1/account/delete-request should create request and honor idempotenc
   });
   assert.equal(conflict.statusCode, 409);
   assert.equal(conflict.json().code, 40901);
+
+  await app.close();
+});
+
+test("account delete request status query should support list/detail and lifecycle update", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+  const complianceService = app.get(ComplianceService);
+
+  const created = await server.inject({
+    method: "POST",
+    url: "/v1/account/delete-request",
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_account_delete_query_1",
+      "content-type": "application/json"
+    },
+    payload: {
+      reason: "privacy cleanup",
+      confirm: true
+    }
+  });
+  assert.equal(created.statusCode, 200);
+  const requestId = created.json().data.requestId as string;
+  assert.equal(created.json().data.status, "PENDING");
+
+  const listPending = await server.inject({
+    method: "GET",
+    url: "/v1/account/delete-requests?status=PENDING&page=1&pageSize=10",
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(listPending.statusCode, 200);
+  assert.equal(listPending.json().code, 0);
+  assert.equal(listPending.json().data.total >= 1, true);
+  assert.equal(listPending.json().data.items.some((item: { requestId: string }) => item.requestId === requestId), true);
+
+  const detailBefore = await server.inject({
+    method: "GET",
+    url: `/v1/account/delete-requests/${requestId}`,
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(detailBefore.statusCode, 200);
+  assert.equal(detailBefore.json().data.status, "PENDING");
+
+  const summary = await complianceService.processPendingDeleteRequests({
+    dueOnly: false,
+    limit: 10
+  });
+  assert.equal(summary.processed >= 1, true);
+
+  const detailAfter = await server.inject({
+    method: "GET",
+    url: `/v1/account/delete-requests/${requestId}`,
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(detailAfter.statusCode, 200);
+  assert.equal(detailAfter.json().data.status, "DONE");
+  assert.equal(typeof detailAfter.json().data.finishedAt, "string");
+
+  const auditLogs = await server.inject({
+    method: "GET",
+    url: "/v1/account/audit-logs?page=1&pageSize=50&resourceType=account",
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(auditLogs.statusCode, 200);
+  assert.equal(auditLogs.json().code, 0);
+  assert.equal(
+    auditLogs.json().data.items.some((item: { action: string }) => item.action === "account.delete.requested"),
+    true
+  );
+  assert.equal(
+    auditLogs.json().data.items.some((item: { action: string }) => item.action === "account.delete.completed"),
+    true
+  );
 
   await app.close();
 });
