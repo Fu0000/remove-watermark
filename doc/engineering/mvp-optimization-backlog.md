@@ -1,4 +1,4 @@
-# MVP 后优化台账（v1.1）
+# MVP 后优化台账（v1.2）
 
 ## 1. 目标
 - 将研发过程中发现的优化点统一沉淀为可追踪台账，避免仅口头记录。
@@ -33,7 +33,7 @@
 
 | OPT-ID | 类别 | 触发背景 | 当前现状 | 优化建议 | 影响范围 | 收益评估 | 实施成本 | 优先级 | 执行时机 | 依赖 | 验收标准 | 状态 | Owner | 最近更新 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| OPT-ARCH-001 | Architecture | 任务与幂等当前为进程内实现 | 重启会丢失任务态与幂等记录 | 将 `tasks/idempotency_keys/usage_ledger/outbox_events` 迁移到 PostgreSQL + Prisma，替换文件态持久化 | `apps/api-gateway`、DB | 消除状态丢失，提升联调稳定性与可审计性 | 高 | P0 | MVP 后第 1 优先级 | PostgreSQL、Prisma schema、迁移脚本 | 服务重启后任务与幂等不丢失；创建任务事务可回放 | Backlog | 后端 | 2026-02-21 |
+| OPT-ARCH-001 | Architecture | 任务与幂等当前为进程内实现 | Prisma schema 与事务化持久化分支已落地，仍缺 shared PostgreSQL 运行时验收 | 将 `tasks/idempotency_keys/usage_ledger/outbox_events` 迁移到 PostgreSQL + Prisma，替换文件态持久化 | `apps/api-gateway`、DB | 消除状态丢失，提升联调稳定性与可审计性 | 高 | P0 | MVP 内（稳定性前置执行） | PostgreSQL、Prisma schema、迁移脚本、shared 环境 DB 连通 | 服务重启后任务与幂等不丢失；创建任务事务可回放；shared smoke 通过 | In Progress | 后端 | 2026-02-21 |
 | OPT-ARCH-002 | Reliability | 状态推进目前由 API 读取触发模拟推进 | 不符合真实 Worker 编排模式 | 将状态推进迁移至 `worker-orchestrator`，API 仅查询与动作投递 | `apps/api-gateway`、`apps/worker-orchestrator` | 还原真实链路，降低 API 副作用 | 高 | P0 | MVP 后第 1 优先级 | 队列基础设施、Outbox 消费 | 状态只由 Worker 推进；API 无推进副作用 | Backlog | 后端 | 2026-02-21 |
 | OPT-PERF-001 | Performance | H5 构建持续存在包体告警 | `build:h5` 仍有 `AssetsOverSizeLimitWarning` | 页面维度拆包 + 依赖裁剪（react-query/taro 体积控制） | `apps/user-frontend` | 改善首屏性能与加载稳定性 | 中 | P1 | MVP 后第 2 优先级 | 前端构建配置、埋点监控 | 首包体积低于告警阈值；关键页面 TTI 下降 | Backlog | 前端 | 2026-02-21 |
 | OPT-FE-001 | Process | 编辑页联调阶段仅示例蒙版提交 | 已补齐真实绘制首版能力，需进入评审 | 实现真实画笔+多边形编辑器组件，补充冲突回滚交互 | `apps/user-frontend/src/pages/editor` | 提升可用性，降低误操作 | 中 | P1 | MVP 内（已提前执行） | UI 组件设计、e2e 用例 | 支持绘制/撤销/重做；冲突提示与恢复流程可用 | In Review | 前端 | 2026-02-21 |
@@ -51,5 +51,6 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.2 | 2026-02-21 | OPT-ARCH-001 前置到 MVP 内执行，状态更新为 In Progress 并补充 Prisma 基座现状 |
 | v1.1 | 2026-02-21 | FE-003 真实绘制优化项提前执行并新增 Canvas 性能优化条目 |
 | v1.0 | 2026-02-21 | 首版 MVP 后优化台账，沉淀架构、性能、流程优化项与执行字段 |

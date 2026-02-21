@@ -208,7 +208,7 @@ test("POST /v1/tasks/{taskId}/retry should be idempotent for FAILED task", async
   const server = app.getHttpAdapter().getInstance();
   const tasksService = app.get(TasksService);
 
-  tasksService.seedFailedTask("u_1001", "tsk_failed_contract_1");
+  await tasksService.seedFailedTask("u_1001", "tsk_failed_contract_1");
 
   const retryHeaders = {
     authorization: "Bearer test-token",

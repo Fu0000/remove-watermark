@@ -1,4 +1,4 @@
-# 变更日志规范（v1.14）
+# 变更日志规范（v1.15）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.15 | 2026-02-21 | 新增 OPT-ARCH-001（Prisma 持久化基座）执行记录与流程门禁补充 |
 | v1.14 | 2026-02-21 | 调整 INT-004/INT-005 验收口径为“本地证据先行、云端认证发布前执行” |
 | v1.13 | 2026-02-21 | 新增 shared-smoke 多环境矩阵脚本与报告输出能力 |
 | v1.12 | 2026-02-21 | 新增 shared-smoke 对 INT-004/INT-005 的本地联调覆盖记录 |
@@ -68,6 +69,40 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.10] - 2026-02-21
+
+### Added
+- 新增 Prisma 持久化基座文件：
+  - `apps/api-gateway/prisma/schema.prisma`
+  - `apps/api-gateway/prisma/migrations/20260221211500_init_tasks_store/migration.sql`
+  - `apps/api-gateway/src/modules/common/prisma.service.ts`
+  - `apps/api-gateway/.env.example`
+- `apps/api-gateway/package.json` 新增 Prisma 命令：`prisma:generate`、`prisma:migrate:dev`、`prisma:push`。
+
+### Changed
+- `apps/api-gateway/src/modules/tasks/tasks.service.ts` 新增 Prisma 持久化分支，覆盖：
+  - 任务创建事务化写入（`tasks + idempotency_keys + usage_ledger + outbox_events`）
+  - 动作幂等持久化（`task_action_idempotency`）
+  - 状态机迁移与乐观锁版本控制（数据库事务语义）
+- `apps/api-gateway/src/modules/tasks/tasks.controller.ts` 适配异步服务调用，保持既有契约语义不变。
+- `apps/api-gateway/src/modules/app.module.ts` 注入 `PrismaService` 并以工厂模式初始化 `TasksService`。
+- `apps/api-gateway/test/tasks.service.spec.ts`、`apps/api-gateway/test/contract.spec.ts` 适配异步 API。
+- `doc/engineering/rd-progress-management.md` 新增第 25 节执行回填并更新 `DATA-001/BE-003/BE-004` 当前状态描述。
+- `doc/engineering/mvp-optimization-backlog.md` 更新 `OPT-ARCH-001` 为 `In Progress`，执行时机调整为 “MVP 内（稳定性前置执行）”。
+
+### Fixed
+- 修复 Prisma 分支 `seedFailedTask` 未等待异步写入即返回的问题，避免调用时序不一致。
+
+### Security
+- 持续保持 `Authorization`、`Idempotency-Key`、`X-Request-Id` 校验路径，不引入绕过鉴权的持久化捷径。
+
+### Rollback
+- 回退 `apps/api-gateway` Prisma 相关改动与台账文件更新，服务切回默认文件态持久化路径。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`、`/Users/codelei/Documents/ai-project/remove-watermark/AGENTS.md`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.9] - 2026-02-21
 

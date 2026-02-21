@@ -1,4 +1,4 @@
-# AGENTS 执行入口规范（v1.4）
+# AGENTS 执行入口规范（v1.5）
 
 ## 1. 文档定位与适用范围
 
@@ -272,6 +272,7 @@
 ### 14.3 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.5 | 2026-02-21 | 增加持久化任务提交前附加门禁（Prisma 生成/迁移校验）并补充提交闭环最佳实践 |
 | v1.4 | 2026-02-21 | 增加联调任务基线命令 `test:shared-smoke:matrix`（多环境 smoke） |
 | v1.3 | 2026-02-21 | 新增优化项“提前执行”同步回填规则（执行时机/状态/日期/任务关联） |
 | v1.2 | 2026-02-21 | 新增优化项专用台账回填要求与“发现即记录”闭环规则 |
@@ -302,6 +303,7 @@
 pnpm -r typecheck
 pnpm -r lint
 pnpm --filter @apps/api-gateway test:contract
+pnpm --filter @apps/api-gateway prisma:generate
 pnpm --filter @apps/api-gateway test:shared-smoke:matrix
 
 # 2) 检查变更范围
@@ -328,6 +330,13 @@ git push origin <branch>
   - 风险与回滚方案
   - 台账与变更日志
 - 若推送后发现错误提交，必须新增修复提交，不允许通过口头说明替代。
+
+### 15.6 持久化任务附加门禁（MUST）
+- 当改动涉及 `Prisma schema/migration` 或数据库事务逻辑时，提交前必须额外执行：
+1. `pnpm --filter @apps/api-gateway prisma:generate`
+2. 至少一类后端验证：`test:unit` 或 `test:contract`
+3. 若本地数据库可用，执行一次迁移命令并记录结果（`prisma:migrate:dev` 或 `prisma:push`）
+- 若第 3 步受环境限制无法执行，必须在回填中显式标注“缺失证据”与补齐计划（环境、时间、Owner）。
 
 ## 16. 优化项沉淀与流程优化（MUST）
 

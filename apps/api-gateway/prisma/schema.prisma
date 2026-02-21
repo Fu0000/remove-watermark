@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Task {
+  taskId       String   @id @map("task_id") @db.VarChar(64)
+  userId       String   @map("user_id") @db.VarChar(64)
+  assetId      String   @map("asset_id") @db.VarChar(64)
+  mediaType    String   @map("media_type") @db.VarChar(16)
+  taskPolicy   String   @map("task_policy") @db.VarChar(16)
+  status       String   @db.VarChar(24)
+  progress     Int
+  version      Int
+  errorCode    String?  @map("error_code") @db.VarChar(16)
+  errorMessage String?  @map("error_message")
+  resultUrl    String?  @map("result_url")
+  createdAt    DateTime @map("created_at")
+  updatedAt    DateTime @map("updated_at")
+
+  mask TaskMask?
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("tasks")
+}
+
+model TaskMask {
+  taskId       String   @id @map("task_id") @db.VarChar(64)
+  maskId       String   @map("mask_id") @db.VarChar(64)
+  version      Int
+  polygons     Json
+  brushStrokes Json     @map("brush_strokes")
+  updatedAt    DateTime @map("updated_at")
+
+  task Task @relation(fields: [taskId], references: [taskId], onDelete: Cascade)
+
+  @@map("task_masks")
+}
+
+model TaskIdempotencyKey {
+  id             String   @id @db.VarChar(64)
+  userId         String   @map("user_id") @db.VarChar(64)
+  idempotencyKey String   @map("idempotency_key") @db.VarChar(128)
+  payloadHash    String   @map("payload_hash")
+  taskId         String   @map("task_id") @db.VarChar(64)
+  createdAt      DateTime @map("created_at")
+  updatedAt      DateTime @map("updated_at")
+
+  @@unique([userId, idempotencyKey])
+  @@index([taskId])
+  @@map("idempotency_keys")
+}
+
+model TaskActionIdempotency {
+  id             String   @id @db.VarChar(64)
+  userId         String   @map("user_id") @db.VarChar(64)
+  idempotencyKey String   @map("idempotency_key") @db.VarChar(128)
+  payloadHash    String   @map("payload_hash")
+  resultJson     Json     @map("result_json")
+  updatedAt      DateTime @map("updated_at")
+
+  @@unique([userId, idempotencyKey])
+  @@map("task_action_idempotency")
+}
+
+model UsageLedger {
+  ledgerId    String   @id @map("ledger_id") @db.VarChar(64)
+  userId      String   @map("user_id") @db.VarChar(64)
+  taskId      String   @map("task_id") @db.VarChar(64)
+  status      String   @db.VarChar(16)
+  source      String   @db.VarChar(64)
+  consumeUnit Int      @map("consume_unit")
+  consumeAt   DateTime @map("consume_at")
+
+  @@index([userId, consumeAt(sort: Desc)])
+  @@index([taskId])
+  @@map("usage_ledger")
+}
+
+model OutboxEvent {
+  eventId       String   @id @map("event_id") @db.VarChar(64)
+  eventType     String   @map("event_type") @db.VarChar(64)
+  aggregateType String   @map("aggregate_type") @db.VarChar(32)
+  aggregateId   String   @map("aggregate_id") @db.VarChar(64)
+  status        String   @db.VarChar(16)
+  retryCount    Int      @map("retry_count")
+  createdAt     DateTime @map("created_at")
+
+  @@index([status, createdAt(sort: Asc)])
+  @@index([aggregateType, aggregateId])
+  @@map("outbox_events")
+}

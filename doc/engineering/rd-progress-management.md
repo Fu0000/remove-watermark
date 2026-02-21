@@ -80,7 +80,7 @@
 
 | Task ID | Epic | Task | Owner | Start | End | 状态 | 联调依赖 | 测试层级 | 关键结果 |
 |---|---|---|---|---|---|---|---|---|---|
-| DATA-001 | 数据基线 | Prisma schema 与 DDL 基线同步（含回滚脚本） | 后端 | 2026-02-24 | 2026-02-28 | Ready | shared 部署 | integration | DDL 可一次执行成功 |
+| DATA-001 | 数据基线 | Prisma schema 与 DDL 基线同步（含回滚脚本） | 后端 | 2026-02-24 | 2026-02-28 | In Progress | shared 部署 | integration | Prisma schema + init migration 已落地，待 shared PostgreSQL 验证 |
 | DATA-002 | 数据基线 | 初始化套餐/权益种子数据（Free/Pro 月付/年付） | 后端 | 2026-02-26 | 2026-03-01 | Backlog | 订阅联调 | integration | 套餐查询接口可用 |
 | DATA-003 | 数据基线 | `idempotency_keys/outbox_events/usage_ledger` 去重索引校验 | 后端 | 2026-02-26 | 2026-03-02 | Backlog | 任务/账务一致性 | contract/integration | 幂等冲突可稳定复现与防重 |
 | DATA-004 | 数据基线 | 测试样本库（图片/视频，含失败样本）与标注策略 | 测试+算法 | 2026-02-25 | 2026-03-03 | Ready | E2E 与回归 | e2e/regression | FR 场景样本覆盖 >= 90% |
@@ -114,8 +114,8 @@
 |---|---|---|---|---|---|---|---|---|---|---|
 | BE-001 | 契约实现 | `GET /v1/system/capabilities` + 默认策略 | 后端 | 2026-02-26 | 2026-03-03 | In Review | FR-005 | contract | 契约测试已通过 | 能力协商可回退 FAST |
 | BE-002 | 上传链路 | `POST /v1/assets/upload-policy` + MinIO 签名 | 后端 | 2026-02-26 | 2026-03-04 | In Review | FR-002 | integration/contract | 契约测试已通过 | 上传策略 10 分钟有效 |
-| BE-003 | 任务编排 | `POST /v1/tasks` + 幂等 + 预扣事务 | 后端 | 2026-03-01 | 2026-03-08 | In Review | FR-005/FR-008 | integration/contract | 文件态持久化 + 事务化创建已联调 | `tasks + usage_ledger + outbox` 同事务 |
-| BE-004 | 状态推进 | Orchestrator 状态机推进与乐观锁版本控制 | 后端 | 2026-03-03 | 2026-03-12 | In Review | FR-005/FR-006 | unit/integration | 版本号乐观锁与状态迁移校验已落地 | 非法迁移拦截 100% |
+| BE-003 | 任务编排 | `POST /v1/tasks` + 幂等 + 预扣事务 | 后端 | 2026-03-01 | 2026-03-08 | In Review | FR-005/FR-008 | integration/contract | 文件态 + Prisma 持久化分支已落地，事务化创建已联调 | `tasks + usage_ledger + outbox` 同事务 |
+| BE-004 | 状态推进 | Orchestrator 状态机推进与乐观锁版本控制 | 后端 | 2026-03-03 | 2026-03-12 | In Review | FR-005/FR-006 | unit/integration | 乐观锁与状态迁移校验已覆盖 Prisma 分支 | 非法迁移拦截 100% |
 | BE-005 | 结果交付 | `GET /v1/tasks/{taskId}/result` + 结果 TTL | 后端 | 2026-03-09 | 2026-03-15 | In Review | FR-007 | integration | 契约测试已通过（含结果可用路径） | 结果链接按策略失效 |
 | BE-006 | 失败恢复 | retry/cancel 语义与并发互斥 | 后端 | 2026-03-09 | 2026-03-16 | In Review | FR-005/FR-006 | unit/contract | 动作幂等与冲突路径契约测试已通过 | 重试与取消冲突可控 |
 | BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | Backlog | FR-008 | integration/contract | 未开始 | 账务一致性可追踪 |
@@ -159,6 +159,7 @@
 | API 网关构建验证 | `pnpm --filter @apps/api-gateway build` | `tsc passed` | 后端网关骨架可完成编译 |
 | API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `10 passed / 0 failed` | 关键契约（含 `cancel/retry` 幂等与冲突路径）可联调 |
 | API 网关单元测试 | `pnpm --filter @apps/api-gateway test:unit` | `2 passed / 0 failed` | `BE-003/BE-004`（事务创建与乐观锁）核心规则可回归 |
+| Prisma 客户端生成校验（本轮） | `pnpm --filter @apps/api-gateway prisma:generate` | `passed` | Prisma schema 与客户端代码生成可用，支持后续 shared DB 联调 |
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 编辑页真实绘制交互可完成多端构建（保留包体告警待优化） |
@@ -181,8 +182,8 @@
 | 状态 | 数量 | 占比 |
 |---|---:|---:|
 | Done | 1 | 2.3% |
-| In Progress | 5 | 11.6% |
-| Ready | 8 | 18.6% |
+| In Progress | 6 | 14.0% |
+| Ready | 7 | 16.3% |
 | Backlog | 14 | 32.6% |
 | In Review | 15 | 34.9% |
 | QA | 0 | 0.0% |
@@ -658,3 +659,57 @@
   - 回滚：恢复 `INT-004/INT-005` 为 `In Progress` 并恢复 `BLK-004` 为当前阻塞项。
 - 下一步：
   - 发布前最后一步执行 shared/staging 云端 smoke 与认证验收并回填结果。
+
+## 25. 本次执行回填（OPT-ARCH-001 Prisma 持久化基座）
+
+- 任务编号：`DEV-20260221-BE-0304-PRISMA`
+- 需求映射：`FR-005/FR-006/FR-008`、`NFR-006`
+- 优化项关联：`OPT-ARCH-001`（`In Progress`）
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-db-standards.md`
+- 负责人：后端
+- 截止时间：`2026-02-22`
+- 当前状态：`In Progress`
+- 阻塞项：无
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/schema.prisma`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/migrations/20260221211500_init_tasks_store/migration.sql`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/common/prisma.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/app.module.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/tasks/tasks.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/tasks/tasks.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/.env.example`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/tasks.service.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/contract.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/pnpm-lock.yaml`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/AGENTS.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+- 实施摘要：
+  - 新增 Prisma schema 与初始化 DDL，覆盖 `tasks/task_masks/idempotency_keys/task_action_idempotency/usage_ledger/outbox_events`。
+  - `TasksService` 新增 Prisma 持久化分支（`TASKS_STORE=prisma` 或 `DATABASE_URL`）并保留文件态回退路径。
+  - 任务创建、动作幂等、状态机迁移与乐观锁能力已接入数据库事务语义。
+  - 新增 `PrismaService` 与模块注入；新增 `prisma:generate/migrate:dev/push` 命令。
+  - 修复 `seedFailedTask` 在 Prisma 分支的异步等待问题，避免测试与调用提前返回。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway prisma:generate`：通过
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:unit`：通过（`2/2`）
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`10/10`）
+- 联调结果：
+  - 在 `NODE_ENV=test` 路径下，现有契约与幂等行为保持兼容，无回归。
+  - Prisma 持久化分支可编译并可生成客户端代码，满足下一步 shared DB 联调准备。
+- 遗留问题：
+  - 尚未在真实 PostgreSQL 上执行端到端 smoke，当前缺少 DB 运行时证据。
+  - Worker 队列化推进（`OPT-ARCH-002`）尚未接入，状态推进仍有 API 模拟路径。
+- 风险与回滚：
+  - 风险：若直接切换 `TASKS_STORE=prisma` 且 DB 连接不可用，会导致 API 启动后首次持久化访问失败。
+  - 回滚：将 `TASKS_STORE` 切回默认文件态，并回退本节改动文件。
+- 下一步：
+  - 在本地 PostgreSQL 执行 `prisma migrate dev` 后跑 `test:shared-smoke`，补齐 `integration/smoke` 证据。
+  - 推进 `OPT-ARCH-002`，将状态推进从 API 模拟路径迁移到 Worker 编排。

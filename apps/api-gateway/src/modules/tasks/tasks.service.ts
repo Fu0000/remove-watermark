@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, resolve } from "node:path";
 import { Injectable } from "@nestjs/common";
 import type { TaskPolicy, TaskStatus } from "@packages/contracts";
+import { Prisma } from "@prisma/client";
+import { PrismaService } from "../common/prisma.service";
 
 export interface CreateTaskInput {
   assetId: string;
@@ -119,6 +121,8 @@ type TaskMutationResult =
   | { ok: true; task: TaskRecord }
   | { ok: false; reason: "NOT_FOUND" | "VERSION_CONFLICT" | "INVALID_TRANSITION" };
 
+type DbTransactionClient = Prisma.TransactionClient;
+
 const CANCELABLE_STATUS = new Set<TaskStatus>(["QUEUED", "PREPROCESSING", "DETECTING"]);
 const TERMINAL_STATUS = new Set<TaskStatus>(["SUCCEEDED", "FAILED", "CANCELED"]);
 
@@ -149,20 +153,38 @@ export class TasksService {
 
   private readonly persistenceEnabled: boolean;
   private readonly persistenceFilePath: string;
+  private readonly prismaService?: PrismaService;
+  private readonly usePrismaStore: boolean;
 
-  constructor(options: TasksServiceOptions = {}) {
+  constructor(options: TasksServiceOptions = {}, prismaService?: PrismaService) {
+    this.prismaService = prismaService;
     const configuredPath = options.persistenceFilePath || process.env.TASKS_STATE_FILE;
     this.persistenceFilePath = configuredPath
       ? resolve(process.cwd(), configuredPath)
       : resolve(process.cwd(), ".runtime/api-gateway/tasks-state.json");
-    this.persistenceEnabled = options.disablePersistence !== true && process.env.NODE_ENV !== "test";
+    const preferPrismaStore = process.env.TASKS_STORE === "prisma" || Boolean(process.env.DATABASE_URL);
+    this.usePrismaStore =
+      options.disablePersistence !== true &&
+      process.env.NODE_ENV !== "test" &&
+      preferPrismaStore &&
+      Boolean(this.prismaService);
+
+    this.persistenceEnabled = options.disablePersistence !== true && process.env.NODE_ENV !== "test" && !this.usePrismaStore;
 
     if (this.persistenceEnabled) {
       this.hydrateFromDisk();
     }
   }
 
-  createTask(userId: string, idempotencyKey: string, input: CreateTaskInput): { task: TaskRecord; created: boolean } {
+  async createTask(
+    userId: string,
+    idempotencyKey: string,
+    input: CreateTaskInput
+  ): Promise<{ task: TaskRecord; created: boolean }> {
+    if (this.usePrismaStore) {
+      return this.createTaskWithPrisma(userId, idempotencyKey, input);
+    }
+
     const payloadHash = JSON.stringify(input);
     const existing = this.idempotency.get(`${userId}:${idempotencyKey}`);
 
@@ -207,7 +229,11 @@ export class TasksService {
     });
   }
 
-  listByUser(userId: string): TaskRecord[] {
+  async listByUser(userId: string): Promise<TaskRecord[]> {
+    if (this.usePrismaStore) {
+      return this.listByUserWithPrisma(userId);
+    }
+
     const tasks = [...this.tasks.values()]
       .filter((task) => task.userId === userId)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
@@ -219,7 +245,11 @@ export class TasksService {
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
-  getByUser(userId: string, taskId: string, options: GetTaskOptions = {}): TaskRecord | undefined {
+  async getByUser(userId: string, taskId: string, options: GetTaskOptions = {}): Promise<TaskRecord | undefined> {
+    if (this.usePrismaStore) {
+      return this.getByUserWithPrisma(userId, taskId, options);
+    }
+
     const task = this.tasks.get(taskId);
     if (!task || task.userId !== userId) {
       return undefined;
@@ -232,21 +262,33 @@ export class TasksService {
     return this.tasks.get(taskId);
   }
 
-  cancel(userId: string, taskId: string, idempotencyKey: string): TaskActionResult {
+  async cancel(userId: string, taskId: string, idempotencyKey: string): Promise<TaskActionResult> {
+    if (this.usePrismaStore) {
+      return this.applyTaskActionWithPrisma(userId, taskId, idempotencyKey, "CANCEL");
+    }
+
     return this.applyTaskAction(userId, taskId, idempotencyKey, "CANCEL");
   }
 
-  retry(userId: string, taskId: string, idempotencyKey: string): TaskActionResult {
+  async retry(userId: string, taskId: string, idempotencyKey: string): Promise<TaskActionResult> {
+    if (this.usePrismaStore) {
+      return this.applyTaskActionWithPrisma(userId, taskId, idempotencyKey, "RETRY");
+    }
+
     return this.applyTaskAction(userId, taskId, idempotencyKey, "RETRY");
   }
 
-  upsertMask(
+  async upsertMask(
     userId: string,
     taskId: string,
     input: UpsertMaskInput
-  ): { conflict: false; maskId: string; version: number } | { conflict: true; version: number } | undefined {
-    const task = this.getByUser(userId, taskId, { advance: false });
-    if (!task) {
+  ): Promise<{ conflict: false; maskId: string; version: number } | { conflict: true; version: number } | undefined> {
+    if (this.usePrismaStore) {
+      return this.upsertMaskWithPrisma(userId, taskId, input);
+    }
+
+    const task = this.tasks.get(taskId);
+    if (!task || task.userId !== userId) {
       return undefined;
     }
 
@@ -306,7 +348,11 @@ export class TasksService {
     });
   }
 
-  advanceTaskStatus(userId: string, taskId: string, input: AdvanceTaskStatusInput): AdvanceTaskStatusResult {
+  async advanceTaskStatus(userId: string, taskId: string, input: AdvanceTaskStatusInput): Promise<AdvanceTaskStatusResult> {
+    if (this.usePrismaStore) {
+      return this.advanceTaskStatusWithPrisma(userId, taskId, input);
+    }
+
     return this.runInTransaction(() => {
       const task = this.tasks.get(taskId);
       if (!task) {
@@ -364,7 +410,12 @@ export class TasksService {
     });
   }
 
-  seedFailedTask(userId: string, taskId: string): void {
+  async seedFailedTask(userId: string, taskId: string): Promise<void> {
+    if (this.usePrismaStore) {
+      await this.seedFailedTaskWithPrisma(userId, taskId);
+      return;
+    }
+
     this.runInTransaction(() => {
       const now = new Date().toISOString();
       this.tasks.set(taskId, {
@@ -385,6 +436,17 @@ export class TasksService {
   }
 
   getDebugSnapshot() {
+    if (this.usePrismaStore) {
+      return {
+        taskCount: 0,
+        idempotencyCount: 0,
+        actionIdempotencyCount: 0,
+        taskMaskCount: 0,
+        usageLedgerCount: 0,
+        outboxEventCount: 0
+      };
+    }
+
     return {
       taskCount: this.tasks.size,
       idempotencyCount: this.idempotency.size,
@@ -393,6 +455,769 @@ export class TasksService {
       usageLedgerCount: this.usageLedgers.size,
       outboxEventCount: this.outboxEvents.size
     };
+  }
+
+  private ensurePrismaService(): PrismaService {
+    if (!this.prismaService) {
+      throw new Error("PrismaService is not configured");
+    }
+
+    return this.prismaService;
+  }
+
+  private mapDbTask(task: {
+    taskId: string;
+    userId: string;
+    assetId: string;
+    mediaType: string;
+    taskPolicy: string;
+    status: string;
+    progress: number;
+    version: number;
+    errorCode: string | null;
+    errorMessage: string | null;
+    resultUrl: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }): TaskRecord {
+    return {
+      taskId: task.taskId,
+      userId: task.userId,
+      assetId: task.assetId,
+      mediaType: task.mediaType as "IMAGE" | "VIDEO",
+      taskPolicy: task.taskPolicy as TaskPolicy,
+      status: task.status as TaskStatus,
+      progress: task.progress,
+      version: task.version,
+      errorCode: task.errorCode || undefined,
+      errorMessage: task.errorMessage || undefined,
+      resultUrl: task.resultUrl || undefined,
+      createdAt: task.createdAt.toISOString(),
+      updatedAt: task.updatedAt.toISOString()
+    };
+  }
+
+  private parseActionResult(value: Prisma.JsonValue): TaskActionResult | undefined {
+    if (!value || typeof value !== "object" || !("kind" in value)) {
+      return undefined;
+    }
+
+    return value as unknown as TaskActionResult;
+  }
+
+  private async createTaskWithPrisma(
+    userId: string,
+    idempotencyKey: string,
+    input: CreateTaskInput
+  ): Promise<{ task: TaskRecord; created: boolean }> {
+    const prisma = this.ensurePrismaService();
+    const payloadHash = JSON.stringify(input);
+
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.taskIdempotencyKey.findUnique({
+        where: {
+          userId_idempotencyKey: {
+            userId,
+            idempotencyKey
+          }
+        }
+      });
+
+      if (existing) {
+        const existingTask = await tx.task.findUnique({
+          where: { taskId: existing.taskId }
+        });
+
+        if (existingTask) {
+          return {
+            task: this.mapDbTask(existingTask),
+            created: false
+          };
+        }
+
+        await tx.taskIdempotencyKey.delete({
+          where: { id: existing.id }
+        });
+      }
+
+      const now = new Date();
+      const taskId = this.buildId("tsk");
+      const taskPolicy = input.taskPolicy || "FAST";
+
+      await tx.task.create({
+        data: {
+          taskId,
+          userId,
+          assetId: input.assetId,
+          mediaType: input.mediaType,
+          taskPolicy,
+          status: "QUEUED",
+          progress: 0,
+          version: 1,
+          createdAt: now,
+          updatedAt: now
+        }
+      });
+
+      await tx.taskIdempotencyKey.create({
+        data: {
+          id: this.buildId("idp"),
+          userId,
+          idempotencyKey,
+          payloadHash,
+          taskId,
+          createdAt: now,
+          updatedAt: now
+        }
+      });
+
+      await this.appendUsageLedgerWithPrisma(tx, userId, taskId, "HELD", "task_create");
+      await this.appendOutboxEventWithPrisma(tx, taskId, "task.created");
+
+      const createdTask = await tx.task.findUnique({
+        where: { taskId }
+      });
+
+      if (!createdTask) {
+        throw new Error(`Task not found after create: ${taskId}`);
+      }
+
+      return {
+        task: this.mapDbTask(createdTask),
+        created: true
+      };
+    });
+  }
+
+  private async listByUserWithPrisma(userId: string): Promise<TaskRecord[]> {
+    const prisma = this.ensurePrismaService();
+    const tasks = await prisma.task.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" }
+    });
+
+    for (const task of tasks) {
+      await this.maybeAdvanceForSimulationWithPrisma(task.taskId);
+    }
+
+    const refreshed = await prisma.task.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" }
+    });
+
+    return refreshed.map((task) => this.mapDbTask(task));
+  }
+
+  private async getByUserWithPrisma(
+    userId: string,
+    taskId: string,
+    options: GetTaskOptions = {}
+  ): Promise<TaskRecord | undefined> {
+    const prisma = this.ensurePrismaService();
+    const task = await prisma.task.findUnique({
+      where: { taskId }
+    });
+
+    if (!task || task.userId !== userId) {
+      return undefined;
+    }
+
+    if (options.advance !== false) {
+      await this.maybeAdvanceForSimulationWithPrisma(taskId);
+    }
+
+    const refreshed = await prisma.task.findUnique({
+      where: { taskId }
+    });
+
+    if (!refreshed || refreshed.userId !== userId) {
+      return undefined;
+    }
+
+    return this.mapDbTask(refreshed);
+  }
+
+  private async applyTaskActionWithPrisma(
+    userId: string,
+    taskId: string,
+    idempotencyKey: string,
+    action: TaskActionType
+  ): Promise<TaskActionResult> {
+    const prisma = this.ensurePrismaService();
+    const payloadHash = `${action}:${taskId}`;
+
+    const existing = await prisma.taskActionIdempotency.findUnique({
+      where: {
+        userId_idempotencyKey: {
+          userId,
+          idempotencyKey
+        }
+      }
+    });
+
+    if (existing) {
+      if (existing.payloadHash !== payloadHash) {
+        return { kind: "IDEMPOTENCY_CONFLICT" };
+      }
+
+      const parsed = this.parseActionResult(existing.resultJson);
+      if (!parsed) {
+        return { kind: "IDEMPOTENCY_CONFLICT" };
+      }
+
+      if (parsed.kind === "SUCCESS") {
+        return {
+          ...parsed,
+          replayed: true
+        };
+      }
+
+      return parsed;
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const task = await tx.task.findUnique({
+        where: { taskId }
+      });
+
+      if (!task || task.userId !== userId) {
+        const notFound: TaskActionResult = { kind: "NOT_FOUND" };
+        await this.persistActionIdempotencyWithPrisma(tx, userId, idempotencyKey, payloadHash, notFound, now);
+        return notFound;
+      }
+
+      const fromStatus = task.status as TaskStatus;
+      let transitionResult: TaskMutationResult;
+
+      if (action === "CANCEL") {
+        if (!CANCELABLE_STATUS.has(fromStatus)) {
+          const invalid: TaskActionResult = { kind: "INVALID_TRANSITION", status: fromStatus };
+          await this.persistActionIdempotencyWithPrisma(tx, userId, idempotencyKey, payloadHash, invalid, now);
+          return invalid;
+        }
+
+        transitionResult = await this.transitionTaskWithPrisma(tx, taskId, "CANCELED", task.version, {
+          progress: 0
+        });
+      } else {
+        if (fromStatus !== "FAILED") {
+          const invalid: TaskActionResult = { kind: "INVALID_TRANSITION", status: fromStatus };
+          await this.persistActionIdempotencyWithPrisma(tx, userId, idempotencyKey, payloadHash, invalid, now);
+          return invalid;
+        }
+
+        transitionResult = await this.transitionTaskWithPrisma(tx, taskId, "QUEUED", task.version, {
+          progress: 0,
+          clearError: true
+        });
+      }
+
+      if (!transitionResult.ok) {
+        const latest = await tx.task.findUnique({ where: { taskId } });
+        const invalid: TaskActionResult = {
+          kind: "INVALID_TRANSITION",
+          status: (latest?.status as TaskStatus) || fromStatus
+        };
+        await this.persistActionIdempotencyWithPrisma(tx, userId, idempotencyKey, payloadHash, invalid, now);
+        return invalid;
+      }
+
+      await this.handlePostTransitionWithPrisma(tx, transitionResult.task, userId, fromStatus, transitionResult.task.status);
+
+      const success: TaskActionResult = {
+        kind: "SUCCESS",
+        taskId: transitionResult.task.taskId,
+        status: transitionResult.task.status,
+        replayed: false
+      };
+      await this.persistActionIdempotencyWithPrisma(tx, userId, idempotencyKey, payloadHash, success, now);
+      return success;
+    });
+  }
+
+  private async upsertMaskWithPrisma(
+    userId: string,
+    taskId: string,
+    input: UpsertMaskInput
+  ): Promise<{ conflict: false; maskId: string; version: number } | { conflict: true; version: number } | undefined> {
+    const prisma = this.ensurePrismaService();
+    const task = await prisma.task.findUnique({
+      where: { taskId }
+    });
+    if (!task || task.userId !== userId) {
+      return undefined;
+    }
+
+    const currentMask = await prisma.taskMask.findUnique({
+      where: { taskId }
+    });
+    if (currentMask && input.version !== currentMask.version) {
+      return {
+        conflict: true,
+        version: currentMask.version
+      };
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const latestTask = await tx.task.findUnique({
+        where: { taskId }
+      });
+      if (!latestTask || latestTask.userId !== userId) {
+        return undefined;
+      }
+
+      const activeMask = await tx.taskMask.findUnique({
+        where: { taskId }
+      });
+
+      const nextVersion = activeMask ? activeMask.version + 1 : input.version + 1;
+      const maskId = activeMask?.maskId || this.buildId("msk");
+      const now = new Date();
+
+      await tx.taskMask.upsert({
+        where: { taskId },
+        create: {
+          taskId,
+          maskId,
+          version: nextVersion,
+          polygons: input.polygons as unknown as Prisma.InputJsonValue,
+          brushStrokes: input.brushStrokes as unknown as Prisma.InputJsonValue,
+          updatedAt: now
+        },
+        update: {
+          maskId,
+          version: nextVersion,
+          polygons: input.polygons as unknown as Prisma.InputJsonValue,
+          brushStrokes: input.brushStrokes as unknown as Prisma.InputJsonValue,
+          updatedAt: now
+        }
+      });
+
+      if (!TERMINAL_STATUS.has(latestTask.status as TaskStatus)) {
+        if (latestTask.status === "QUEUED") {
+          const transitionResult = await this.transitionTaskWithPrisma(tx, taskId, "PREPROCESSING", latestTask.version, {
+            progress: 15
+          });
+
+          if (!transitionResult.ok) {
+            return {
+              conflict: true,
+              version: latestTask.version
+            };
+          }
+        } else {
+          const updateResult = await this.bumpTaskProgressWithPrisma(tx, taskId, latestTask.version, 15);
+          if (!updateResult.ok) {
+            return {
+              conflict: true,
+              version: latestTask.version
+            };
+          }
+        }
+      }
+
+      return {
+        conflict: false,
+        maskId,
+        version: nextVersion
+      };
+    });
+  }
+
+  private async advanceTaskStatusWithPrisma(
+    userId: string,
+    taskId: string,
+    input: AdvanceTaskStatusInput
+  ): Promise<AdvanceTaskStatusResult> {
+    const prisma = this.ensurePrismaService();
+
+    return prisma.$transaction(async (tx) => {
+      const task = await tx.task.findUnique({
+        where: { taskId }
+      });
+      if (!task) {
+        return { kind: "NOT_FOUND" };
+      }
+
+      if (task.userId !== userId) {
+        return { kind: "FORBIDDEN" };
+      }
+
+      if (task.version !== input.expectedVersion) {
+        return {
+          kind: "VERSION_CONFLICT",
+          currentVersion: task.version
+        };
+      }
+
+      if (task.status !== input.fromStatus) {
+        return {
+          kind: "STATUS_MISMATCH",
+          status: task.status as TaskStatus
+        };
+      }
+
+      const transitionResult = await this.transitionTaskWithPrisma(tx, taskId, input.toStatus, input.expectedVersion, {
+        progress: input.progress,
+        resultUrl: input.resultUrl,
+        clearError: input.toStatus === "QUEUED"
+      });
+
+      if (!transitionResult.ok) {
+        if (transitionResult.reason === "VERSION_CONFLICT") {
+          const latest = await tx.task.findUnique({ where: { taskId } });
+          return {
+            kind: "VERSION_CONFLICT",
+            currentVersion: latest?.version || input.expectedVersion
+          };
+        }
+
+        if (transitionResult.reason === "INVALID_TRANSITION") {
+          const latest = await tx.task.findUnique({ where: { taskId } });
+          return {
+            kind: "INVALID_TRANSITION",
+            status: (latest?.status as TaskStatus) || input.fromStatus
+          };
+        }
+
+        return { kind: "NOT_FOUND" };
+      }
+
+      await this.handlePostTransitionWithPrisma(tx, transitionResult.task, userId, input.fromStatus, input.toStatus);
+
+      return {
+        kind: "SUCCESS",
+        task: transitionResult.task
+      };
+    });
+  }
+
+  private async seedFailedTaskWithPrisma(userId: string, taskId: string) {
+    const prisma = this.ensurePrismaService();
+    const now = new Date();
+
+    await prisma.task.upsert({
+      where: { taskId },
+      create: {
+        taskId,
+        userId,
+        assetId: "ast_failed",
+        mediaType: "IMAGE",
+        taskPolicy: "FAST",
+        status: "FAILED",
+        progress: 100,
+        version: 1,
+        errorCode: "50001",
+        errorMessage: "model timeout",
+        createdAt: now,
+        updatedAt: now
+      },
+      update: {
+        userId,
+        assetId: "ast_failed",
+        mediaType: "IMAGE",
+        taskPolicy: "FAST",
+        status: "FAILED",
+        progress: 100,
+        version: 1,
+        errorCode: "50001",
+        errorMessage: "model timeout",
+        updatedAt: now
+      }
+    });
+  }
+
+  private async maybeAdvanceForSimulationWithPrisma(taskId: string) {
+    const prisma = this.ensurePrismaService();
+    const current = await prisma.task.findUnique({
+      where: { taskId }
+    });
+    if (!current) {
+      return;
+    }
+
+    const hasMask = await prisma.taskMask.findUnique({
+      where: { taskId },
+      select: { taskId: true }
+    });
+    if (!hasMask) {
+      return;
+    }
+
+    if (TERMINAL_STATUS.has(current.status as TaskStatus)) {
+      return;
+    }
+
+    let nextStatus: TaskStatus | undefined;
+    let progress = current.progress;
+    let resultUrl: string | undefined;
+
+    switch (current.status as TaskStatus) {
+      case "QUEUED":
+        nextStatus = "PREPROCESSING";
+        progress = 15;
+        break;
+      case "PREPROCESSING":
+        nextStatus = "DETECTING";
+        progress = 35;
+        break;
+      case "DETECTING":
+        nextStatus = "INPAINTING";
+        progress = 60;
+        break;
+      case "INPAINTING":
+        nextStatus = "PACKAGING";
+        progress = 85;
+        break;
+      case "PACKAGING":
+        nextStatus = "SUCCEEDED";
+        progress = 100;
+        resultUrl = `https://minio.local/result/${taskId}.png`;
+        break;
+      default:
+        break;
+    }
+
+    if (!nextStatus) {
+      return;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const latest = await tx.task.findUnique({ where: { taskId } });
+      const latestMask = await tx.taskMask.findUnique({ where: { taskId }, select: { taskId: true } });
+
+      if (!latest || !latestMask || TERMINAL_STATUS.has(latest.status as TaskStatus)) {
+        return;
+      }
+
+      const fromStatus = latest.status as TaskStatus;
+      const transitionResult = await this.transitionTaskWithPrisma(tx, taskId, nextStatus as TaskStatus, latest.version, {
+        progress,
+        resultUrl
+      });
+
+      if (transitionResult.ok) {
+        await this.handlePostTransitionWithPrisma(tx, transitionResult.task, transitionResult.task.userId, fromStatus, nextStatus as TaskStatus);
+      }
+    });
+  }
+
+  private async handlePostTransitionWithPrisma(
+    tx: DbTransactionClient,
+    task: TaskRecord,
+    userId: string,
+    fromStatus: TaskStatus,
+    toStatus: TaskStatus
+  ) {
+    if (toStatus === "SUCCEEDED") {
+      if (!task.resultUrl) {
+        await tx.task.update({
+          where: { taskId: task.taskId },
+          data: {
+            resultUrl: `https://minio.local/result/${task.taskId}.png`,
+            updatedAt: new Date()
+          }
+        });
+      }
+
+      await this.appendUsageLedgerWithPrisma(tx, userId, task.taskId, "COMMITTED", "task_succeeded");
+      await this.appendOutboxEventWithPrisma(tx, task.taskId, "task.succeeded");
+      return;
+    }
+
+    if (toStatus === "CANCELED") {
+      await this.appendUsageLedgerWithPrisma(tx, userId, task.taskId, "RELEASED", "task_canceled");
+      await this.appendOutboxEventWithPrisma(tx, task.taskId, "task.canceled");
+      return;
+    }
+
+    if (fromStatus === "FAILED" && toStatus === "QUEUED") {
+      await this.appendOutboxEventWithPrisma(tx, task.taskId, "task.retried");
+    }
+  }
+
+  private async transitionTaskWithPrisma(
+    tx: DbTransactionClient,
+    taskId: string,
+    nextStatus: TaskStatus,
+    expectedVersion: number,
+    options: {
+      progress?: number;
+      resultUrl?: string;
+      clearError?: boolean;
+    } = {}
+  ): Promise<TaskMutationResult> {
+    const current = await tx.task.findUnique({
+      where: { taskId }
+    });
+    if (!current) {
+      return { ok: false, reason: "NOT_FOUND" };
+    }
+
+    if (current.version !== expectedVersion) {
+      return { ok: false, reason: "VERSION_CONFLICT" };
+    }
+
+    if (!canTransit(current.status as TaskStatus, nextStatus)) {
+      return { ok: false, reason: "INVALID_TRANSITION" };
+    }
+
+    const updatePayload: Prisma.TaskUpdateManyMutationInput = {
+      status: nextStatus,
+      version: { increment: 1 },
+      updatedAt: new Date()
+    };
+
+    if (typeof options.progress === "number") {
+      updatePayload.progress = options.progress;
+    }
+
+    if (options.clearError) {
+      updatePayload.errorCode = null;
+      updatePayload.errorMessage = null;
+    }
+
+    if (options.resultUrl) {
+      updatePayload.resultUrl = options.resultUrl;
+    }
+
+    const updated = await tx.task.updateMany({
+      where: {
+        taskId,
+        version: expectedVersion,
+        status: current.status
+      },
+      data: updatePayload
+    });
+
+    if (updated.count !== 1) {
+      return { ok: false, reason: "VERSION_CONFLICT" };
+    }
+
+    const latest = await tx.task.findUnique({
+      where: { taskId }
+    });
+
+    if (!latest) {
+      return { ok: false, reason: "NOT_FOUND" };
+    }
+
+    return {
+      ok: true,
+      task: this.mapDbTask(latest)
+    };
+  }
+
+  private async bumpTaskProgressWithPrisma(
+    tx: DbTransactionClient,
+    taskId: string,
+    expectedVersion: number,
+    minProgress: number
+  ): Promise<TaskMutationResult> {
+    const current = await tx.task.findUnique({
+      where: { taskId }
+    });
+    if (!current) {
+      return { ok: false, reason: "NOT_FOUND" };
+    }
+
+    if (current.version !== expectedVersion) {
+      return { ok: false, reason: "VERSION_CONFLICT" };
+    }
+
+    const updated = await tx.task.updateMany({
+      where: {
+        taskId,
+        version: expectedVersion
+      },
+      data: {
+        progress: Math.max(current.progress, minProgress),
+        version: { increment: 1 },
+        updatedAt: new Date()
+      }
+    });
+
+    if (updated.count !== 1) {
+      return { ok: false, reason: "VERSION_CONFLICT" };
+    }
+
+    const latest = await tx.task.findUnique({
+      where: { taskId }
+    });
+    if (!latest) {
+      return { ok: false, reason: "NOT_FOUND" };
+    }
+
+    return {
+      ok: true,
+      task: this.mapDbTask(latest)
+    };
+  }
+
+  private async appendUsageLedgerWithPrisma(
+    tx: DbTransactionClient,
+    userId: string,
+    taskId: string,
+    status: UsageLedgerRecord["status"],
+    source: string
+  ) {
+    await tx.usageLedger.create({
+      data: {
+        ledgerId: this.buildId("led"),
+        userId,
+        taskId,
+        status,
+        source,
+        consumeUnit: 1,
+        consumeAt: new Date()
+      }
+    });
+  }
+
+  private async appendOutboxEventWithPrisma(tx: DbTransactionClient, taskId: string, eventType: string) {
+    await tx.outboxEvent.create({
+      data: {
+        eventId: this.buildId("evt"),
+        eventType,
+        aggregateType: "task",
+        aggregateId: taskId,
+        status: "PENDING",
+        retryCount: 0,
+        createdAt: new Date()
+      }
+    });
+  }
+
+  private async persistActionIdempotencyWithPrisma(
+    tx: DbTransactionClient,
+    userId: string,
+    idempotencyKey: string,
+    payloadHash: string,
+    result: TaskActionResult,
+    updatedAt: Date
+  ) {
+    await tx.taskActionIdempotency.upsert({
+      where: {
+        userId_idempotencyKey: {
+          userId,
+          idempotencyKey
+        }
+      },
+      create: {
+        id: this.buildId("aid"),
+        userId,
+        idempotencyKey,
+        payloadHash,
+        resultJson: result as unknown as Prisma.InputJsonValue,
+        updatedAt
+      },
+      update: {
+        payloadHash,
+        resultJson: result as unknown as Prisma.InputJsonValue,
+        updatedAt
+      }
+    });
   }
 
   private applyTaskAction(userId: string, taskId: string, idempotencyKey: string, action: TaskActionType): TaskActionResult {
@@ -416,10 +1241,9 @@ export class TasksService {
     }
 
     return this.runInTransaction(() => {
-      const task = this.getByUser(userId, taskId, { advance: false });
       const now = new Date().toISOString();
-
-      if (!task) {
+      const task = this.tasks.get(taskId);
+      if (!task || task.userId !== userId) {
         const result: TaskActionResult = { kind: "NOT_FOUND" };
         this.actionIdempotency.set(key, {
           payloadHash,

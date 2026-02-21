@@ -8,6 +8,9 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "echo 'lint api-gateway: pending eslint setup'",
+    "prisma:generate": "prisma generate --schema prisma/schema.prisma",
+    "prisma:migrate:dev": "prisma migrate dev --schema prisma/schema.prisma",
+    "prisma:push": "prisma db push --schema prisma/schema.prisma",
     "test:unit": "NODE_ENV=test node --test --import tsx test/tasks.service.spec.ts",
     "test:contract": "NODE_ENV=test node --test --import tsx test/contract.spec.ts",
     "test:shared-smoke": "tsx scripts/shared-smoke.ts",
@@ -19,7 +22,11 @@
     "@nestjs/platform-fastify": "^11.0.7",
     "@packages/contracts": "workspace:*",
     "@packages/shared": "workspace:*",
+    "@prisma/client": "^5.22.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "prisma": "^5.22.0"
   }
 }

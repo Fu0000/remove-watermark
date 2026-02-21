@@ -6,10 +6,10 @@ function createService() {
   return new TasksService({ disablePersistence: true });
 }
 
-test("createTask should persist task + usage_ledger + outbox in one transaction", () => {
+test("createTask should persist task + usage_ledger + outbox in one transaction", async () => {
   const service = createService();
 
-  const first = service.createTask("u_1001", "idem_unit_create_1", {
+  const first = await service.createTask("u_1001", "idem_unit_create_1", {
     assetId: "ast_unit_1",
     mediaType: "IMAGE",
     taskPolicy: "FAST"
@@ -21,7 +21,7 @@ test("createTask should persist task + usage_ledger + outbox in one transaction"
   assert.equal(snapshotAfterCreate.usageLedgerCount, 1);
   assert.equal(snapshotAfterCreate.outboxEventCount, 1);
 
-  const replay = service.createTask("u_1001", "idem_unit_create_1", {
+  const replay = await service.createTask("u_1001", "idem_unit_create_1", {
     assetId: "ast_unit_1",
     mediaType: "IMAGE",
     taskPolicy: "FAST"
@@ -34,9 +34,9 @@ test("createTask should persist task + usage_ledger + outbox in one transaction"
   assert.equal(snapshotAfterReplay.outboxEventCount, 1);
 });
 
-test("advanceTaskStatus should enforce optimistic version lock", () => {
+test("advanceTaskStatus should enforce optimistic version lock", async () => {
   const service = createService();
-  const created = service.createTask("u_1001", "idem_unit_create_2", {
+  const created = await service.createTask("u_1001", "idem_unit_create_2", {
     assetId: "ast_unit_2",
     mediaType: "IMAGE",
     taskPolicy: "FAST"
@@ -44,7 +44,7 @@ test("advanceTaskStatus should enforce optimistic version lock", () => {
 
   const taskId = created.task.taskId;
 
-  const mask = service.upsertMask(
+  const mask = await service.upsertMask(
     "u_1001",
     taskId,
     {
@@ -65,11 +65,11 @@ test("advanceTaskStatus should enforce optimistic version lock", () => {
 
   assert.equal(mask?.conflict, false);
 
-  const beforeAdvance = service.getByUser("u_1001", taskId, { advance: false });
+  const beforeAdvance = await service.getByUser("u_1001", taskId, { advance: false });
   assert.equal(beforeAdvance?.status, "PREPROCESSING");
   const staleVersion = beforeAdvance?.version || 0;
 
-  const success = service.advanceTaskStatus("u_1001", taskId, {
+  const success = await service.advanceTaskStatus("u_1001", taskId, {
     fromStatus: "PREPROCESSING",
     toStatus: "DETECTING",
     expectedVersion: staleVersion,
@@ -78,7 +78,7 @@ test("advanceTaskStatus should enforce optimistic version lock", () => {
 
   assert.equal(success.kind, "SUCCESS");
 
-  const stale = service.advanceTaskStatus("u_1001", taskId, {
+  const stale = await service.advanceTaskStatus("u_1001", taskId, {
     fromStatus: "DETECTING",
     toStatus: "INPAINTING",
     expectedVersion: staleVersion,

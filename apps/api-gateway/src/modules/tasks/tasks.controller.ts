@@ -25,7 +25,7 @@ export class TasksController {
 
   @Post()
   @HttpCode(200)
-  createTask(
+  async createTask(
     @Headers("authorization") authorization: string | undefined,
     @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined,
@@ -41,7 +41,7 @@ export class TasksController {
       badRequest(40001, "参数非法", requestIdHeader);
     }
 
-    const result = this.tasksService.createTask("u_1001", idempotencyKey, body);
+    const result = await this.tasksService.createTask("u_1001", idempotencyKey, body);
 
     if (!result.created) {
       const samePayload =
@@ -69,12 +69,12 @@ export class TasksController {
   }
 
   @Get()
-  listTasks(
+  async listTasks(
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined
   ) {
     ensureAuthorization(authorization, requestIdHeader);
-    const items = this.tasksService.listByUser("u_1001");
+    const items = await this.tasksService.listByUser("u_1001");
 
     return ok(
       {
@@ -88,14 +88,14 @@ export class TasksController {
   }
 
   @Get(":taskId")
-  getTask(
+  async getTask(
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Param("taskId") taskId: string
   ) {
     ensureAuthorization(authorization, requestIdHeader);
 
-    const task = this.tasksService.getByUser("u_1001", taskId);
+    const task = await this.tasksService.getByUser("u_1001", taskId);
     if (!task) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
@@ -105,7 +105,7 @@ export class TasksController {
 
   @Post(":taskId/retry")
   @HttpCode(200)
-  retryTask(
+  async retryTask(
     @Headers("authorization") authorization: string | undefined,
     @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined,
@@ -116,7 +116,7 @@ export class TasksController {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
 
-    const result = this.tasksService.retry("u_1001", taskId, idempotencyKey);
+    const result = await this.tasksService.retry("u_1001", taskId, idempotencyKey);
     if (result.kind === "NOT_FOUND") {
       notFound(40401, "资源不存在", requestIdHeader);
     }
@@ -140,7 +140,7 @@ export class TasksController {
 
   @Post(":taskId/mask")
   @HttpCode(200)
-  upsertTaskMask(
+  async upsertTaskMask(
     @Headers("authorization") authorization: string | undefined,
     @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined,
@@ -156,7 +156,7 @@ export class TasksController {
       badRequest(40001, "参数非法", requestIdHeader);
     }
 
-    const result = this.tasksService.upsertMask("u_1001", taskId, body);
+    const result = await this.tasksService.upsertMask("u_1001", taskId, body);
     if (!result) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
@@ -177,7 +177,7 @@ export class TasksController {
 
   @Post(":taskId/cancel")
   @HttpCode(200)
-  cancelTask(
+  async cancelTask(
     @Headers("authorization") authorization: string | undefined,
     @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined,
@@ -188,7 +188,7 @@ export class TasksController {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
 
-    const result = this.tasksService.cancel("u_1001", taskId, idempotencyKey);
+    const result = await this.tasksService.cancel("u_1001", taskId, idempotencyKey);
     if (result.kind === "NOT_FOUND") {
       notFound(40401, "资源不存在", requestIdHeader);
     }
@@ -211,14 +211,14 @@ export class TasksController {
   }
 
   @Get(":taskId/result")
-  getTaskResult(
+  async getTaskResult(
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Param("taskId") taskId: string
   ) {
     ensureAuthorization(authorization, requestIdHeader);
 
-    const task = this.tasksService.getByUser("u_1001", taskId);
+    const task = await this.tasksService.getByUser("u_1001", taskId);
     if (!task) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
