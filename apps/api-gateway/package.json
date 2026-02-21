@@ -10,7 +10,8 @@
     "lint": "echo 'lint api-gateway: pending eslint setup'",
     "test:unit": "NODE_ENV=test node --test --import tsx test/tasks.service.spec.ts",
     "test:contract": "NODE_ENV=test node --test --import tsx test/contract.spec.ts",
-    "test:shared-smoke": "tsx scripts/shared-smoke.ts"
+    "test:shared-smoke": "tsx scripts/shared-smoke.ts",
+    "test:shared-smoke:matrix": "tsx scripts/shared-smoke-matrix.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.7",

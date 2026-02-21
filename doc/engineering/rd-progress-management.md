@@ -163,6 +163,7 @@
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 编辑页真实绘制交互可完成多端构建（保留包体告警待优化） |
 | shared 联调 smoke（INT-002/INT-005，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 本地地址 `http://127.0.0.1:3000` 已覆盖 Header、上传创建、状态刷新、结果查询与错误路径，云端 shared 地址待切换 |
+| shared 联调 smoke 矩阵（INT-002/INT-005，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke:matrix` | `passed（dev=passed）` | 已支持一键矩阵执行与 Markdown 报告输出，shared/staging 待提供云端地址后接入 |
 | 状态机字面量一致性抽检 | `rg -n "UPLOADED -> QUEUED -> PREPROCESSING -> DETECTING -> INPAINTING -> PACKAGING -> SUCCEEDED\\|FAILED\\|CANCELED" doc \| wc -l` | `6` | 关键文档存在统一字面量 |
 | 幂等约束覆盖抽检 | `rg -n "Idempotency-Key" doc \| wc -l` | `11` | 创建任务幂等约束已在多文档显式出现 |
 | Node+Triton 架构边界抽检 | `rg -n "Node 控制面 \\+ Triton 推理面|Node.*Triton" doc/project-constraints.md doc/prd.md doc/tad.md doc/plan.md` | 命中 `plan.md`、`tad.md` | 架构口径一致，需在实施阶段继续守护 |
@@ -577,4 +578,50 @@
   - 回滚：回退 `apps/api-gateway/scripts/shared-smoke.ts` 与本节文档回填。
 - 下一步：
   - 待阿里云地址提供后，执行同脚本进行 shared/staging 验收并更新 `INT-004/INT-005` 状态。
-  - 推进 `OPT-REL-001` 的多环境矩阵化（环境探测 + 报告输出）。
+  - 基于矩阵脚本接入 shared/staging 地址并沉淀跨环境 smoke 报告对比。
+
+## 23. 本次执行回填（OPT-REL-001 多环境 smoke 矩阵脚本）
+
+- 任务编号：`DEV-20260221-REL-01`
+- 需求映射：`FR-005/FR-006/FR-007`、`NFR-006`
+- 优化项关联：`OPT-REL-001`（已进入 `In Review`）
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 负责人：后端 + 运维协作
+- 截止时间：`2026-02-22`
+- 当前状态：`In Review`
+- 阻塞项：`BLK-004`（shared/staging 云端地址待提供）
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/scripts/shared-smoke-matrix.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/.gitignore`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/AGENTS.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+- 实施摘要：
+  - 新增 `shared-smoke-matrix` 脚本，默认按 `dev -> shared -> staging` 目标执行；支持 `SMOKE_MATRIX_TARGETS` 自定义目标列表。
+  - 脚本新增环境预检（`/v1/system/capabilities`）与逐目标执行耗时统计。
+  - 每次执行自动输出 Markdown 报告到 `apps/api-gateway/.runtime/reports/`。
+  - 新增命令：`pnpm --filter @apps/api-gateway test:shared-smoke:matrix`。
+  - 为运行产物补充忽略规则：`.gitignore` 增加 `apps/api-gateway/.runtime/`。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`10/10`）
+  - 启动本地网关后执行 `pnpm --filter @apps/api-gateway test:shared-smoke:matrix`：通过（`dev=passed`）
+  - `pnpm -r typecheck`：通过（`15/15`）
+- 联调结果：
+  - 本地 fallback 已可一键输出 smoke 矩阵结果与报告文件。
+  - 现阶段矩阵验证覆盖 `dev` 目标，shared/staging 将在云端地址可达后补齐。
+- 遗留问题：
+  - shared/staging 地址尚未提供，无法完成跨环境对比报告。
+  - 目前矩阵为串行执行，后续可按环境独立性评估并发执行能力。
+- 风险与回滚：
+  - 风险：若 shared/staging 地址不可达，矩阵命令会按失败退出，需在 CI 中配置目标环境变量。
+  - 回滚：回退 `shared-smoke-matrix.ts`、`package.json` 命令与台账更新。
+- 下一步：
+  - 等待你提供阿里云 shared/staging 地址后，执行完整矩阵并回填环境对比结果。
+  - 根据结果评估是否把矩阵脚本接入 CI 发布前 smoke 门禁。

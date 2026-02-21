@@ -1,4 +1,4 @@
-# AGENTS 执行入口规范（v1.3）
+# AGENTS 执行入口规范（v1.4）
 
 ## 1. 文档定位与适用范围
 
@@ -272,6 +272,7 @@
 ### 14.3 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.4 | 2026-02-21 | 增加联调任务基线命令 `test:shared-smoke:matrix`（多环境 smoke） |
 | v1.3 | 2026-02-21 | 新增优化项“提前执行”同步回填规则（执行时机/状态/日期/任务关联） |
 | v1.2 | 2026-02-21 | 新增优化项专用台账回填要求与“发现即记录”闭环规则 |
 | v1.1 | 2026-02-20 | 新增“任务完成后测试通过再提交并推送 GitHub”闭环流程与最佳实践 |
@@ -301,6 +302,7 @@
 pnpm -r typecheck
 pnpm -r lint
 pnpm --filter @apps/api-gateway test:contract
+pnpm --filter @apps/api-gateway test:shared-smoke:matrix
 
 # 2) 检查变更范围
 git status --short

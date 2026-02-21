@@ -1,4 +1,4 @@
-# 变更日志规范（v1.12）
+# 变更日志规范（v1.13）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.13 | 2026-02-21 | 新增 shared-smoke 多环境矩阵脚本与报告输出能力 |
 | v1.12 | 2026-02-21 | 新增 shared-smoke 对 INT-004/INT-005 的本地联调覆盖记录 |
 | v1.11 | 2026-02-21 | 新增 FE-003 真实绘制交互与多端坐标适配执行日志 |
 | v1.10 | 2026-02-21 | 新增 BE-003/BE-004（事务化创建、乐观锁、文件态持久化）与优化台账机制 |
@@ -66,6 +67,32 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.8] - 2026-02-21
+
+### Added
+- 新增矩阵脚本：`apps/api-gateway/scripts/shared-smoke-matrix.ts`，支持按环境批量执行 shared smoke。
+- 新增命令：`pnpm --filter @apps/api-gateway test:shared-smoke:matrix`。
+- 新增矩阵报告输出：执行后自动生成 Markdown 报告到 `apps/api-gateway/.runtime/reports/`。
+
+### Changed
+- `doc/engineering/rd-progress-management.md` 新增 `OPT-REL-001` 执行回填（第 23 节），并补充矩阵命令测试证据。
+- `doc/engineering/mvp-optimization-backlog.md` 更新 `OPT-REL-001` 状态为 `In Review`。
+- `.gitignore` 增加 `apps/api-gateway/.runtime/`，避免运行态报告污染工作区。
+- `AGENTS.md` 更新联调任务命令基线，新增 `test:shared-smoke:matrix` 推荐执行项。
+
+### Fixed
+- 解决 shared smoke 需要人工逐环境切换执行的问题，形成“一次命令、分环境汇总”执行方式。
+
+### Security
+- 矩阵脚本沿用现有 `Authorization`、`Idempotency-Key`、`X-Request-Id` 校验路径，不绕开鉴权。
+
+### Rollback
+- 回退 `apps/api-gateway/scripts/shared-smoke-matrix.ts`、`apps/api-gateway/package.json`、`.gitignore`、`AGENTS.md` 及相关台账更新。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`、`/Users/codelei/Documents/ai-project/remove-watermark/AGENTS.md`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.7] - 2026-02-21
 
