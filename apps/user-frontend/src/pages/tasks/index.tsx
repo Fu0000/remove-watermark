@@ -101,6 +101,10 @@ export default function TasksPage() {
       setActionText("当前任务已删除（展示已隐藏）");
       reset();
       void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      void Taro.showToast({
+        title: "任务删除成功",
+        icon: "success"
+      });
     },
     onError: (error) => {
       setActionText("");
@@ -142,9 +146,23 @@ export default function TasksPage() {
     retryMutation.mutate();
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
+    if (deleteMutation.isPending) {
+      return;
+    }
+
     if (!taskId) {
       setActionErrorText("当前无可删除任务");
+      return;
+    }
+
+    const modal = await Taro.showModal({
+      title: "确认删除任务",
+      content: "删除后该任务将从任务中心隐藏，是否继续？",
+      confirmText: "确认删除",
+      cancelText: "取消"
+    });
+    if (!modal.confirm) {
       return;
     }
 

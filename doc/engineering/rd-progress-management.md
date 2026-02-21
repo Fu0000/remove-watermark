@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.5 | 2026-02-22 | 新增 FE-007 第三阶段（删除二次确认与成功提示）执行记录 |
 | v1.4 | 2026-02-22 | 新增 FE-007 第二阶段（编辑/任务页删除入口）执行记录 |
 | v1.3 | 2026-02-22 | 新增 FE-007（账户隐私页：删除申请查询与审计日志）执行记录 |
 | v1.2 | 2026-02-22 | 新增 BE-009 第二阶段（删除申请执行态+审计查询+保留策略）执行记录 |
@@ -108,7 +109,7 @@
 | FE-004 | 用户端主链路 | 任务中心（轮询/SSE 回退、重试/取消） | 前端 | 2026-03-09 | 2026-03-18 | In Review | FR-005/FR-006 | `/v1/tasks*` | contract/e2e | 刷新/取消/重试联调动作与 H5 构建验证已通过 |
 | FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | In Review | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 结果查询、预览/复制下载地址、过期提示已联调 |
 | FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | Backlog | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 未开始 |
-| FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | In Review | FR-010/FR-011 | `/v1/account/delete-request*`, `/v1/account/audit-logs`, `DELETE /v1/assets/{assetId}`, `DELETE /v1/tasks/{taskId}` | e2e | 删除申请创建、list/detail、审计日志查询已联调，并在编辑/任务页补齐素材删除与任务删除入口 |
+| FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | In Review | FR-010/FR-011 | `/v1/account/delete-request*`, `/v1/account/audit-logs`, `DELETE /v1/assets/{assetId}`, `DELETE /v1/tasks/{taskId}` | e2e | 删除申请创建、list/detail、审计日志查询已联调；编辑/任务页删除入口已补齐并新增二次确认与成功提示 |
 | FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Progress | FR-012 | `/admin/*` | e2e/smoke | 页面与 RBAC 骨架已完成 |
 
 ### 7.5 后端研发任务（API + Worker + Billing）
@@ -191,6 +192,7 @@
 | BE-009 运维脚本校验（本轮） | `COMPLIANCE_STORE=prisma pnpm --filter @apps/api-gateway ops:account-delete:reconcile` + `COMPLIANCE_STORE=prisma AUDIT_LOG_RETENTION_DAYS=180 pnpm --filter @apps/api-gateway ops:audit:retention` | `passed` | 已具备删除申请批处理与审计日志保留清理执行入口 |
 | FE-007 账户隐私页前端验证（本轮） | `pnpm --filter @apps/user-frontend typecheck` + `pnpm --filter @apps/user-frontend build:h5` | `passed（build 含 2 条包体告警）` | 删除申请创建、删除申请查询与审计日志查询页面通过多端构建与类型校验 |
 | FE-007 第二阶段（本轮）删除入口验证 | `pnpm --filter @apps/user-frontend typecheck` + `pnpm --filter @apps/user-frontend build:h5` | `passed（build 含 2 条包体告警）` | 编辑页已接入 `DELETE /v1/assets/{assetId}`，任务中心已接入 `DELETE /v1/tasks/{taskId}`，并统一透传 `Idempotency-Key` |
+| FE-007 第三阶段（本轮）删除确认交互验证 | `pnpm --filter @apps/user-frontend typecheck` + `pnpm --filter @apps/user-frontend build:h5` | `passed（build 含 2 条包体告警）` | 删除动作新增二次确认弹窗与成功提示，降低误触风险 |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
 | Webhook Dispatcher 本地 smoke（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:smoke` | `passed` | 已验证 outbox `PENDING -> PUBLISHED`、签名头生成与 `webhook_deliveries(SUCCESS)` 持久化闭环 |
@@ -1913,3 +1915,39 @@
 - 下一步：
   - shared/staging 云端地址可用后，补齐 FE-007 第二阶段 smoke 证据并推进到 `QA`。
   - 若你同意，下一步我可以补“二次确认 + 删除后提示”来降低误触风险。
+
+## 52. 本次执行回填（FE-007 第三阶段：删除二次确认与成功提示）
+
+- 任务编号：`DEV-20260222-FE007-DELETE-CONFIRM`
+- 需求映射：`FR-010`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/prd.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/frontend-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+- 负责人：前端
+- 截止时间：`2026-04-06`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：低
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/pages/editor/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/pages/tasks/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 编辑页删除素材动作新增 `Taro.showModal` 二次确认，确认后才执行删除。
+  - 任务中心删除任务动作新增 `Taro.showModal` 二次确认，确认后才执行删除。
+  - 删除成功统一通过 `Taro.showToast` 提示，补齐用户反馈闭环。
+- 测试证据：
+  - `pnpm --filter @apps/user-frontend typecheck`：通过
+  - `pnpm --filter @apps/user-frontend build:h5`：通过（`2 warnings`，为既有包体告警）
+- 联调结果：
+  - 本地地址（`http://127.0.0.1:3000`）下，删除动作需显式确认才会触发，删除成功后有明确正向反馈提示。
+- 遗留问题：
+  - shared/staging 云端环境未执行该交互路径验收，待发布前统一补齐 smoke 证据。
+- 风险与回滚：
+  - 风险：无新增协议风险，仅前端交互层行为调整。
+  - 回滚：回退两处 `showModal/showToast` 逻辑，恢复到“直接删除”交互。
+- 下一步：
+  - shared/staging 云端地址可用后，补齐 FE-007 第三阶段 smoke 证据并推进 `QA`。

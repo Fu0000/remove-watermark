@@ -364,8 +364,22 @@ export default function EditorPage() {
   };
 
   const handleDeleteAsset = async () => {
+    if (assetDeleting) {
+      return;
+    }
+
     if (!assetId) {
       setErrorText("当前没有可删除的素材");
+      return;
+    }
+
+    const modal = await Taro.showModal({
+      title: "确认删除素材",
+      content: "删除后该素材将不可在任务链路中继续使用，是否继续？",
+      confirmText: "确认删除",
+      cancelText: "取消"
+    });
+    if (!modal.confirm) {
       return;
     }
 
@@ -375,7 +389,7 @@ export default function EditorPage() {
       await deleteAsset(assetId, buildIdempotencyKey());
       setAssetId("");
       Taro.showToast({
-        title: "素材已删除",
+        title: "素材删除成功",
         icon: "success"
       });
     } catch (error) {

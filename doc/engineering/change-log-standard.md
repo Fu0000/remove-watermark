@@ -1,4 +1,4 @@
-# 变更日志规范（v1.42）
+# 变更日志规范（v1.43）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.43 | 2026-02-22 | 新增 FE-007 第三阶段（删除二次确认与成功提示）执行记录 |
 | v1.42 | 2026-02-22 | 新增 FE-007 第二阶段（编辑/任务页删除入口）执行记录 |
 | v1.41 | 2026-02-22 | 新增 FE-007（账户隐私页：删除申请与审计查询）执行记录 |
 | v1.40 | 2026-02-22 | 新增 BE-009 第二阶段（删除申请执行态、查询与保留策略）执行记录 |
@@ -96,6 +97,28 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.38] - 2026-02-22
+
+### Changed
+- `apps/user-frontend/src/pages/editor/index.tsx` 的“删除当前素材”流程新增二次确认弹窗。
+- `apps/user-frontend/src/pages/tasks/index.tsx` 的“删除当前任务”流程新增二次确认弹窗。
+- 两处删除动作成功后统一增加成功提示（toast），补齐用户反馈闭环。
+- `doc/engineering/rd-progress-management.md` 新增第 52 节回填并补充 FE-007 第三阶段测试证据。
+
+### Fixed
+- 修复删除动作“单击即执行、缺少确认门槛”的误触风险。
+- 修复删除成功后无明确反馈的问题。
+
+### Security
+- 仅优化前端交互，不改变 `Authorization` 与 `Idempotency-Key` 的既有约束与语义。
+
+### Rollback
+- 回退 `editor/tasks` 页面的 `showModal/showToast` 交互逻辑及文档回填，恢复到 0.5.37 行为。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.37] - 2026-02-22
 
