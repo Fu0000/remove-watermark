@@ -305,8 +305,9 @@ async function main() {
   let previousProgress = -1;
   const observedStatus: TaskStatus[] = [];
   const pollIntervalMs = Number.parseInt(process.env.SHARED_SMOKE_POLL_INTERVAL_MS || "250", 10);
+  const maxPollAttempts = Number.parseInt(process.env.SHARED_SMOKE_MAX_POLL_ATTEMPTS || "20", 10);
 
-  for (let index = 0; index < 8; index += 1) {
+  for (let index = 0; index < (Number.isFinite(maxPollAttempts) && maxPollAttempts > 0 ? maxPollAttempts : 20); index += 1) {
     const detailResp = await request<{
       taskId: string;
       status: TaskStatus;

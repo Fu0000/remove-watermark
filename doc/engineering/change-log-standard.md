@@ -1,4 +1,4 @@
-# 变更日志规范（v1.17）
+# 变更日志规范（v1.18）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.18 | 2026-02-21 | 新增 OPT-ARCH-002 Redis/BullMQ 消息驱动编排执行记录 |
 | v1.17 | 2026-02-21 | 新增 OPT-ARCH-002（Worker 编排去副作用）执行记录与双进程 smoke 证据 |
 | v1.16 | 2026-02-21 | 新增 OPT-ARCH-001 本地 PostgreSQL integration/smoke 证据与重启持久化验证记录 |
 | v1.15 | 2026-02-21 | 新增 OPT-ARCH-001（Prisma 持久化基座）执行记录与流程门禁补充 |
@@ -71,6 +72,33 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.13] - 2026-02-21
+
+### Added
+- `apps/worker-orchestrator` 新增 Redis/BullMQ 依赖与消息驱动编排能力：
+  - Outbox 事件分发：`task.created/task.retried -> queue`
+  - Queue consumer 状态推进：`QUEUED -> ... -> SUCCEEDED`
+- 新增环境变量支持：`REDIS_URL`、`QUEUE_NAME`、`ORCHESTRATOR_*` 运行参数。
+- `doc/engineering/rd-progress-management.md` 新增第 27 节执行回填（队列化编排与本地双进程 smoke 证据）。
+
+### Changed
+- `apps/api-gateway/scripts/shared-smoke.ts` 新增 `SHARED_SMOKE_MAX_POLL_ATTEMPTS`，提高异步队列模式下的轮询稳定性。
+- `doc/engineering/mvp-optimization-backlog.md` 更新 `OPT-ARCH-002` 现状为 Redis/BullMQ 消息驱动并调整状态为 `In Review`。
+- `SVC-003` 状态更新为 `In Review`，完成从轮询骨架到队列骨架升级。
+
+### Fixed
+- 修复双进程 smoke 在异步编排模式下偶发“轮询次数不足导致误判失败”的问题。
+
+### Security
+- 队列化后仍保持 `Authorization`、`Idempotency-Key`、`X-Request-Id` 校验链路，不放宽鉴权边界。
+
+### Rollback
+- 回退 `apps/worker-orchestrator` BullMQ 相关改动、`apps/api-gateway/scripts/shared-smoke.ts` 调整与台账更新。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.12] - 2026-02-21
 

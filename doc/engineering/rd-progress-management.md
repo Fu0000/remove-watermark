@@ -91,7 +91,7 @@
 |---|---|---|---|---|---|---|---|---|---|
 | SVC-001 | 服务基线 | Monorepo 初始化（apps/packages 结构、eslint/tsconfig） | 后端 | 2026-02-23 | 2026-02-25 | Done | FE/BE 契约共享 | unit | 项目骨架可编译 |
 | SVC-002 | 服务基线 | `api-gateway` 基础模块（auth/assets/tasks/plans） | 后端 | 2026-02-24 | 2026-03-03 | In Review | FE 调用 | contract | OpenAPI 可导出联调 |
-| SVC-003 | 服务基线 | `worker-orchestrator/media/detect/inpaint/result` 队列骨架 | 后端 | 2026-02-25 | 2026-03-05 | In Progress | 任务状态推进 | integration | `worker-orchestrator` 已接入轮询推进骨架，待队列化接入 |
+| SVC-003 | 服务基线 | `worker-orchestrator/media/detect/inpaint/result` 队列骨架 | 后端 | 2026-02-25 | 2026-03-05 | In Review | 任务状态推进 | integration | `worker-orchestrator` 已接入 Redis/BullMQ 编排骨架，待 shared/staging 验证 |
 | SVC-004 | 服务基线 | `webhook-dispatcher`（签名、重试、死信） | 后端 | 2026-03-10 | 2026-03-20 | Backlog | 外部回调联调 | contract/integration | Webhook 成功率可观测 |
 | SVC-005 | 服务基线 | `billing-service`（订阅、权益生效、账务流水） | 后端 | 2026-03-17 | 2026-03-30 | Backlog | 套餐支付联调 | integration/contract | `HELD/COMMITTED/RELEASED` 闭环 |
 
@@ -165,6 +165,7 @@
 | Prisma 持久化重启校验（本轮） | `重启网关后 GET /v1/tasks` + `psql count` | `passed（tasks=2, task_masks=1, idempotency_keys=2, usage_ledger=3, outbox_events=3）` | 本地重启后任务与幂等相关数据不丢失 |
 | Worker 编排类型检查（本轮） | `pnpm --filter @apps/worker-orchestrator typecheck` | `passed` | `worker-orchestrator` 编排循环可编译 |
 | 双进程联调 smoke（API + Worker，本轮） | `启动 api-gateway(TASKS_STORE=prisma) + worker-orchestrator 后执行 pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 状态由 Worker 推进，API 查询路径不再承担推进副作用 |
+| BullMQ 依赖与消息驱动校验（本轮） | `worker-orchestrator 引入 bullmq` + `outbox dispatch log` | `passed（published>0）` | 已验证 outbox 事件可发布到 Redis 队列并被 consumer 消费 |
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 编辑页真实绘制交互可完成多端构建（保留包体告警待优化） |
@@ -187,10 +188,10 @@
 | 状态 | 数量 | 占比 |
 |---|---:|---:|
 | Done | 1 | 2.3% |
-| In Progress | 7 | 16.3% |
+| In Progress | 6 | 14.0% |
 | Ready | 7 | 16.3% |
 | Backlog | 13 | 30.2% |
-| In Review | 15 | 34.9% |
+| In Review | 16 | 37.2% |
 | QA | 0 | 0.0% |
 
 ## 10. 关键结果（KR）跟踪（v1.0）
@@ -769,3 +770,50 @@
 - 下一步：
   - 接入 Redis/BullMQ，替换当前 DB 轮询为消息驱动编排。
   - 在你提供云端地址后执行 shared/staging 双进程 smoke，并更新 `INT-004/INT-005` 与 `OPT-ARCH-002` 状态。
+
+## 27. 本次执行回填（OPT-ARCH-002 Redis/BullMQ 消息驱动）
+
+- 任务编号：`DEV-20260221-ARCH-02-QUEUE`
+- 需求映射：`FR-005/FR-006/FR-007`、`NFR-006/NFR-007`
+- 优化项关联：`OPT-ARCH-002`（`In Review`）
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-service-framework.md`
+- 负责人：后端
+- 截止时间：`2026-02-22`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator/src/main.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/scripts/shared-smoke.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/pnpm-lock.yaml`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+- 实施摘要：
+  - `worker-orchestrator` 升级为 Redis/BullMQ 驱动：新增 outbox 轮询分发（`task.created/task.retried` -> queue）。
+  - 新增 BullMQ consumer 任务推进逻辑：按状态机逐步推进，并在成功时写入 `usage_ledger(COMMITTED)` 与 `outbox(task.succeeded)`。
+  - 支持 `REDIS_URL/QUEUE_NAME` 环境变量，默认本地 `redis://127.0.0.1:6379`。
+  - 为异步队列时序调整 `shared-smoke`：新增 `SHARED_SMOKE_MAX_POLL_ATTEMPTS`，提高状态轮询稳定性。
+- 测试证据：
+  - `pnpm --filter @apps/worker-orchestrator typecheck`：通过
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:unit`：通过（`2/2`）
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`10/10`）
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma`：通过
+  - 启动 `api-gateway(TASKS_STORE=prisma)` + `worker-orchestrator(REDIS_URL=redis://127.0.0.1:6379)` 后执行 `pnpm --filter @apps/api-gateway test:shared-smoke`：通过
+- 联调结果：
+  - 本地双进程模式下 `INT-002~INT-005` 可通过，状态推进来源稳定为 Worker 队列消费。
+  - outbox 触发事件可发布为 queue job 并消费，任务可从 `QUEUED` 推进至 `SUCCEEDED`。
+- 遗留问题：
+  - 当前仅完成本地 Redis 验证，shared/staging 云端 Redis 与双进程部署证据待补齐。
+  - 尚未接入 deadletter 与运维回放能力，队列失败治理能力待下一轮完善。
+- 风险与回滚：
+  - 风险：若 Redis 不可用，outbox 事件会持续留在 `PENDING` 并触发重试日志。
+  - 回滚：回退 `worker-orchestrator` 的 BullMQ 分发/消费改动，恢复上一版编排实现。
+- 下一步：
+  - 补充 shared/staging 双进程 smoke 与云端 Redis 连通验证。
+  - 推进 deadletter/重试上限与告警指标（`queue_depth`、`dispatch_fail_rate`）。
