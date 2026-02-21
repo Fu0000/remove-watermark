@@ -1,4 +1,4 @@
-# 变更日志规范（v1.30）
+# 变更日志规范（v1.31）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.31 | 2026-02-21 | 新增 BE-007 第二阶段对账任务（按月聚合 + 小时增量 + 日终全量框架）执行记录 |
 | v1.30 | 2026-02-21 | 新增 BE-007 商业化接口最小骨架（subscriptions/usage）执行记录 |
 | v1.29 | 2026-02-21 | 新增 DATA-003 去重索引校验与账务防重写入策略执行记录 |
 | v1.28 | 2026-02-21 | 新增 DATA-002 套餐种子数据初始化与 `/v1/plans` 数据化改造执行记录 |
@@ -84,6 +85,46 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.26] - 2026-02-21
+
+### Added
+- 新增迁移：`apps/api-gateway/prisma/migrations/20260222013500_add_billing_reconciliation_tables/migration.sql`，创建对账三表：
+  - `billing_reconcile_monthly`
+  - `billing_reconcile_checkpoints`
+  - `billing_reconcile_runs`
+- 新增 `billing-service` 对账作业核心：
+  - `apps/billing-service/src/reconciliation/job.ts`
+  - `apps/billing-service/src/main.ts`
+- 新增对账作业命令：
+  - `pnpm --filter @apps/billing-service job:reconcile:hourly`
+  - `pnpm --filter @apps/billing-service job:reconcile:daily`
+- 新增集成测试：
+  - `apps/billing-service/test/reconciliation.spec.ts`（覆盖小时增量 + 日终全量框架）
+- `doc/engineering/rd-progress-management.md` 新增第 40 节回填（`BE-007` 第二阶段执行证据）。
+
+### Changed
+- `apps/api-gateway/prisma/schema.prisma` 新增对账相关模型：
+  - `BillingReconcileMonthly`
+  - `BillingReconcileCheckpoint`
+  - `BillingReconcileRun`
+- `apps/billing-service/package.json` 增加 `@prisma/client` 依赖与对账作业/集成测试脚本。
+- `doc/engineering/rd-progress-management.md` 更新：
+  - `BE-007` 状态由 `In Progress` 调整为 `In Review`
+  - 新增本轮对账迁移、integration 与 typecheck 证据。
+
+### Fixed
+- 修复 `BE-007` 仅有订阅接口、缺少账务对账任务执行基座的问题，补齐“月聚合 + 增量校验 + 全量框架”能力。
+
+### Security
+- 对账作业仅消费内部 `usage_ledger` 数据，不新增外部暴露接口或鉴权放宽路径。
+
+### Rollback
+- 回退 `add_billing_reconciliation_tables` 迁移、`billing-service` 对账作业与集成测试、台账更新，恢复到 BE-007 第一阶段状态。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/billing-service`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.25] - 2026-02-21
 

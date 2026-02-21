@@ -131,3 +131,54 @@ model Subscription {
   @@index([userId, createdAt(sort: Desc)], map: "idx_subscriptions_user_created_at")
   @@map("subscriptions")
 }
+
+model BillingReconcileMonthly {
+  monthKey       String    @map("month_key") @db.Char(7)
+  userId         String    @map("user_id") @db.VarChar(64)
+  committedUnits Int       @default(0) @map("committed_units")
+  heldUnits      Int       @default(0) @map("held_units")
+  releasedUnits  Int       @default(0) @map("released_units")
+  ledgerCount    Int       @default(0) @map("ledger_count")
+  firstConsumeAt DateTime? @map("first_consume_at")
+  lastConsumeAt  DateTime? @map("last_consume_at")
+  sourceUpdatedAt DateTime @default(now()) @map("source_updated_at")
+  reconciledAt   DateTime  @default(now()) @map("reconciled_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @map("updated_at")
+
+  @@id([monthKey, userId])
+  @@index([updatedAt(sort: Desc)], map: "idx_billing_reconcile_monthly_updated_at")
+  @@map("billing_reconcile_monthly")
+}
+
+model BillingReconcileCheckpoint {
+  checkpointKey String    @id @map("checkpoint_key") @db.VarChar(64)
+  watermarkAt   DateTime? @map("watermark_at")
+  lastRunId     String?   @map("last_run_id") @db.VarChar(64)
+  lastMode      String?   @map("last_mode") @db.VarChar(32)
+  metaJson      Json?     @map("meta_json")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @map("updated_at")
+
+  @@map("billing_reconcile_checkpoints")
+}
+
+model BillingReconcileRun {
+  runId         String    @id @map("run_id") @db.VarChar(64)
+  mode          String    @db.VarChar(32)
+  status        String    @db.VarChar(16)
+  windowStart   DateTime? @map("window_start")
+  windowEnd     DateTime? @map("window_end")
+  scannedRows   Int       @default(0) @map("scanned_rows")
+  impactedUsers Int       @default(0) @map("impacted_users")
+  impactedMonths Int      @default(0) @map("impacted_months")
+  mismatchCount Int       @default(0) @map("mismatch_count")
+  summaryJson   Json?     @map("summary_json")
+  errorMessage  String?   @map("error_message")
+  startedAt     DateTime  @default(now()) @map("started_at")
+  finishedAt    DateTime? @map("finished_at")
+
+  @@index([startedAt(sort: Desc)], map: "idx_billing_reconcile_runs_started_at")
+  @@index([status, startedAt(sort: Desc)], map: "idx_billing_reconcile_runs_status_started")
+  @@map("billing_reconcile_runs")
+}

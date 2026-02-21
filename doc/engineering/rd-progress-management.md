@@ -118,7 +118,7 @@
 | BE-004 | 状态推进 | Orchestrator 状态机推进与乐观锁版本控制 | 后端 | 2026-03-03 | 2026-03-12 | In Review | FR-005/FR-006 | unit/integration | 乐观锁与状态迁移校验已覆盖 Prisma 分支 | 非法迁移拦截 100% |
 | BE-005 | 结果交付 | `GET /v1/tasks/{taskId}/result` + 结果 TTL | 后端 | 2026-03-09 | 2026-03-15 | In Review | FR-007 | integration | 契约测试已通过（含结果可用路径） | 结果链接按策略失效 |
 | BE-006 | 失败恢复 | retry/cancel 语义与并发互斥 | 后端 | 2026-03-09 | 2026-03-16 | In Review | FR-005/FR-006 | unit/contract | 动作幂等与冲突路径契约测试已通过 | 重试与取消冲突可控 |
-| BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | In Progress | FR-008 | integration/contract | 最小接口骨架已落地（`/v1/subscriptions/*`、`/v1/usage/me`），账务对账任务待补齐 | 订阅与配额查询链路可联调 |
+| BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | In Review | FR-008 | integration/contract | 已落地最小接口 + 对账任务二阶段（按月聚合、小时增量校验、日终全量框架），支付回调闭环待补齐 | 订阅、配额与对账基线可联调 |
 | BE-008 | 通知回调 | webhook endpoint 管理/投递/重试/手动重放 | 后端 | 2026-03-24 | 2026-04-10 | Backlog | FR-009 | integration/contract | 未开始 | DEAD 信队列可运维回放 |
 | BE-009 | 合规治理 | 素材/任务/账户删除与审计日志链路 | 后端 | 2026-03-30 | 2026-04-12 | Backlog | FR-010/FR-011 | integration/e2e | 未开始 | 删除 SLA <= 24h |
 
@@ -152,7 +152,7 @@
 | 检查项 | 执行命令 | 结果 | 结论 |
 |---|---|---|---|
 | Monorepo 依赖安装 | `pnpm install` | `Done in 4m 23s` | 工作区依赖已完整安装，可执行后续联调与构建 |
-| 框架静态类型检查 | `pnpm -r typecheck` | `15/15 workspace passed` | 三端与共享包初始化代码可通过 TypeScript 校验 |
+| 框架静态类型检查 | `pnpm -r typecheck` | `15 of 16 workspace passed` | 三端与共享包初始化代码可通过 TypeScript 校验 |
 | 工作区 lint 占位检查 | `pnpm -r lint` | `15/15 workspace passed` | lint 脚本已统一挂载，后续可替换为 ESLint 实检 |
 | 用户前端目录规范检查 | `for dir in pages components modules stores services utils; do find apps/user-frontend/src/$dir -type f \\| wc -l; done` | `目录均存在且有文件` | 已对齐 `frontend-framework.md` 目录约束 |
 | 管理端构建验证 | `pnpm --filter @apps/admin-console build` | `Next build passed` | 管理端框架可完成生产构建 |
@@ -161,6 +161,7 @@
 | API 网关单元测试 | `pnpm --filter @apps/api-gateway test:unit` | `2 passed / 0 failed` | `BE-003/BE-004`（事务创建与乐观锁）核心规则可回归 |
 | Prisma 客户端生成校验（本轮） | `pnpm --filter @apps/api-gateway prisma:generate` | `passed` | Prisma schema 与客户端代码生成可用，支持后续 shared DB 联调 |
 | 本地 PostgreSQL 迁移部署验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma` | `passed（No pending migrations）` | 本地库迁移链路可执行，DDL 与 Prisma 迁移记录一致 |
+| 账务对账迁移部署验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma` | `passed（应用 20260222013500_add_billing_reconciliation_tables）` | 对账基础表（monthly/checkpoints/runs）已在本地 PostgreSQL 生效 |
 | 套餐种子数据初始化验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway prisma:seed:plans` | `passed（seeded plans=3）` | Free/Pro 月付/年付种子可幂等写入 |
 | 去重索引校验（DATA-003，本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway test:data-dedupe-index` | `passed` | `idempotency_keys/outbox_events/usage_ledger` 去重约束存在且二次写入可被稳定拦截 |
 | Prisma 模式 shared smoke（本轮，本地） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | `INT-002~INT-005` 在 Prisma 持久化分支可通过 |
@@ -176,10 +177,12 @@
 | Deadletter 阻断/放行一键演练校验（本轮） | `DATABASE_URL=... REDIS_URL=... pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill` | `passed` | 已脚本化“构造样本 -> 阻断验证 -> 放行验证 -> 自动清理”闭环，可直接用于 shared/staging 演练 |
 | Deadletter 演练矩阵校验（本轮） | `DEV/SHARED/STAGING DATABASE_URL + REDIS_URL` 均指向本地地址后执行 `pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill:matrix` | `passed（dev/shared/staging-local）` | 已按当前阶段口径完成三目标矩阵演练，云端地址切换后可复用同命令补齐最终证据 |
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
-| 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
+| 工作区类型检查（本轮） | `pnpm -r typecheck` | `15 of 16 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 编辑页真实绘制交互可完成多端构建（保留包体告警待优化） |
 | shared 联调 smoke（INT-002/INT-005，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 本地地址 `http://127.0.0.1:3000` 已覆盖 Header、上传创建、状态刷新、结果查询与错误路径，云端 shared 地址待切换 |
 | shared 联调 smoke 矩阵（INT-002/INT-005，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke:matrix` | `passed（dev=passed）` | 已支持一键矩阵执行与 Markdown 报告输出，shared/staging 待提供云端地址后接入 |
+| Billing 对账任务集成测试（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/billing-service test:integration` | `passed（1/1）` | 小时增量 + 月聚合 + 日终全量框架在本地 PostgreSQL 可回归 |
+| Billing 服务类型检查（本轮） | `pnpm --filter @apps/billing-service typecheck` | `passed` | 对账任务代码可通过静态类型校验 |
 | 状态机字面量一致性抽检 | `rg -n "UPLOADED -> QUEUED -> PREPROCESSING -> DETECTING -> INPAINTING -> PACKAGING -> SUCCEEDED\\|FAILED\\|CANCELED" doc \| wc -l` | `6` | 关键文档存在统一字面量 |
 | 幂等约束覆盖抽检 | `rg -n "Idempotency-Key" doc \| wc -l` | `11` | 创建任务幂等约束已在多文档显式出现 |
 | Node+Triton 架构边界抽检 | `rg -n "Node 控制面 \\+ Triton 推理面|Node.*Triton" doc/project-constraints.md doc/prd.md doc/tad.md doc/plan.md` | 命中 `plan.md`、`tad.md` | 架构口径一致，需在实施阶段继续守护 |
@@ -197,10 +200,10 @@
 | 状态 | 数量 | 占比 |
 |---|---:|---:|
 | Done | 1 | 2.3% |
-| In Progress | 7 | 16.3% |
+| In Progress | 6 | 14.0% |
 | Ready | 7 | 16.3% |
 | Backlog | 12 | 27.9% |
-| In Review | 16 | 37.2% |
+| In Review | 17 | 39.5% |
 | QA | 0 | 0.0% |
 
 ## 10. 关键结果（KR）跟踪（v1.0）
@@ -1336,3 +1339,56 @@
 - 下一步：
   - 继续推进 `BE-007` 第二阶段：账务对账任务与订阅状态确认闭环。
   - 准备 `INT-006` 的最小联调脚本与验收标准（本地优先、云端发布前复验）。
+
+## 40. 本次执行回填（BE-007 第二阶段：按月聚合 + 小时增量 + 日终全量框架）
+
+- 任务编号：`DEV-20260221-BE-007-RECON`
+- 需求映射：`FR-008`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/database-design.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-service-framework.md`
+- 负责人：后端
+- 截止时间：`2026-04-05`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/schema.prisma`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/migrations/20260222013500_add_billing_reconciliation_tables/migration.sql`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/billing-service/src/reconciliation/job.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/billing-service/src/main.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/billing-service/test/reconciliation.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/billing-service/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增对账基础数据表：
+    - `billing_reconcile_monthly`（用户-月份聚合）
+    - `billing_reconcile_checkpoints`（小时增量水位）
+    - `billing_reconcile_runs`（运行审计）
+  - 在 `billing-service` 落地对账任务核心：
+    - `hourly-incremental`：按 checkpoint 增量扫描 `usage_ledger`，回写月聚合并校验一致性
+    - `daily-full`：全量重建月聚合（框架）并做结果一致性比对
+  - 新增作业命令：
+    - `pnpm --filter @apps/billing-service job:reconcile:hourly`
+    - `pnpm --filter @apps/billing-service job:reconcile:daily`
+  - 新增 integration 测试覆盖两种模式的最小闭环。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway prisma:generate`：通过
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma`：通过（应用 `20260222013500_add_billing_reconciliation_tables`）
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/billing-service test:integration`：通过（`1/1`）
+  - `pnpm --filter @apps/billing-service typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`14/14`）
+  - `pnpm -r typecheck`：通过
+- 联调结果：
+  - 本地地址口径下，`plans/subscriptions/usage` 与对账任务可形成可验证链路，满足 `INT-006` 前置联调准备。
+- 遗留问题：
+  - 订阅支付回调与状态确认闭环尚未接入（影响真实扣费状态核验）。
+  - shared/staging 云端地址仍需在发布前门禁补齐同口径对账作业证据。
+- 风险与回滚：
+  - 风险：当前增量水位基于 `consume_at + ledger_id`，若后续写入语义变化需同步调整 checkpoint 规则。
+  - 回滚：回退 `add_billing_reconciliation_tables` 迁移与 `billing-service` 对账作业代码，恢复到无对账任务状态。
+- 下一步：
+  - 进入 `INT-006`：补齐订阅状态确认与配额扣减联调脚本。
+  - 预留发布前动作：在 shared/staging（云端地址）执行 `hourly + daily` 作业并归档验收证据。
