@@ -1,4 +1,4 @@
-# 变更日志规范（v1.5）
+# 变更日志规范（v1.6）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.6 | 2026-02-21 | 切换 shared smoke 默认本地地址并完成本地联调验收 |
 | v1.5 | 2026-02-21 | 新增 shared 联调 smoke 脚本与环境接入准备回填 |
 | v1.4 | 2026-02-20 | 新增 FE 联调主链路与 H5 构建阻塞修复执行日志 |
 | v1.3 | 2026-02-20 | 新增 api-gateway 契约闭环执行日志与测试证据回填 |
@@ -59,6 +60,26 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.1] - 2026-02-21
+
+### Changed
+- `apps/api-gateway/scripts/shared-smoke.ts` 默认 `SHARED_BASE_URL` 调整为 `http://127.0.0.1:3000`，以便本地联调先行。
+- `apps/user-frontend/.env.example` 默认 API 地址调整为本地地址，保持与当前联调策略一致。
+- `doc/engineering/rd-progress-management.md` 更新为“本地 fallback smoke 已通过，云端 shared 待切换”。
+
+### Fixed
+- 修复 shared smoke 在当前阶段对不可解析云端域名的硬依赖，恢复 `INT-002/INT-003` 的可执行性。
+
+### Security
+- 本地 fallback 验证继续覆盖 `Authorization`、`Idempotency-Key`、`X-Request-Id` 三个关键 Header。
+
+### Rollback
+- 回退 `apps/api-gateway/scripts/shared-smoke.ts`、`apps/user-frontend/.env.example` 与 `rd-progress-management.md` 本次调整。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.0] - 2026-02-21
 

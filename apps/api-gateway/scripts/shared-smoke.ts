@@ -10,7 +10,7 @@ interface HttpResult<T> {
   body: ApiEnvelope<T> | Record<string, unknown>;
 }
 
-const baseUrl = normalizeBaseUrl(process.env.SHARED_BASE_URL || "https://chuhaibox.com");
+const baseUrl = normalizeBaseUrl(process.env.SHARED_BASE_URL || "http://127.0.0.1:3000");
 const username = process.env.SHARED_USERNAME || "admin";
 const password = process.env.SHARED_PASSWORD || "admin123";
 const authCode = process.env.SHARED_AUTH_CODE || username;
