@@ -118,7 +118,7 @@
 | BE-004 | 状态推进 | Orchestrator 状态机推进与乐观锁版本控制 | 后端 | 2026-03-03 | 2026-03-12 | In Review | FR-005/FR-006 | unit/integration | 乐观锁与状态迁移校验已覆盖 Prisma 分支 | 非法迁移拦截 100% |
 | BE-005 | 结果交付 | `GET /v1/tasks/{taskId}/result` + 结果 TTL | 后端 | 2026-03-09 | 2026-03-15 | In Review | FR-007 | integration | 契约测试已通过（含结果可用路径） | 结果链接按策略失效 |
 | BE-006 | 失败恢复 | retry/cancel 语义与并发互斥 | 后端 | 2026-03-09 | 2026-03-16 | In Review | FR-005/FR-006 | unit/contract | 动作幂等与冲突路径契约测试已通过 | 重试与取消冲突可控 |
-| BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | Backlog | FR-008 | integration/contract | 未开始 | 账务一致性可追踪 |
+| BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | In Progress | FR-008 | integration/contract | 最小接口骨架已落地（`/v1/subscriptions/*`、`/v1/usage/me`），账务对账任务待补齐 | 订阅与配额查询链路可联调 |
 | BE-008 | 通知回调 | webhook endpoint 管理/投递/重试/手动重放 | 后端 | 2026-03-24 | 2026-04-10 | Backlog | FR-009 | integration/contract | 未开始 | DEAD 信队列可运维回放 |
 | BE-009 | 合规治理 | 素材/任务/账户删除与审计日志链路 | 后端 | 2026-03-30 | 2026-04-12 | Backlog | FR-010/FR-011 | integration/e2e | 未开始 | 删除 SLA <= 24h |
 
@@ -157,7 +157,7 @@
 | 用户前端目录规范检查 | `for dir in pages components modules stores services utils; do find apps/user-frontend/src/$dir -type f \\| wc -l; done` | `目录均存在且有文件` | 已对齐 `frontend-framework.md` 目录约束 |
 | 管理端构建验证 | `pnpm --filter @apps/admin-console build` | `Next build passed` | 管理端框架可完成生产构建 |
 | API 网关构建验证 | `pnpm --filter @apps/api-gateway build` | `tsc passed` | 后端网关骨架可完成编译 |
-| API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `11 passed / 0 failed` | 关键契约（含 `/v1/plans`、`cancel/retry` 幂等与冲突路径）可联调 |
+| API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `14 passed / 0 failed` | 关键契约（含 `/v1/plans`、`/v1/subscriptions/*`、`/v1/usage/me`、`cancel/retry` 幂等与冲突路径）可联调 |
 | API 网关单元测试 | `pnpm --filter @apps/api-gateway test:unit` | `2 passed / 0 failed` | `BE-003/BE-004`（事务创建与乐观锁）核心规则可回归 |
 | Prisma 客户端生成校验（本轮） | `pnpm --filter @apps/api-gateway prisma:generate` | `passed` | Prisma schema 与客户端代码生成可用，支持后续 shared DB 联调 |
 | 本地 PostgreSQL 迁移部署验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma` | `passed（No pending migrations）` | 本地库迁移链路可执行，DDL 与 Prisma 迁移记录一致 |
@@ -197,9 +197,9 @@
 | 状态 | 数量 | 占比 |
 |---|---:|---:|
 | Done | 1 | 2.3% |
-| In Progress | 6 | 14.0% |
+| In Progress | 7 | 16.3% |
 | Ready | 7 | 16.3% |
-| Backlog | 13 | 30.2% |
+| Backlog | 12 | 27.9% |
 | In Review | 16 | 37.2% |
 | QA | 0 | 0.0% |
 
@@ -1290,3 +1290,49 @@
 - 下一步：
   - 推进 `BE-007` 商业化接口最小骨架（`/v1/subscriptions/*`、`/v1/usage/me`）。
   - 将 `DATA-003` 校验命令接入后续 shared/staging smoke 门禁。
+
+## 39. 本次执行回填（BE-007 商业化接口最小骨架）
+
+- 任务编号：`DEV-20260221-BE-007-SKELETON`
+- 需求映射：`FR-008`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-service-framework.md`
+- 负责人：后端
+- 截止时间：`2026-04-05`
+- 当前状态：`In Progress`
+- 阻塞项：无
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/schema.prisma`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/migrations/20260222002000_add_subscriptions_table/migration.sql`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/subscriptions/subscriptions.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/subscriptions/subscriptions.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/usage/usage.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/app.module.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/.env.example`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/contract.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增 `subscriptions` 表与 Prisma 模型，补齐订阅最小持久化结构（订单号唯一约束、状态/渠道约束、用户维度索引）。
+  - 新增 `SubscriptionsService`，实现 `checkout`、`getMySubscription`、`getMyUsage`（支持 Prisma 优先与回退路径）。
+  - 新增控制器接口：`POST /v1/subscriptions/checkout`、`GET /v1/subscriptions/me`、`GET /v1/usage/me`。
+  - 修复 `SubscriptionsService` 依赖注入（显式 `@Inject`），消除 contract 运行时注入不稳定问题。
+  - 补充契约测试覆盖上述三条接口。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway prisma:generate`：通过
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate status --schema prisma/schema.prisma`：通过（数据库 schema up to date，包含 `20260222002000_add_subscriptions_table`）
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`14/14`）
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+- 联调结果：
+  - 本地地址口径下，订阅创建、当前订阅查询与配额查询已可联调，支持 FE-006 前置对接。
+- 遗留问题：
+  - `BE-007` 中“账务对账任务”尚未实现，`INT-006` 仍未进入验收。
+- 风险与回滚：
+  - 风险：当前 `checkout` 为本地模拟支付载荷，尚未接入真实支付回调与订阅状态确认链路。
+  - 回滚：回退 `add_subscriptions_table` 迁移、订阅/配额服务与控制器、契约测试新增用例，恢复到仅 `plans` 能力。
+- 下一步：
+  - 继续推进 `BE-007` 第二阶段：账务对账任务与订阅状态确认闭环。
+  - 准备 `INT-006` 的最小联调脚本与验收标准（本地优先、云端发布前复验）。

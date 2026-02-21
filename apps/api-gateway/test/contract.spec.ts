@@ -63,6 +63,88 @@ test("GET /v1/plans should return sorted plans list", async () => {
   await app.close();
 });
 
+test("POST /v1/subscriptions/checkout should return order and payment payload", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const response = await server.inject({
+    method: "POST",
+    url: "/v1/subscriptions/checkout",
+    headers: {
+      authorization: "Bearer test-token",
+      "x-request-id": "req_contract_sub_checkout_1",
+      "content-type": "application/json"
+    },
+    payload: {
+      planId: "pro_month",
+      channel: "wechat_pay",
+      clientReturnUrl: "https://app.example.com/pay/result"
+    }
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(body.code, 0);
+  assert.equal(body.requestId, "req_contract_sub_checkout_1");
+  assert.equal(typeof body.data.orderId, "string");
+  assert.equal(body.data.orderId.startsWith("ord_"), true);
+  assert.equal(typeof body.data.paymentPayload.nonceStr, "string");
+  assert.equal(typeof body.data.paymentPayload.timeStamp, "string");
+  assert.equal(typeof body.data.paymentPayload.sign, "string");
+
+  await app.close();
+});
+
+test("GET /v1/subscriptions/me should return current subscription", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const response = await server.inject({
+    method: "GET",
+    url: "/v1/subscriptions/me",
+    headers: {
+      authorization: "Bearer test-token",
+      "x-request-id": "req_contract_sub_me_1"
+    }
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(body.code, 0);
+  assert.equal(body.requestId, "req_contract_sub_me_1");
+  assert.equal(typeof body.data.status, "string");
+  assert.equal(typeof body.data.planId, "string");
+  assert.equal(typeof body.data.autoRenew, "boolean");
+
+  await app.close();
+});
+
+test("GET /v1/usage/me should return usage summary", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const response = await server.inject({
+    method: "GET",
+    url: "/v1/usage/me",
+    headers: {
+      authorization: "Bearer test-token",
+      "x-request-id": "req_contract_usage_me_1"
+    }
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(body.code, 0);
+  assert.equal(body.requestId, "req_contract_usage_me_1");
+  assert.equal(typeof body.data.quotaTotal, "number");
+  assert.equal(typeof body.data.quotaLeft, "number");
+  assert.equal(typeof body.data.periodStart, "string");
+  assert.equal(typeof body.data.periodEnd, "string");
+  assert.equal(Array.isArray(body.data.ledgerItems), true);
+
+  await app.close();
+});
+
 test("POST /v1/tasks should require Idempotency-Key", async () => {
   const app = await setup();
   const server = app.getHttpAdapter().getInstance();

@@ -1,4 +1,4 @@
-# 变更日志规范（v1.29）
+# 变更日志规范（v1.30）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.30 | 2026-02-21 | 新增 BE-007 商业化接口最小骨架（subscriptions/usage）执行记录 |
 | v1.29 | 2026-02-21 | 新增 DATA-003 去重索引校验与账务防重写入策略执行记录 |
 | v1.28 | 2026-02-21 | 新增 DATA-002 套餐种子数据初始化与 `/v1/plans` 数据化改造执行记录 |
 | v1.27 | 2026-02-21 | 新增 OPT-ARCH-002 发布前检查清单（可 Done 版本）收尾记录 |
@@ -83,6 +84,38 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.25] - 2026-02-21
+
+### Added
+- 新增迁移：`apps/api-gateway/prisma/migrations/20260222002000_add_subscriptions_table/migration.sql`，创建 `subscriptions` 表（状态/渠道约束、订单号唯一约束、用户维度索引）。
+- 新增订阅与配额能力：
+  - `apps/api-gateway/src/modules/subscriptions/subscriptions.service.ts`
+  - `apps/api-gateway/src/modules/subscriptions/subscriptions.controller.ts`
+  - `apps/api-gateway/src/modules/usage/usage.controller.ts`
+- 新增契约用例：`/v1/subscriptions/checkout`、`/v1/subscriptions/me`、`/v1/usage/me`。
+- `doc/engineering/rd-progress-management.md` 新增第 39 节回填（`BE-007` 最小骨架执行证据）。
+
+### Changed
+- `apps/api-gateway/prisma/schema.prisma` 增加 `Subscription` 模型。
+- `apps/api-gateway/src/modules/app.module.ts` 注册 `SubscriptionsService` 与相关控制器。
+- `apps/api-gateway/.env.example` 增加 `SUBSCRIPTIONS_STORE=prisma`。
+- `doc/engineering/rd-progress-management.md` 更新：
+  - `BE-007` 状态由 `Backlog` 调整为 `In Progress`
+  - `API 网关契约测试` 结果更新为 `14 passed / 0 failed`
+
+### Fixed
+- 修复 `SubscriptionsService` 在 contract 运行时的依赖注入不稳定问题（显式 `@Inject`），恢复 `/v1/subscriptions/*` 与 `/v1/usage/me` 契约可执行性。
+
+### Security
+- 新增接口继续遵循 `Authorization` 与 `X-Request-Id` 约束；未放宽现有鉴权边界。
+
+### Rollback
+- 回退 `add_subscriptions_table` 迁移、订阅/配额服务与控制器、契约测试新增用例与台账回填，恢复到仅 `plans` 能力集。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.24] - 2026-02-21
 

@@ -111,3 +111,23 @@ model Plan {
   @@index([isActive, sortOrder(sort: Asc)], map: "idx_plans_active_sort")
   @@map("plans")
 }
+
+model Subscription {
+  subscriptionId String    @id @map("subscription_id") @db.VarChar(64)
+  userId         String    @map("user_id") @db.VarChar(64)
+  planId         String    @map("plan_id") @db.VarChar(64)
+  status         String    @db.VarChar(16)
+  channel        String    @db.VarChar(16)
+  externalOrderId String?  @unique(map: "uk_subscriptions_external_order_id") @map("external_order_id") @db.VarChar(128)
+  startedAt      DateTime? @map("started_at")
+  effectiveAt    DateTime? @map("effective_at")
+  expireAt       DateTime? @map("expire_at")
+  canceledAt     DateTime? @map("canceled_at")
+  autoRenew      Boolean   @default(false) @map("auto_renew")
+  metaJson       Json?     @map("meta_json")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @map("updated_at")
+
+  @@index([userId, createdAt(sort: Desc)], map: "idx_subscriptions_user_created_at")
+  @@map("subscriptions")
+}
