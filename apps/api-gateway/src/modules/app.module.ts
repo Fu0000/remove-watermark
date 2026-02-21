@@ -12,6 +12,8 @@ import { UsageController } from "./usage/usage.controller";
 import { SubscriptionsService } from "./subscriptions/subscriptions.service";
 import { WebhooksController } from "./webhooks/webhooks.controller";
 import { WebhooksService } from "./webhooks/webhooks.service";
+import { AccountController } from "./compliance/account.controller";
+import { ComplianceService } from "./compliance/compliance.service";
 
 @Module({
   controllers: [
@@ -22,13 +24,15 @@ import { WebhooksService } from "./webhooks/webhooks.service";
     PlansController,
     SubscriptionsController,
     UsageController,
-    WebhooksController
+    WebhooksController,
+    AccountController
   ],
   providers: [
     PrismaService,
     PlansService,
     SubscriptionsService,
     WebhooksService,
+    ComplianceService,
     {
       provide: TasksService,
       useFactory: (prismaService: PrismaService) => new TasksService({}, prismaService),

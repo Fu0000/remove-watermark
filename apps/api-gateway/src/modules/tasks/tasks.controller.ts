@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, HttpCode, Inject, Param, Post } from "@nestjs/common";
 import { ensureAuthorization } from "../../common/auth";
 import { badRequest, conflict, forbidden, notFound, unprocessableEntity } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
 import { QuotaExceededError, TasksService } from "./tasks.service";
 import type { TaskPolicy } from "@packages/contracts";
+import { ComplianceService } from "../compliance/compliance.service";
 
 interface CreateTaskRequest {
   assetId: string;
@@ -21,7 +22,10 @@ interface UpsertMaskRequest {
 
 @Controller("v1/tasks")
 export class TasksController {
-  constructor(@Inject(TasksService) private readonly tasksService: TasksService) {}
+  constructor(
+    @Inject(TasksService) private readonly tasksService: TasksService,
+    @Inject(ComplianceService) private readonly complianceService: ComplianceService
+  ) {}
 
   @Post()
   @HttpCode(200)
@@ -83,13 +87,14 @@ export class TasksController {
   ) {
     ensureAuthorization(authorization, requestIdHeader);
     const items = await this.tasksService.listByUser("u_1001");
+    const visibleItems = await this.complianceService.filterVisibleTasks("u_1001", items);
 
     return ok(
       {
-        items,
+        items: visibleItems,
         page: 1,
         pageSize: 20,
-        total: items.length
+        total: visibleItems.length
       },
       requestIdHeader
     );
@@ -102,6 +107,9 @@ export class TasksController {
     @Param("taskId") taskId: string
   ) {
     ensureAuthorization(authorization, requestIdHeader);
+    if (await this.complianceService.isTaskDeleted("u_1001", taskId)) {
+      notFound(40401, "资源不存在", requestIdHeader);
+    }
 
     const task = await this.tasksService.getByUser("u_1001", taskId);
     if (!task) {
@@ -122,6 +130,9 @@ export class TasksController {
     ensureAuthorization(authorization, requestIdHeader);
     if (!idempotencyKey) {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
+    }
+    if (await this.complianceService.isTaskDeleted("u_1001", taskId)) {
+      notFound(40401, "资源不存在", requestIdHeader);
     }
 
     const result = await this.tasksService.retry("u_1001", taskId, idempotencyKey);
@@ -159,6 +170,9 @@ export class TasksController {
     if (!idempotencyKey) {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
+    if (await this.complianceService.isTaskDeleted("u_1001", taskId)) {
+      notFound(40401, "资源不存在", requestIdHeader);
+    }
 
     if (!body.imageWidth || !body.imageHeight || body.version < 0) {
       badRequest(40001, "参数非法", requestIdHeader);
@@ -195,6 +209,9 @@ export class TasksController {
     if (!idempotencyKey) {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
+    if (await this.complianceService.isTaskDeleted("u_1001", taskId)) {
+      notFound(40401, "资源不存在", requestIdHeader);
+    }
 
     const result = await this.tasksService.cancel("u_1001", taskId, idempotencyKey);
     if (result.kind === "NOT_FOUND") {
@@ -225,6 +242,9 @@ export class TasksController {
     @Param("taskId") taskId: string
   ) {
     ensureAuthorization(authorization, requestIdHeader);
+    if (await this.complianceService.isTaskDeleted("u_1001", taskId)) {
+      notFound(40401, "资源不存在", requestIdHeader);
+    }
 
     const task = await this.tasksService.getByUser("u_1001", taskId);
     if (!task) {
@@ -245,4 +265,44 @@ export class TasksController {
       requestIdHeader
     );
   }
+
+  @Delete(":taskId")
+  @HttpCode(200)
+  async deleteTask(
+    @Headers("authorization") authorization: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Headers("x-request-id") requestIdHeader: string | undefined,
+    @Headers("x-forwarded-for") forwardedFor: string | undefined,
+    @Headers("user-agent") userAgent: string | undefined,
+    @Param("taskId") taskId: string
+  ) {
+    ensureAuthorization(authorization, requestIdHeader);
+    if (!idempotencyKey) {
+      badRequest(40001, "Idempotency-Key is required", requestIdHeader);
+    }
+
+    const result = await this.complianceService.deleteTaskView("u_1001", taskId, idempotencyKey, {
+      requestId: requestIdHeader,
+      ip: parseForwardedIp(forwardedFor),
+      userAgent
+    });
+
+    if (result.kind === "NOT_FOUND") {
+      notFound(40401, "资源不存在", requestIdHeader);
+    }
+    if (result.kind === "IDEMPOTENCY_CONFLICT") {
+      conflict(40901, "幂等冲突/重复任务", requestIdHeader);
+    }
+
+    return ok(result.data, requestIdHeader);
+  }
+}
+
+function parseForwardedIp(forwardedFor: string | undefined): string | undefined {
+  if (!forwardedFor) {
+    return undefined;
+  }
+
+  const first = forwardedFor.split(",")[0]?.trim();
+  return first && first.length > 0 ? first : undefined;
 }

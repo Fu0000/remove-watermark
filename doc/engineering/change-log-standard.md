@@ -1,4 +1,4 @@
-# 变更日志规范（v1.38）
+# 变更日志规范（v1.39）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.39 | 2026-02-22 | 新增 BE-009 第一阶段（删除与审计最小闭环）执行记录 |
 | v1.38 | 2026-02-22 | 新增 INT-007 本地映射矩阵脚本（dev/shared/staging 一键验签）执行记录 |
 | v1.37 | 2026-02-22 | 新增 BE-008 指标与阈值告警（webhook_success_rate/webhook_retry_total）执行记录 |
 | v1.36 | 2026-02-22 | 新增 INT-007 本地外部验签联调（重试+幂等）执行记录 |
@@ -92,6 +93,44 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.34] - 2026-02-22
+
+### Added
+- 新增合规模块：
+  - `apps/api-gateway/src/modules/compliance/compliance.service.ts`
+  - `apps/api-gateway/src/modules/compliance/account.controller.ts`
+- 新增删除与合规 API：
+  - `DELETE /v1/assets/{assetId}`
+  - `DELETE /v1/tasks/{taskId}`
+  - `POST /v1/account/delete-request`
+- 新增 Prisma 合规数据模型与迁移：
+  - `assets`
+  - `task_view_deletions`
+  - `account_delete_requests`
+  - `audit_logs`
+  - `compliance_idempotency`
+- `doc/engineering/rd-progress-management.md` 新增第 48 节回填（BE-009 第一阶段）。
+
+### Changed
+- `apps/api-gateway/src/modules/assets/assets.controller.ts` 接入 `ComplianceService`，上传策略创建后持久化资产元数据并支持素材删除。
+- `apps/api-gateway/src/modules/tasks/tasks.controller.ts` 增加任务删除入口与“已删除任务不可见”过滤逻辑。
+- `apps/api-gateway/src/modules/app.module.ts` 注入 `ComplianceService` 与 `AccountController`。
+- `apps/api-gateway/test/contract.spec.ts` 增补删除与账户删除申请契约用例，覆盖幂等冲突路径。
+- 本地 PostgreSQL 已执行 `20260222100000_add_compliance_tables` 迁移，并在 Prisma 路径完成 contract 与双进程 shared-smoke 验证。
+
+### Fixed
+- 修复 `BE-009` 在后端侧“删除链路无实现、审计无落点”的能力缺口，补齐最小可联调闭环。
+
+### Security
+- 删除与账户删除申请接口继续强制 `Authorization + Idempotency-Key`，审计日志记录 `userId/requestId/ip/userAgent`。
+
+### Rollback
+- 回退 `compliance` 模块、`assets/tasks` 控制器改动、Prisma 模型与迁移、契约测试与台账更新，恢复到 0.5.33。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.33] - 2026-02-22
 

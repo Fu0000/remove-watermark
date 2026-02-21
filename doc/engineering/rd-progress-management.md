@@ -120,7 +120,7 @@
 | BE-006 | 失败恢复 | retry/cancel 语义与并发互斥 | 后端 | 2026-03-09 | 2026-03-16 | In Review | FR-005/FR-006 | unit/contract | 动作幂等与冲突路径契约测试已通过 | 重试与取消冲突可控 |
 | BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | In Review | FR-008 | integration/contract | 已补齐本地订阅确认（mock-confirm）+ 任务创建配额门禁（40302）+ 净额扣减口径；真实支付回调/退款回滚待补齐 | 订阅、配额与对账基线可联调 |
 | BE-008 | 通知回调 | webhook endpoint 管理/投递/重试/手动重放 | 后端 | 2026-03-24 | 2026-04-10 | In Progress | FR-009 | integration/contract | 已落地 endpoint 管理 + test/retry + HMAC-SHA256 签名头，并接入 dispatcher（outbox 轮询、签名出站、delivery 持久化、指标告警）；本地外部验签联调已通过，待 shared/staging 云端验收 | DEAD 信队列可运维回放 |
-| BE-009 | 合规治理 | 素材/任务/账户删除与审计日志链路 | 后端 | 2026-03-30 | 2026-04-12 | Backlog | FR-010/FR-011 | integration/e2e | 未开始 | 删除 SLA <= 24h |
+| BE-009 | 合规治理 | 素材/任务/账户删除与审计日志链路 | 后端 | 2026-03-30 | 2026-04-12 | In Progress | FR-010/FR-011 | integration/e2e | 已落地删除素材/删除任务展示/账户删除申请 API 与审计日志链路（Prisma + 内存回退），待 shared/staging 云端验收 | 删除 SLA <= 24h（接口已返回 `eta`） |
 
 ### 7.6 联调对接任务（FE/BE/QA/OPS）
 
@@ -145,7 +145,7 @@
 | ALG-001 | FAST/QUALITY 模型路由及风险标记 | 算法 | Backlog | 2026-03-22 | 高 | 输出质量/成本基线报告 |
 | OPS-001 | 扩缩容与降级阈值告警（queue_depth、INPAINTING P95） | 运维 | Ready | 2026-03-15 | 中 | 完成告警模板与演练 |
 
-## 8. 测试情况与证据（截至 2026-02-21）
+## 8. 测试情况与证据（截至 2026-02-22）
 
 ### 8.1 已执行检查（文档与约束一致性）
 
@@ -181,6 +181,8 @@
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 编辑页真实绘制交互可完成多端构建（保留包体告警待优化） |
 | shared 联调 smoke（INT-002/INT-007，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 本地地址 `http://127.0.0.1:3000` 已覆盖 Header、上传创建、状态刷新、结果查询、订阅确认/配额扣减、webhook test/retry 与签名头校验，云端 shared 地址待切换 |
 | shared 联调 smoke 矩阵（INT-002/INT-007，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke:matrix` | `passed（dev=passed）` | 已支持一键矩阵执行与 Markdown 报告输出，shared/staging 待提供云端地址后接入 |
+| BE-009 合规链路迁移与契约回归（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma` + `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma SUBSCRIPTIONS_STORE=prisma WEBHOOKS_STORE=prisma COMPLIANCE_STORE=prisma pnpm --filter @apps/api-gateway test:contract` | `passed（migrate deploy + contract 21/21）` | 已在 Prisma 路径覆盖 `DELETE /v1/assets/{assetId}`、`DELETE /v1/tasks/{taskId}`、`POST /v1/account/delete-request` 与幂等冲突路径 |
+| BE-009 Prisma 双进程 smoke（本轮） | `启动 api-gateway(TASKS/SUBSCRIPTIONS/WEBHOOKS/COMPLIANCE_STORE=prisma) + worker-orchestrator 后执行 pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 本地 PostgreSQL + Redis 下主链路联调通过，删除/审计改造未破坏既有链路 |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
 | Webhook Dispatcher 本地 smoke（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:smoke` | `passed` | 已验证 outbox `PENDING -> PUBLISHED`、签名头生成与 `webhook_deliveries(SUCCESS)` 持久化闭环 |
@@ -198,16 +200,16 @@
 - shared/staging：`integration + e2e + regression + performance smoke`。
 - 发布前：`NFR-001~NFR-007` 验证与 `P0/P1=0`。
 
-## 9. 完成状态看板（截至 2026-02-21）
+## 9. 完成状态看板（截至 2026-02-22）
 
 统计口径：本节任务清单（ENV/DATA/SVC/FE/BE/INT/治理）共 `43` 项。
 
 | 状态 | 数量 | 占比 |
 |---|---:|---:|
 | Done | 1 | 2.3% |
-| In Progress | 10 | 23.3% |
+| In Progress | 11 | 25.6% |
 | Ready | 7 | 16.3% |
-| Backlog | 8 | 18.6% |
+| Backlog | 7 | 16.3% |
 | In Review | 17 | 39.5% |
 | QA | 0 | 0.0% |
 
@@ -1716,3 +1718,55 @@
 - 下一步：
   - 你提供 shared/staging 云端地址后，复用同命令补齐最终云端验收证据。
   - 将矩阵报告纳入发布前 `INT-007` 准入检查项。
+
+## 48. 本次执行回填（BE-009 第一阶段：删除与审计最小闭环）
+
+- 任务编号：`DEV-20260222-BE009-COMPLIANCE-MINIMAL`
+- 需求映射：`FR-010`、`FR-011`、`NFR-005`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/prd.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/project-constraints.md`
+- 负责人：后端
+- 截止时间：`2026-04-12`
+- 当前状态：`In Progress`
+- 阻塞项：shared/staging 云端 PostgreSQL 与联调地址待接入（云端验证后置）
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/compliance/compliance.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/compliance/account.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/assets/assets.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/tasks/tasks.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/app.module.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/schema.prisma`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/migrations/20260222100000_add_compliance_tables/migration.sql`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/contract.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 落地合规模块 `compliance`，补齐以下接口最小闭环并保持 Header 约束一致：
+    - `DELETE /v1/assets/{assetId}`（软删除 + 异步清理占位）
+    - `DELETE /v1/tasks/{taskId}`（删除任务展示记录）
+    - `POST /v1/account/delete-request`（返回 `requestId/status/eta`）
+  - 新增审计日志写入能力，覆盖上传策略创建、素材删除、任务展示删除、账户删除申请。
+  - 新增合规幂等存储（`compliance_idempotency`），支持同键重放与载荷冲突拦截（`40901`）。
+  - 增加 `task_view_deletions` 以实现“删除展示不影响任务审计/账务主数据”的隔离策略。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway prisma:generate`：通过
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:unit`：通过（`2/2`）
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma`：通过（应用 `20260222100000_add_compliance_tables`）
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma SUBSCRIPTIONS_STORE=prisma WEBHOOKS_STORE=prisma COMPLIANCE_STORE=prisma pnpm --filter @apps/api-gateway test:contract`：通过（`21/21`）
+  - 双进程（`api-gateway + worker-orchestrator`）下执行 `test:shared-smoke`：通过
+- 联调结果：
+  - 本地契约层已覆盖删除与审计主链路，具备 shared/staging 地址替换后的复跑能力。
+- 遗留问题：
+  - 云端环境下 `audit_logs` 保留策略（180 天）与清理任务尚未实装调度。
+  - 账户删除申请后续执行态（`PROCESSING/DONE`）与异步作业衔接待下一阶段实现。
+- 风险与回滚：
+  - 风险：若云端数据库版本与本地不一致，`JSONB` 字段或索引行为可能存在差异。
+  - 回滚：回退 `compliance` 模块与相关迁移，恢复到无删除入口版本；台账状态回退 `BE-009 -> Backlog`。
+- 下一步：
+  - 在本地/共享环境补齐 migration 执行证据（`prisma migrate` + smoke）。
+  - 推进 `BE-009` 第二阶段：删除申请执行态流转、审计查询口径与保留策略落地。

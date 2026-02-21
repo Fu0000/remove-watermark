@@ -704,6 +704,167 @@ test("POST /v1/assets/upload-policy should return signed payload envelope", asyn
   await app.close();
 });
 
+test("DELETE /v1/assets/{assetId} should soft-delete asset with idempotency", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const upload = await server.inject({
+    method: "POST",
+    url: "/v1/assets/upload-policy",
+    headers: {
+      authorization: "Bearer test-token",
+      "content-type": "application/json"
+    },
+    payload: {
+      fileName: "delete-me.png",
+      fileSize: 2048,
+      mediaType: "image",
+      mimeType: "image/png"
+    }
+  });
+  assert.equal(upload.statusCode, 201);
+  const assetId = upload.json().data.assetId as string;
+
+  const firstDelete = await server.inject({
+    method: "DELETE",
+    url: `/v1/assets/${assetId}`,
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_delete_asset_1"
+    }
+  });
+  assert.equal(firstDelete.statusCode, 200);
+  assert.equal(firstDelete.json().code, 0);
+  assert.equal(firstDelete.json().data.status, "DELETED");
+  assert.equal(firstDelete.json().data.cleanupStatus, "PENDING");
+
+  const secondDelete = await server.inject({
+    method: "DELETE",
+    url: `/v1/assets/${assetId}`,
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_delete_asset_1"
+    }
+  });
+  assert.equal(secondDelete.statusCode, 200);
+  assert.equal(secondDelete.json().data.assetId, assetId);
+  assert.equal(secondDelete.json().data.status, "DELETED");
+
+  await app.close();
+});
+
+test("DELETE /v1/tasks/{taskId} should hide deleted task from list/detail", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const created = await server.inject({
+    method: "POST",
+    url: "/v1/tasks",
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_delete_task_create",
+      "content-type": "application/json"
+    },
+    payload: {
+      assetId: "ast_delete_task_1001",
+      mediaType: "IMAGE",
+      taskPolicy: "FAST"
+    }
+  });
+  assert.equal(created.statusCode, 200);
+  const taskId = created.json().data.taskId as string;
+
+  const deleted = await server.inject({
+    method: "DELETE",
+    url: `/v1/tasks/${taskId}`,
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_delete_task_1"
+    }
+  });
+  assert.equal(deleted.statusCode, 200);
+  assert.equal(deleted.json().data.status, "DELETED");
+
+  const detail = await server.inject({
+    method: "GET",
+    url: `/v1/tasks/${taskId}`,
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(detail.statusCode, 404);
+  assert.equal(detail.json().code, 40401);
+
+  const list = await server.inject({
+    method: "GET",
+    url: "/v1/tasks",
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(list.statusCode, 200);
+  assert.equal(list.json().data.items.some((item: { taskId: string }) => item.taskId === taskId), false);
+
+  await app.close();
+});
+
+test("POST /v1/account/delete-request should create request and honor idempotency", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const first = await server.inject({
+    method: "POST",
+    url: "/v1/account/delete-request",
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_account_delete_1",
+      "content-type": "application/json"
+    },
+    payload: {
+      reason: "no longer use",
+      confirm: true
+    }
+  });
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.json().data.status, "PENDING");
+  assert.equal(typeof first.json().data.requestId, "string");
+  assert.equal(typeof first.json().data.eta, "string");
+
+  const second = await server.inject({
+    method: "POST",
+    url: "/v1/account/delete-request",
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_account_delete_1",
+      "content-type": "application/json"
+    },
+    payload: {
+      reason: "no longer use",
+      confirm: true
+    }
+  });
+  assert.equal(second.statusCode, 200);
+  assert.equal(second.json().data.requestId, first.json().data.requestId);
+
+  const conflict = await server.inject({
+    method: "POST",
+    url: "/v1/account/delete-request",
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_account_delete_1",
+      "content-type": "application/json"
+    },
+    payload: {
+      reason: "change another reason",
+      confirm: true
+    }
+  });
+  assert.equal(conflict.statusCode, 409);
+  assert.equal(conflict.json().code, 40901);
+
+  await app.close();
+});
+
 test("POST /v1/tasks/{taskId}/mask should update version", async () => {
   const app = await setup();
   const server = app.getHttpAdapter().getInstance();

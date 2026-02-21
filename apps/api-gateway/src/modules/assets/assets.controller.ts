@@ -1,7 +1,8 @@
-import { Body, Controller, Headers, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Headers, HttpCode, Inject, Param, Post } from "@nestjs/common";
 import { ensureAuthorization } from "../../common/auth";
-import { badRequest } from "../../common/http-errors";
+import { badRequest, conflict, notFound } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
+import { ComplianceService } from "../compliance/compliance.service";
 
 interface UploadPolicyRequest {
   fileName: string;
@@ -13,10 +14,14 @@ interface UploadPolicyRequest {
 
 @Controller("v1/assets")
 export class AssetsController {
+  constructor(@Inject(ComplianceService) private readonly complianceService: ComplianceService) {}
+
   @Post("upload-policy")
-  createUploadPolicy(
+  async createUploadPolicy(
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined,
+    @Headers("x-forwarded-for") forwardedFor: string | undefined,
+    @Headers("user-agent") userAgent: string | undefined,
     @Body() body: UploadPolicyRequest
   ) {
     ensureAuthorization(authorization, requestIdHeader);
@@ -25,21 +30,51 @@ export class AssetsController {
       badRequest(40001, "参数非法", requestIdHeader);
     }
 
-    return ok(
-      {
-        assetId: `ast_${Date.now()}`,
-        uploadUrl: "https://minio.local/signed-upload-url",
-        headers: {
-          "x-amz-meta-user-id": "u_1001",
-          "x-amz-meta-file-name": body.fileName,
-          "x-amz-meta-media-type": body.mediaType,
-          "x-amz-meta-mime-type": body.mimeType,
-          "x-amz-meta-file-size": String(body.fileSize),
-          "x-amz-meta-sha256": body.sha256 || ""
-        },
-        expireAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
-      },
-      requestIdHeader
-    );
+    const payload = await this.complianceService.createUploadPolicy("u_1001", body, {
+      requestId: requestIdHeader,
+      ip: parseForwardedIp(forwardedFor),
+      userAgent
+    });
+
+    return ok(payload, requestIdHeader);
   }
+
+  @Delete(":assetId")
+  @HttpCode(200)
+  async deleteAsset(
+    @Headers("authorization") authorization: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Headers("x-request-id") requestIdHeader: string | undefined,
+    @Headers("x-forwarded-for") forwardedFor: string | undefined,
+    @Headers("user-agent") userAgent: string | undefined,
+    @Param("assetId") assetId: string
+  ) {
+    ensureAuthorization(authorization, requestIdHeader);
+    if (!idempotencyKey) {
+      badRequest(40001, "Idempotency-Key is required", requestIdHeader);
+    }
+
+    const result = await this.complianceService.deleteAsset("u_1001", assetId, idempotencyKey, {
+      requestId: requestIdHeader,
+      ip: parseForwardedIp(forwardedFor),
+      userAgent
+    });
+    if (result.kind === "NOT_FOUND") {
+      notFound(40401, "资源不存在", requestIdHeader);
+    }
+    if (result.kind === "IDEMPOTENCY_CONFLICT") {
+      conflict(40901, "幂等冲突/重复任务", requestIdHeader);
+    }
+
+    return ok(result.data, requestIdHeader);
+  }
+}
+
+function parseForwardedIp(forwardedFor: string | undefined): string | undefined {
+  if (!forwardedFor) {
+    return undefined;
+  }
+
+  const first = forwardedFor.split(",")[0]?.trim();
+  return first && first.length > 0 ? first : undefined;
 }

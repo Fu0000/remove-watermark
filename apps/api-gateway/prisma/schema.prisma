@@ -228,3 +228,78 @@ model WebhookDelivery {
   @@unique([endpointId, eventId, attempt], map: "uk_webhook_endpoint_event_attempt")
   @@map("webhook_deliveries")
 }
+
+model Asset {
+  assetId       String    @id @map("asset_id") @db.VarChar(64)
+  userId        String    @map("user_id") @db.VarChar(64)
+  fileName      String    @map("file_name")
+  fileSize      Int       @map("file_size")
+  mediaType     String    @map("media_type") @db.VarChar(16)
+  mimeType      String    @map("mime_type") @db.VarChar(128)
+  sha256        String?   @db.VarChar(64)
+  status        String    @db.VarChar(16)
+  cleanupStatus String    @map("cleanup_status") @db.VarChar(16)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  @@index([userId, status, createdAt(sort: Desc)], map: "idx_assets_user_status_created")
+  @@index([status, updatedAt(sort: Desc)], map: "idx_assets_status_updated")
+  @@map("assets")
+}
+
+model TaskViewDeletion {
+  deletionId String   @id @map("deletion_id") @db.VarChar(64)
+  userId     String   @map("user_id") @db.VarChar(64)
+  taskId     String   @map("task_id") @db.VarChar(64)
+  deletedAt  DateTime @default(now()) @map("deleted_at")
+
+  @@unique([userId, taskId])
+  @@index([userId, deletedAt(sort: Desc)], map: "idx_task_view_deletions_user_deleted")
+  @@map("task_view_deletions")
+}
+
+model AccountDeleteRequest {
+  requestId String   @id @map("request_id") @db.VarChar(64)
+  userId    String   @map("user_id") @db.VarChar(64)
+  reason    String
+  status    String   @db.VarChar(16)
+  etaAt     DateTime @map("eta_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@index([userId, createdAt(sort: Desc)], map: "idx_account_delete_requests_user_created")
+  @@index([status, etaAt(sort: Asc)], map: "idx_account_delete_requests_status_eta")
+  @@map("account_delete_requests")
+}
+
+model AuditLog {
+  auditId      String   @id @map("audit_id") @db.VarChar(64)
+  userId       String   @map("user_id") @db.VarChar(64)
+  traceId      String   @map("trace_id") @db.VarChar(64)
+  requestId    String   @map("request_id") @db.VarChar(64)
+  ip           String   @db.VarChar(128)
+  userAgent    String   @map("user_agent")
+  action       String   @db.VarChar(128)
+  resourceType String   @map("resource_type") @db.VarChar(32)
+  resourceId   String?  @map("resource_id") @db.VarChar(64)
+  metaJson     Json     @map("meta_json")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt(sort: Desc)], map: "idx_audit_logs_user_created")
+  @@index([action, createdAt(sort: Desc)], map: "idx_audit_logs_action_created")
+  @@map("audit_logs")
+}
+
+model ComplianceIdempotency {
+  id             String   @id @db.VarChar(64)
+  userId         String   @map("user_id") @db.VarChar(64)
+  idempotencyKey String   @map("idempotency_key") @db.VarChar(128)
+  payloadHash    String   @map("payload_hash")
+  resultJson     Json     @map("result_json")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @map("updated_at")
+
+  @@unique([userId, idempotencyKey])
+  @@map("compliance_idempotency")
+}
