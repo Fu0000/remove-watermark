@@ -34,6 +34,9 @@ interface ReplayFilters {
   createdBeforeMs?: number;
 }
 
+const DEFAULT_REPLAY_CONCURRENCY_CAP = 10;
+const ELEVATED_REPLAY_CONCURRENCY_CAP = 20;
+
 function parsePositiveInt(value: string, fallback: number) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -259,7 +262,12 @@ async function main() {
 
   const maxScan = parsePositiveInt(readEnv("DLQ_REPLAY_MAX_SCAN", "200"), 200);
   const maxReplay = parsePositiveInt(readEnv("DLQ_REPLAY_MAX_COUNT", "20"), 20);
-  const replayConcurrency = parsePositiveInt(readEnv("DLQ_REPLAY_CONCURRENCY", "1"), 1);
+  const requestedReplayConcurrency = parsePositiveInt(readEnv("DLQ_REPLAY_CONCURRENCY", "1"), 1);
+  const allowHighConcurrency = parseBoolean(readEnv("DLQ_ALLOW_HIGH_CONCURRENCY", "false"), false);
+  const replayConcurrencyCap = allowHighConcurrency
+    ? ELEVATED_REPLAY_CONCURRENCY_CAP
+    : DEFAULT_REPLAY_CONCURRENCY_CAP;
+  const replayConcurrency = Math.min(requestedReplayConcurrency, replayConcurrencyCap);
   const lookbackMinutes = parsePositiveInt(readEnv("DLQ_LOOKBACK_MINUTES", "0"), 0);
   const dryRun = parseBoolean(readEnv("DLQ_DRY_RUN", "true"), true);
   const deleteAfterReplay = parseBoolean(readEnv("DLQ_DELETE_AFTER_REPLAY", "false"), false);
@@ -296,7 +304,10 @@ async function main() {
       deleteAfterReplay,
       maxScan,
       maxReplay,
+      requestedReplayConcurrency,
       replayConcurrency,
+      replayConcurrencyCap,
+      allowHighConcurrency,
       lookbackMinutes,
       matched: matched.length,
       filters: {
@@ -309,6 +320,18 @@ async function main() {
     },
     "deadletter replay started"
   );
+
+  if (requestedReplayConcurrency > replayConcurrencyCap) {
+    logger.warn(
+      {
+        requestedReplayConcurrency,
+        replayConcurrencyCap,
+        allowHighConcurrency,
+        replayConcurrency
+      },
+      "replay concurrency exceeds cap, clamped to safe limit"
+    );
+  }
 
   let replayed = 0;
   let skipped = 0;

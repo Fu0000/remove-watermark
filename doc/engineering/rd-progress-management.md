@@ -169,6 +169,7 @@
 | Worker deadletter/retry 策略校验（本轮） | `pnpm --filter @apps/worker-orchestrator typecheck` + `pnpm --filter @apps/api-gateway test:shared-smoke`（双进程） | `passed` | 已落地 `maxRetries=2`、指数退避+jitter、不可重试直入死信、outbox 超限转 `DEAD` 与死信告警阈值基线 |
 | Deadletter 手动重放脚本校验（本轮） | `DLQ_DRY_RUN=true pnpm --filter @apps/worker-orchestrator ops:deadletter:replay` | `passed` | 已支持按 `jobId/taskId/eventId` 筛选重放；支持 `outbox DEAD -> PENDING` 复位与 dry-run 演练 |
 | Deadletter 批量重放参数校验（本轮） | `DLQ_DRY_RUN=true DLQ_SOURCE=all DLQ_LOOKBACK_MINUTES=1440 DLQ_REPLAY_CONCURRENCY=4 pnpm --filter @apps/worker-orchestrator ops:deadletter:replay` | `passed` | 已支持按来源过滤、时间窗口筛选与并发重放控制 |
+| Deadletter 并发上限保护校验（本轮） | `DLQ_REPLAY_CONCURRENCY=20` 分别在 `DLQ_ALLOW_HIGH_CONCURRENCY=false/true` 下执行 `ops:deadletter:replay` | `passed` | 默认并发上限 `10`；仅在显式开启高并发开关时允许提升至 `20` |
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 编辑页真实绘制交互可完成多端构建（保留包体告警待优化） |
@@ -946,3 +947,42 @@
 - 下一步：
   - 增加并发上限保护与执行前阈值告警（如超过 `N` 条需显式确认参数）。
   - shared/staging 环境切换后补齐真实样本回放证据，并推动 `OPT-ARCH-002` 进入 `Done` 评审。
+
+## 31. 本次执行回填（OPT-ARCH-002 deadletter 并发上限保护）
+
+- 任务编号：`DEV-20260221-ARCH-02-REPLAY-GUARD`
+- 需求映射：`FR-005/FR-006/FR-007`、`NFR-006/NFR-007`
+- 优化项关联：`OPT-ARCH-002`（`In Review`）
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-service-framework.md`
+- 负责人：后端
+- 截止时间：`2026-02-22`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator/src/ops/deadletter-replay.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+- 实施摘要：
+  - 新增并发保护策略：`DLQ_REPLAY_CONCURRENCY` 默认受硬上限 `10` 约束。
+  - 新增显式提权开关：`DLQ_ALLOW_HIGH_CONCURRENCY=true` 时并发上限可临时提升到 `20`。
+  - 当请求并发超过当前上限时，脚本自动钳制并输出警告日志，避免误操作放大恢复风险。
+- 测试证据：
+  - `pnpm --filter @apps/worker-orchestrator typecheck`：通过
+  - `DLQ_DRY_RUN=true DLQ_REPLAY_CONCURRENCY=20 DLQ_ALLOW_HIGH_CONCURRENCY=false ... ops:deadletter:replay`：通过（日志显示 `replayConcurrency=10`）
+  - `DLQ_DRY_RUN=true DLQ_REPLAY_CONCURRENCY=20 DLQ_ALLOW_HIGH_CONCURRENCY=true ... ops:deadletter:replay`：通过（日志显示 `replayConcurrency=20`）
+- 联调结果：
+  - 本地 Redis dry-run 下，默认与提权两种并发策略均按预期生效。
+- 遗留问题：
+  - 仍缺 shared/staging 云端 deadletter 实样本回放证据。
+  - 目前“提权到 20”仅靠环境变量控制，尚未接入审批流。
+- 风险与回滚：
+  - 风险：若运维误开高并发开关，仍可能在高负载时造成瞬时压力抬升。
+  - 回滚：回退 `deadletter-replay.ts` 并发上限相关改动与台账更新，恢复上一版并发配置策略。
+- 下一步：
+  - 增加“高并发开关+批量数量”联动阈值告警（超过阈值直接拒绝执行）。
+  - shared/staging 环境补齐真实样本回放并观察 Redis/DB 指标后，决定是否调整默认上限。

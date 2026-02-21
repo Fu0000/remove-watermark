@@ -1,4 +1,4 @@
-# 变更日志规范（v1.21）
+# 变更日志规范（v1.22）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.22 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter 并发上限保护执行记录 |
 | v1.21 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter 批量重放增强执行记录 |
 | v1.20 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter 手动重放能力执行记录 |
 | v1.19 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter/retry 策略落地执行记录 |
@@ -75,6 +76,32 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.17] - 2026-02-21
+
+### Added
+- `apps/worker-orchestrator/src/ops/deadletter-replay.ts` 新增并发保护参数：
+  - 默认并发硬上限 `10`
+  - 显式开关 `DLQ_ALLOW_HIGH_CONCURRENCY=true` 时，允许临时提升到 `20`
+- 并发超限自动钳制并输出告警日志（避免恢复操作误配置导致过载）。
+- `doc/engineering/rd-progress-management.md` 新增第 31 节执行回填（并发保护落地与双场景 dry-run 证据）。
+
+### Changed
+- `DLQ_REPLAY_CONCURRENCY` 从“直接生效”调整为“受上限约束 + 可控提权”模式。
+- `doc/engineering/mvp-optimization-backlog.md` 更新 `OPT-ARCH-002` 验收口径，纳入并发上限保护。
+
+### Fixed
+- 修复 deadletter 重放并发配置可被无限放大的风险。
+
+### Security
+- 默认继续采用保守并发策略（上限 10），高并发需显式开关，降低误操作概率。
+
+### Rollback
+- 回退 `apps/worker-orchestrator/src/ops/deadletter-replay.ts` 并发上限策略与相关台账更新。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.16] - 2026-02-21
 
