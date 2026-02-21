@@ -1,4 +1,4 @@
-# 变更日志规范（v1.37）
+# 变更日志规范（v1.38）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.38 | 2026-02-22 | 新增 INT-007 本地映射矩阵脚本（dev/shared/staging 一键验签）执行记录 |
 | v1.37 | 2026-02-22 | 新增 BE-008 指标与阈值告警（webhook_success_rate/webhook_retry_total）执行记录 |
 | v1.36 | 2026-02-22 | 新增 INT-007 本地外部验签联调（重试+幂等）执行记录 |
 | v1.35 | 2026-02-22 | 新增 BE-008 第二阶段（webhook dispatcher 持久化派发）执行记录 |
@@ -91,6 +92,32 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.33] - 2026-02-22
+
+### Added
+- 新增 `INT-007` 本地映射矩阵脚本：
+  - `apps/webhook-dispatcher/src/int007-local-matrix.ts`
+  - `apps/webhook-dispatcher/package.json` 新增 `test:int007-local:matrix` 命令。
+- 新增矩阵报告产物能力：自动输出到 `apps/webhook-dispatcher/.runtime/reports/*.md`。
+- `doc/engineering/rd-progress-management.md` 新增第 47 节回填（矩阵执行证据）。
+
+### Changed
+- `doc/engineering/rd-progress-management.md` 更新 `INT-007` 备注：补充“dev/shared/staging 本地映射矩阵已完成”。
+- 测试看板新增 `INT-007 本地映射矩阵（本轮）` 命令与结果。
+
+### Fixed
+- 补齐 `INT-007` 在“多目标环境一键复验”上的执行能力缺口，降低 shared/staging 切换成本。
+
+### Security
+- 矩阵执行仍沿用现有签名验签与幂等规则，不改变安全边界。
+
+### Rollback
+- 回退 `int007-local-matrix.ts` 与 `package.json` 命令及台账更新，恢复单环境手工执行流程。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/webhook-dispatcher`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.32] - 2026-02-22
 

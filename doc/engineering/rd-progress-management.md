@@ -132,7 +132,7 @@
 | INT-004 | 任务中心状态刷新与错误路径联调 | 前后端+测试 | 2026-03-10 | 2026-03-18 | In Review | 状态渲染与错误码一致 | 本地 smoke 已覆盖状态推进与错误路径；按阶段例外以本地证据验收，云端认证后置发布前门禁 |
 | INT-005 | 结果下载与过期策略联调 | 前后端+测试 | 2026-03-14 | 2026-03-20 | In Review | 过期前提醒与失效行为一致 | 本地 smoke 已覆盖结果下载与 expireAt 校验；按阶段例外以本地证据验收，云端认证后置发布前门禁 |
 | INT-006 | 订阅/配额扣减联调 | 前后端+测试+支付 | 2026-03-24 | 2026-04-07 | In Progress | 扣减一致率 100% | 本地已覆盖 mock-confirm + 预扣下降 + 取消回升；待真实支付回调与退款回滚 |
-| INT-007 | Webhook 对接联调（验签/重试/幂等） | 后端+外部系统 | 2026-03-28 | 2026-04-12 | In Progress | 签名校验通过，重试可观测 | 本地已完成 test/retry/query + dispatcher outbox 派发 smoke + 外部验签幂等脚本，待 shared/staging 云端联调 |
+| INT-007 | Webhook 对接联调（验签/重试/幂等） | 后端+外部系统 | 2026-03-28 | 2026-04-12 | In Progress | 签名校验通过，重试可观测 | 本地已完成 test/retry/query + dispatcher outbox 派发 smoke + 外部验签幂等脚本 + dev/shared/staging 本地映射矩阵，待 shared/staging 云端联调 |
 | INT-008 | staging 全链路回归与发布演练 | 全体 | 2026-04-28 | 2026-05-10 | Backlog | 发布准入清单全绿 | 不允许跳过 staging |
 
 ### 7.7 项目治理任务（PM/QA/ALG/OPS）
@@ -185,6 +185,7 @@
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
 | Webhook Dispatcher 本地 smoke（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:smoke` | `passed` | 已验证 outbox `PENDING -> PUBLISHED`、签名头生成与 `webhook_deliveries(SUCCESS)` 持久化闭环 |
 | INT-007 外部验签/重试/幂等本地联调（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:int007-local` | `passed` | 已验证“首投递处理后 503 -> retry 成功”场景下，外部验签通过且同 `eventId` 业务副作用仅执行一次 |
+| INT-007 本地映射矩阵（本轮） | `DEV/SHARED/STAGING_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:int007-local:matrix` | `passed（dev/shared/staging-local）` | 一次命令覆盖三目标 `smoke + int007-local`，并输出 Markdown 报告，后续可直接替换为云端地址复用 |
 | Billing 对账任务集成测试（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/billing-service test:integration` | `passed（1/1）` | 小时增量 + 月聚合 + 日终全量框架在本地 PostgreSQL 可回归 |
 | Billing 服务类型检查（本轮） | `pnpm --filter @apps/billing-service typecheck` | `passed` | 对账任务代码可通过静态类型校验 |
 | 状态机字面量一致性抽检 | `rg -n "UPLOADED -> QUEUED -> PREPROCESSING -> DETECTING -> INPAINTING -> PACKAGING -> SUCCEEDED\\|FAILED\\|CANCELED" doc \| wc -l` | `6` | 关键文档存在统一字面量 |
@@ -1676,3 +1677,42 @@
 - 下一步：
   - 在 shared/staging 复用 `test:smoke` 与 `test:int007-local` 口径，补齐云端指标/告警证据。
   - 按环境沉淀阈值基线（dev/shared/staging/prod）并纳入发布前检查清单。
+
+## 47. 本次执行回填（INT-007 本地映射矩阵：dev/shared/staging 一键验签）
+
+- 任务编号：`DEV-20260222-INT007-MATRIX-LOCAL`
+- 需求映射：`FR-009`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/webhook.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+- 负责人：后端
+- 截止时间：`2026-04-12`
+- 当前状态：`In Progress`
+- 阻塞项：shared/staging 云端地址待接入
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/webhook-dispatcher/src/int007-local-matrix.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/webhook-dispatcher/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增矩阵脚本 `test:int007-local:matrix`，支持按 `dev/shared/staging` 目标批量执行：
+    - `smoke.ts`
+    - `int007-local.ts`
+  - 默认读取 `DEV/SHARED/STAGING_DATABASE_URL`；支持 `INT007_MATRIX_TARGETS` 自定义目标集。
+  - 执行后自动输出 Markdown 报告到 `.runtime/reports`，便于归档联调证据。
+- 测试证据：
+  - `pnpm --filter @apps/webhook-dispatcher typecheck`：通过
+  - `DEV_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark SHARED_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark STAGING_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:int007-local:matrix`：通过（`dev/shared/staging-local`）
+  - 报告文件：`/Users/codelei/Documents/ai-project/remove-watermark/apps/webhook-dispatcher/.runtime/reports/int007-local-matrix-2026-02-21T19-05-05-958Z.md`
+- 联调结果：
+  - 本地地址映射下，`INT-007` 已形成三目标一键复验能力，可直接替换数据库地址进行云端复跑。
+- 遗留问题：
+  - 真实 shared/staging 云端地址的结果证据尚未补齐。
+- 风险与回滚：
+  - 风险：若云端环境网络策略与本地不同，可能出现额外超时/连接失败场景。
+  - 回滚：回退 `int007-local-matrix.ts` 与 `package.json` 命令及台账更新，恢复单环境脚本执行方式。
+- 下一步：
+  - 你提供 shared/staging 云端地址后，复用同命令补齐最终云端验收证据。
+  - 将矩阵报告纳入发布前 `INT-007` 准入检查项。
