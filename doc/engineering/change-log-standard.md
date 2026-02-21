@@ -1,4 +1,4 @@
-# 变更日志规范（v1.23）
+# 变更日志规范（v1.24）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.24 | 2026-02-21 | 新增 OPT-ARCH-002 阻断/放行一键演练脚本执行记录 |
 | v1.23 | 2026-02-21 | 新增 OPT-ARCH-002 高并发批量阻断保护执行记录 |
 | v1.22 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter 并发上限保护执行记录 |
 | v1.21 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter 批量重放增强执行记录 |
@@ -77,6 +78,35 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.19] - 2026-02-21
+
+### Added
+- 新增演练脚本：`apps/worker-orchestrator/src/ops/deadletter-guard-drill.ts`。
+- 新增命令：`pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill`。
+- 演练脚本覆盖完整闭环：
+  - 自动构造 drill outbox + deadletter 样本
+  - 执行“高并发批量阻断”校验（预期失败）
+  - 执行“显式确认放行”校验（预期成功）
+  - 自动清理演练样本
+- `doc/engineering/rd-progress-management.md` 新增第 33 节执行回填（一键演练证据）。
+
+### Changed
+- deadletter 容灾验证从“手工多命令组合”升级为“一键脚本化演练”。
+- `doc/engineering/mvp-optimization-backlog.md` 更新 `OPT-ARCH-002` 验收口径，纳入一键演练能力。
+
+### Fixed
+- 修复阻断/放行演练依赖手工步骤、易漏清理的问题。
+
+### Security
+- 演练脚本执行后会自动清理临时样本，降低残留测试数据风险。
+
+### Rollback
+- 回退 `apps/worker-orchestrator/src/ops/deadletter-guard-drill.ts`、`apps/worker-orchestrator/package.json` 新增命令与相关台账更新。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.18] - 2026-02-21
 

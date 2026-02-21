@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "echo 'lint worker-orchestrator: pending eslint setup'",
-    "ops:deadletter:replay": "tsx src/ops/deadletter-replay.ts"
+    "ops:deadletter:replay": "tsx src/ops/deadletter-replay.ts",
+    "ops:deadletter:guard-drill": "tsx src/ops/deadletter-guard-drill.ts"
   },
   "dependencies": {
     "@packages/contracts": "workspace:*",

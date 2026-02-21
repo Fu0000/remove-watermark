@@ -171,6 +171,7 @@
 | Deadletter 批量重放参数校验（本轮） | `DLQ_DRY_RUN=true DLQ_SOURCE=all DLQ_LOOKBACK_MINUTES=1440 DLQ_REPLAY_CONCURRENCY=4 pnpm --filter @apps/worker-orchestrator ops:deadletter:replay` | `passed` | 已支持按来源过滤、时间窗口筛选与并发重放控制 |
 | Deadletter 并发上限保护校验（本轮） | `DLQ_REPLAY_CONCURRENCY=20` 分别在 `DLQ_ALLOW_HIGH_CONCURRENCY=false/true` 下执行 `ops:deadletter:replay` | `passed` | 默认并发上限 `10`；仅在显式开启高并发开关时允许提升至 `20` |
 | Deadletter 高并发批量阻断校验（本轮） | `DLQ_DRY_RUN=false + DLQ_ALLOW_HIGH_CONCURRENCY=true + DLQ_REPLAY_CONCURRENCY=20 + DLQ_HIGH_CONCURRENCY_BULK_REJECT_THRESHOLD=1` 执行 `ops:deadletter:replay` | `passed（预期阻断）` | 达到阈值且未显式二次确认时，脚本会直接拒绝执行 |
+| Deadletter 阻断/放行一键演练校验（本轮） | `DATABASE_URL=... REDIS_URL=... pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill` | `passed` | 已脚本化“构造样本 -> 阻断验证 -> 放行验证 -> 自动清理”闭环，可直接用于 shared/staging 演练 |
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 编辑页真实绘制交互可完成多端构建（保留包体告警待优化） |
@@ -1028,3 +1029,42 @@
 - 下一步：
   - 在 shared/staging 补齐真实样本阻断与放行演练证据。
   - 基于云端观测结果，评估 `DLQ_HIGH_CONCURRENCY_BULK_REJECT_THRESHOLD` 的默认值是否需要调整。
+
+## 33. 本次执行回填（OPT-ARCH-002 阻断/放行一键演练脚本）
+
+- 任务编号：`DEV-20260221-ARCH-02-REPLAY-DRILL`
+- 需求映射：`FR-005/FR-006/FR-007`、`NFR-006/NFR-007`
+- 优化项关联：`OPT-ARCH-002`（`In Review`）
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-service-framework.md`
+- 负责人：后端
+- 截止时间：`2026-02-22`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator/src/ops/deadletter-guard-drill.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+- 实施摘要：
+  - 新增一键演练命令：`pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill`。
+  - 脚本流程：自动创建 drill outbox + deadletter 样本，执行“阻断校验（预期失败）”与“放行校验（预期成功）”，最后自动清理样本数据。
+  - 放行成功后自动校验 outbox 是否恢复为 `PENDING` 且 `retryCount=0`，并校验 deadletter 样本已删除。
+- 测试证据：
+  - `pnpm --filter @apps/worker-orchestrator typecheck`：通过
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark REDIS_URL=redis://127.0.0.1:6379 pnpm --filter @apps/worker-orchestrator ops:deadletter:guard-drill`：通过（阻断 `status=1`、放行 `status=0`）
+- 联调结果：
+  - 本地环境已具备可重复执行的“阻断 + 放行 + 清理”演练脚本，后续 shared/staging 仅需切换环境变量即可复用。
+- 遗留问题：
+  - shared/staging 云端数据库与 Redis 尚未切换，云端验收证据待补齐。
+  - 当前演练仍为命令行入口，尚未接入管理端可视化操作。
+- 风险与回滚：
+  - 风险：若在云端误用生产级连接执行演练，可能产生额外审计噪声。
+  - 回滚：回退 `deadletter-guard-drill.ts` 与 `package.json` 新增命令及台账更新。
+- 下一步：
+  - 切换 shared/staging 后执行同一命令生成云端演练证据并回填。
+  - 基于云端数据决定 `DLQ_HIGH_CONCURRENCY_BULK_REJECT_THRESHOLD` 默认值是否调整。
