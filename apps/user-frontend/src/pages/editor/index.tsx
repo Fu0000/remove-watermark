@@ -3,7 +3,7 @@ import Taro from "@tarojs/taro";
 import { Button, Picker, Text, View } from "@tarojs/components";
 import { PageShell } from "@/modules/common/page-shell";
 import { getUploadPolicy } from "@/services/asset";
-import { createTask } from "@/services/task";
+import { createTask, upsertTaskMask } from "@/services/task";
 import { ApiError } from "@/services/http";
 import { buildIdempotencyKey } from "@/utils/idempotency";
 import { useTaskStore } from "@/stores/task.store";
@@ -16,9 +16,12 @@ export default function EditorPage() {
   const [agreement, setAgreement] = useState(false);
   const [mediaType, setMediaType] = useState<"IMAGE" | "VIDEO">("IMAGE");
   const [loading, setLoading] = useState(false);
+  const [maskLoading, setMaskLoading] = useState(false);
   const [errorText, setErrorText] = useState("");
+  const [maskVersion, setMaskVersion] = useState(0);
+  const [maskId, setMaskId] = useState("");
   const user = useAuthStore((state) => state.user);
-  const setTask = useTaskStore((state) => state.setTask);
+  const { taskId, setTask } = useTaskStore();
 
   const handleCreateTask = async () => {
     if (!agreement) {
@@ -51,7 +54,6 @@ export default function EditorPage() {
       );
 
       setTask(task.data.taskId, task.data.status as TaskStatus);
-      Taro.navigateTo({ url: "/pages/tasks/index" });
     } catch (error) {
       if (error instanceof ApiError) {
         setErrorText(`${error.code} ${error.message}`);
@@ -63,8 +65,50 @@ export default function EditorPage() {
     }
   };
 
+  const handleSubmitMask = async () => {
+    if (!taskId) {
+      setErrorText("请先创建任务再提交蒙版");
+      return;
+    }
+
+    setMaskLoading(true);
+    setErrorText("");
+    try {
+      const response = await upsertTaskMask(
+        taskId,
+        {
+          imageWidth: 1920,
+          imageHeight: 1080,
+          polygons: [
+            [
+              [100, 100],
+              [260, 100],
+              [260, 220],
+              [100, 220]
+            ]
+          ],
+          brushStrokes: [],
+          version: maskVersion
+        },
+        buildIdempotencyKey()
+      );
+
+      setMaskVersion(response.data.version);
+      setMaskId(response.data.maskId);
+      Taro.navigateTo({ url: "/pages/tasks/index" });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setErrorText(`${error.code} ${error.message}`);
+      } else {
+        setErrorText("蒙版提交失败，请稍后重试");
+      }
+    } finally {
+      setMaskLoading(false);
+    }
+  };
+
   return (
-    <PageShell title="上传与编辑" subtitle="已接入上传策略与任务创建联调链路">
+    <PageShell title="上传与编辑" subtitle="已接入上传策略、任务创建与蒙版提交链路">
       <View>
         <Text>上传前请确认素材权属授权。</Text>
       </View>
@@ -87,8 +131,19 @@ export default function EditorPage() {
       </View>
       <View>
         <Button type="primary" loading={loading} onClick={handleCreateTask}>
-          申请上传策略并创建任务
+          申请上传策略并创建任务（步骤 1）
         </Button>
+      </View>
+      <View>
+        <Button type="primary" loading={maskLoading} onClick={handleSubmitMask}>
+          提交示例蒙版并进入任务中心（步骤 2）
+        </Button>
+      </View>
+      <View>
+        <Text>当前 taskId：{taskId || "-"}</Text>
+      </View>
+      <View>
+        <Text>maskId/version：{maskId ? `${maskId} / v${maskVersion}` : "-"}</Text>
       </View>
       {errorText ? (
         <View>

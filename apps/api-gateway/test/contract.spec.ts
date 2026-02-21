@@ -185,3 +185,81 @@ test("POST /v1/assets/upload-policy should return signed payload envelope", asyn
 
   await app.close();
 });
+
+test("POST /v1/tasks/{taskId}/mask should update version", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const create = await server.inject({
+    method: "POST",
+    url: "/v1/tasks",
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_mask_create",
+      "content-type": "application/json"
+    },
+    payload: {
+      assetId: "ast_mask_1001",
+      mediaType: "IMAGE",
+      taskPolicy: "FAST"
+    }
+  });
+
+  const taskId = create.json().data.taskId as string;
+
+  const firstMask = await server.inject({
+    method: "POST",
+    url: `/v1/tasks/${taskId}/mask`,
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_mask_1",
+      "content-type": "application/json"
+    },
+    payload: {
+      imageWidth: 1920,
+      imageHeight: 1080,
+      polygons: [
+        [
+          [100, 100],
+          [200, 100],
+          [200, 200],
+          [100, 200]
+        ]
+      ],
+      brushStrokes: [],
+      version: 0
+    }
+  });
+
+  assert.equal(firstMask.statusCode, 200);
+  assert.equal(firstMask.json().data.version, 1);
+
+  const secondMask = await server.inject({
+    method: "POST",
+    url: `/v1/tasks/${taskId}/mask`,
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_mask_2",
+      "content-type": "application/json"
+    },
+    payload: {
+      imageWidth: 1920,
+      imageHeight: 1080,
+      polygons: [
+        [
+          [120, 120],
+          [220, 120],
+          [220, 220],
+          [120, 220]
+        ]
+      ],
+      brushStrokes: [],
+      version: 1
+    }
+  });
+
+  assert.equal(secondMask.statusCode, 200);
+  assert.equal(secondMask.json().data.version, 2);
+
+  await app.close();
+});

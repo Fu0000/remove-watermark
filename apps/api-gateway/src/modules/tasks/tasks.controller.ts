@@ -11,6 +11,14 @@ interface CreateTaskRequest {
   taskPolicy?: TaskPolicy;
 }
 
+interface UpsertMaskRequest {
+  imageWidth: number;
+  imageHeight: number;
+  polygons: number[][][];
+  brushStrokes: number[][][];
+  version: number;
+}
+
 @Controller("v1/tasks")
 export class TasksController {
   constructor(@Inject(TasksService) private readonly tasksService: TasksService) {}
@@ -120,6 +128,43 @@ export class TasksController {
       {
         taskId: task.taskId,
         status: task.status
+      },
+      requestIdHeader
+    );
+  }
+
+  @Post(":taskId/mask")
+  @HttpCode(200)
+  upsertTaskMask(
+    @Headers("authorization") authorization: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Headers("x-request-id") requestIdHeader: string | undefined,
+    @Param("taskId") taskId: string,
+    @Body() body: UpsertMaskRequest
+  ) {
+    ensureAuthorization(authorization, requestIdHeader);
+    if (!idempotencyKey) {
+      badRequest(40001, "Idempotency-Key is required", requestIdHeader);
+    }
+
+    if (!body.imageWidth || !body.imageHeight || body.version < 0) {
+      badRequest(40001, "参数非法", requestIdHeader);
+    }
+
+    const result = this.tasksService.upsertMask("u_1001", taskId, body);
+    if (!result) {
+      notFound(40401, "资源不存在", requestIdHeader);
+    }
+
+    if (result.conflict) {
+      conflict(40901, `版本冲突，当前版本 ${result.version}`, requestIdHeader);
+    }
+
+    return ok(
+      {
+        taskId,
+        maskId: result.maskId,
+        version: result.version
       },
       requestIdHeader
     );

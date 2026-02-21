@@ -15,8 +15,24 @@ export interface TaskListItem {
   createdAt: string;
 }
 
+export interface UpsertTaskMaskPayload {
+  imageWidth: number;
+  imageHeight: number;
+  polygons: number[][][];
+  brushStrokes: number[][][];
+  version: number;
+}
+
 export function createTask(payload: CreateTaskPayload, idempotencyKey: string) {
   return request<{ taskId: string; status: string }>("/v1/tasks", {
+    method: "POST",
+    idempotencyKey,
+    data: payload
+  });
+}
+
+export function upsertTaskMask(taskId: string, payload: UpsertTaskMaskPayload, idempotencyKey: string) {
+  return request<{ taskId: string; maskId: string; version: number }>(`/v1/tasks/${taskId}/mask`, {
     method: "POST",
     idempotencyKey,
     data: payload

@@ -27,12 +27,30 @@ interface IdempotencyRecord {
   taskId: string;
 }
 
+interface TaskMaskRecord {
+  taskId: string;
+  maskId: string;
+  version: number;
+  polygons: number[][][];
+  brushStrokes: number[][][];
+  updatedAt: string;
+}
+
+export interface UpsertMaskInput {
+  imageWidth: number;
+  imageHeight: number;
+  polygons: number[][][];
+  brushStrokes: number[][][];
+  version: number;
+}
+
 const CANCELABLE_STATUS = new Set<TaskStatus>(["QUEUED", "PREPROCESSING", "DETECTING"]);
 
 @Injectable()
 export class TasksService {
   private readonly tasks = new Map<string, TaskRecord>();
   private readonly idempotency = new Map<string, IdempotencyRecord>();
+  private readonly taskMasks = new Map<string, TaskMaskRecord>();
 
   createTask(userId: string, idempotencyKey: string, input: CreateTaskInput): { task: TaskRecord; created: boolean } {
     const payloadHash = JSON.stringify(input);
@@ -122,6 +140,46 @@ export class TasksService {
     task.errorMessage = undefined;
     task.updatedAt = new Date().toISOString();
     return task;
+  }
+
+  upsertMask(
+    userId: string,
+    taskId: string,
+    input: UpsertMaskInput
+  ): { conflict: false; maskId: string; version: number } | { conflict: true; version: number } | undefined {
+    const task = this.getByUser(userId, taskId);
+    if (!task) {
+      return undefined;
+    }
+
+    const currentMask = this.taskMasks.get(taskId);
+    if (currentMask && input.version !== currentMask.version) {
+      return {
+        conflict: true,
+        version: currentMask.version
+      };
+    }
+
+    const nextVersion = currentMask ? currentMask.version + 1 : input.version + 1;
+    const maskId = currentMask?.maskId || `msk_${Date.now()}`;
+    const now = new Date().toISOString();
+
+    this.taskMasks.set(taskId, {
+      taskId,
+      maskId,
+      version: nextVersion,
+      polygons: input.polygons,
+      brushStrokes: input.brushStrokes,
+      updatedAt: now
+    });
+
+    task.updatedAt = now;
+
+    return {
+      conflict: false,
+      maskId,
+      version: nextVersion
+    };
   }
 
   seedFailedTask(userId: string, taskId: string): void {

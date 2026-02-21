@@ -101,7 +101,7 @@
 |---|---|---|---|---|---|---|---|---|---|---|
 | FE-001 | 用户端主链路 | 登录态与会话续期 | 前端 | 2026-03-02 | 2026-03-06 | In Review | FR-001 | `/v1/auth/*` | unit/e2e | 登录会话与鉴权头链路已联调 |
 | FE-002 | 用户端主链路 | 上传页（格式校验、分片上传、失败恢复） | 前端 | 2026-03-02 | 2026-03-10 | In Review | FR-002 | `/v1/assets/upload-policy` | e2e | 上传策略+任务创建链路已联调 |
-| FE-003 | 用户端主链路 | 编辑页（自动检测+手动蒙版） | 前端 | 2026-03-05 | 2026-03-14 | Backlog | FR-003/FR-004 | `/v1/tasks`, `/v1/tasks/{taskId}/mask` | e2e/regression | 未开始 |
+| FE-003 | 用户端主链路 | 编辑页（自动检测+手动蒙版） | 前端 | 2026-03-05 | 2026-03-14 | In Progress | FR-003/FR-004 | `/v1/tasks`, `/v1/tasks/{taskId}/mask` | e2e/regression | 示例蒙版提交流程已打通 |
 | FE-004 | 用户端主链路 | 任务中心（轮询/SSE 回退、重试/取消） | 前端 | 2026-03-09 | 2026-03-18 | In Review | FR-005/FR-006 | `/v1/tasks*` | contract/e2e | 刷新/取消/重试联调动作与 H5 构建验证已通过 |
 | FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | Backlog | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 未开始 |
 | FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | Backlog | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 未开始 |
@@ -157,7 +157,7 @@
 | 用户前端目录规范检查 | `for dir in pages components modules stores services utils; do find apps/user-frontend/src/$dir -type f \\| wc -l; done` | `目录均存在且有文件` | 已对齐 `frontend-framework.md` 目录约束 |
 | 管理端构建验证 | `pnpm --filter @apps/admin-console build` | `Next build passed` | 管理端框架可完成生产构建 |
 | API 网关构建验证 | `pnpm --filter @apps/api-gateway build` | `tsc passed` | 后端网关骨架可完成编译 |
-| API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `5 passed / 0 failed` | 关键契约（capabilities/upload-policy/tasks）可联调 |
+| API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `6 passed / 0 failed` | 关键契约（含 `/v1/tasks/{taskId}/mask`）可联调 |
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮修复） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | H5 构建链路已恢复，`BLK-003` 已解除（保留包体告警待优化） |
@@ -179,9 +179,9 @@
 | 状态 | 数量 | 占比 |
 |---|---:|---:|
 | Done | 1 | 2.3% |
-| In Progress | 5 | 11.6% |
+| In Progress | 6 | 14.0% |
 | Ready | 8 | 18.6% |
-| Backlog | 22 | 51.2% |
+| Backlog | 21 | 48.8% |
 | In Review | 7 | 16.3% |
 | QA | 0 | 0.0% |
 
@@ -336,3 +336,29 @@
 - 下一步：
   - 等待阿里云 shared 地址并切换 `SHARED_BASE_URL`
   - 在云端 shared 执行 smoke 并回填 `INT-002/INT-003` 最终验收结果
+
+## 17. 本次执行回填（编辑页蒙版链路）
+
+- 任务编号：`DEV-20260221-FE-03`
+- 需求映射：`FR-003/FR-004`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/frontend-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 实施摘要：
+  - 后端新增 `POST /v1/tasks/{taskId}/mask` 契约实现（鉴权、幂等头校验、版本递增）
+  - 新增契约测试覆盖蒙版版本更新场景（`contract.spec.ts`）
+  - 前端编辑页接入“创建任务 -> 提交示例蒙版 -> 进入任务中心”联调路径
+  - 前端任务服务新增 `upsertTaskMask` 调用
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（6/6）
+  - `pnpm --filter @apps/user-frontend typecheck`：通过
+  - `pnpm --filter @apps/user-frontend build:h5`：通过（含 2 条包体告警）
+  - `pnpm -r typecheck`：通过（15/15）
+- 风险与回滚：
+  - 风险：当前蒙版提交为示例数据链路，真实画笔/多边形编辑器待后续组件化
+  - 回滚：回退 `apps/api-gateway/src/modules/tasks/*`、`apps/api-gateway/test/contract.spec.ts`、`apps/user-frontend/src/pages/editor/index.tsx`、`apps/user-frontend/src/services/task.ts`
+- 当前状态：`In Progress`
+- 下一步：
+  - 补充编辑器蒙版交互组件（手动绘制/撤销）
+  - 推进 `INT-004` 状态刷新与错误路径联调

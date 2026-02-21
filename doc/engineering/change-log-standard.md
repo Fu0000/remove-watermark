@@ -1,4 +1,4 @@
-# 变更日志规范（v1.6）
+# 变更日志规范（v1.7）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.7 | 2026-02-21 | 新增编辑页蒙版链路（`/v1/tasks/{taskId}/mask`）联调执行日志 |
 | v1.6 | 2026-02-21 | 切换 shared smoke 默认本地地址并完成本地联调验收 |
 | v1.5 | 2026-02-21 | 新增 shared 联调 smoke 脚本与环境接入准备回填 |
 | v1.4 | 2026-02-20 | 新增 FE 联调主链路与 H5 构建阻塞修复执行日志 |
@@ -60,6 +61,32 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.2] - 2026-02-21
+
+### Added
+- 新增后端接口：`POST /v1/tasks/{taskId}/mask`（支持蒙版版本递增返回）。
+- 新增契约测试场景：`POST /v1/tasks/{taskId}/mask` 版本更新链路。
+- 前端任务服务新增 `upsertTaskMask` 调用能力。
+
+### Changed
+- `apps/user-frontend/src/pages/editor/index.tsx` 更新为两步联调流程：
+  - 步骤 1：上传策略 + 创建任务
+  - 步骤 2：提交示例蒙版并跳转任务中心
+- `doc/engineering/rd-progress-management.md` 更新 `FE-003` 状态与本轮测试证据。
+
+### Fixed
+- 补齐编辑页到后端蒙版接口的契约断点，消除 `FE-003`“仅页面骨架”状态。
+
+### Security
+- 蒙版提交流程保持 `Authorization` + `Idempotency-Key` + `X-Request-Id` 约束一致。
+
+### Rollback
+- 回退 `apps/api-gateway/src/modules/tasks/*`、`apps/api-gateway/test/contract.spec.ts`、`apps/user-frontend/src/pages/editor/index.tsx`、`apps/user-frontend/src/services/task.ts` 与台账更新。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.1] - 2026-02-21
 
