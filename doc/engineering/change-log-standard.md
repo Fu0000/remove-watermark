@@ -1,4 +1,4 @@
-# 变更日志规范（v1.36）
+# 变更日志规范（v1.37）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.37 | 2026-02-22 | 新增 BE-008 指标与阈值告警（webhook_success_rate/webhook_retry_total）执行记录 |
 | v1.36 | 2026-02-22 | 新增 INT-007 本地外部验签联调（重试+幂等）执行记录 |
 | v1.35 | 2026-02-22 | 新增 BE-008 第二阶段（webhook dispatcher 持久化派发）执行记录 |
 | v1.34 | 2026-02-21 | 新增 BE-008 Webhook 签名协议落地（HMAC-SHA256 + Id/Timestamp/Key-Id）执行记录 |
@@ -90,6 +91,42 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.32] - 2026-02-22
+
+### Added
+- 新增 dispatcher 指标模块：
+  - `apps/webhook-dispatcher/src/metrics.ts`
+  - 指标：`webhook_success_rate`、`webhook_retry_total`、`webhook_retry_rate`
+- 新增指标单元测试：
+  - `apps/webhook-dispatcher/src/metrics.spec.ts`
+  - `apps/webhook-dispatcher/package.json` 新增 `test:unit` 命令。
+- `doc/engineering/rd-progress-management.md` 新增第 46 节回填（指标+告警执行证据）。
+
+### Changed
+- `apps/webhook-dispatcher/src/dispatcher.ts` 增加 `retryDeliveries` 批次统计字段，补齐重试量观测。
+- `apps/webhook-dispatcher/src/main.ts` 接入窗口化指标统计与阈值告警日志。
+- `apps/webhook-dispatcher/.env.example` 新增告警参数：
+  - `WEBHOOK_DISPATCHER_METRICS_WINDOW_SEC`
+  - `WEBHOOK_DISPATCHER_ALERT_MIN_SAMPLES`
+  - `WEBHOOK_DISPATCHER_ALERT_MIN_SUCCESS_RATE`
+  - `WEBHOOK_DISPATCHER_ALERT_MAX_RETRY_RATE`
+- `apps/webhook-dispatcher/src/smoke.ts` 与 `apps/webhook-dispatcher/src/int007-local.ts` 使用随机 `userId` 做联调隔离，降低历史 outbox 数据干扰。
+- `doc/engineering/rd-progress-management.md` 更新 `SVC-004/BE-008` 关键结果描述与测试看板。
+
+### Fixed
+- 修复 dispatcher 缺少可观测成功率/重试率与阈值告警能力的问题。
+- 修复本地 smoke/int007 测试受历史 `PENDING` outbox 事件干扰导致不稳定的问题。
+
+### Security
+- 指标与告警改造不改变 webhook 签名协议与验签边界，继续保持 `HMAC-SHA256` 规范。
+
+### Rollback
+- 回退 `metrics.ts/metrics.spec.ts` 与 `main.ts` 指标告警接入、`.env.example` 新增参数、`dispatcher.ts` 统计字段和相关台账更新，恢复到 0.5.31 版本。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/webhook-dispatcher`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.31] - 2026-02-22
 

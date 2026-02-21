@@ -44,7 +44,7 @@ async function main() {
   const taskId = buildId("tsk_smoke");
   const eventId = buildId("evt_smoke");
   const endpointId = buildId("wh_ep");
-  const userId = "u_1001";
+  const userId = buildId("u_smoke");
 
   try {
     await prisma.task.create({
@@ -141,10 +141,10 @@ async function main() {
     assert.equal(deliveries.length, 1);
     assert.equal(deliveries[0].status, "SUCCESS");
     assert.equal(deliveries[0].responseStatus, 200);
-    assert.equal(requests.length, 1);
-    assert.equal(requests[0].headers["x-webhook-id"], deliveries[0].deliveryId);
-    assert.equal(/^v1=[a-f0-9]{64}$/.test(requests[0].headers["x-webhook-signature"] || ""), true);
-    assert.equal(requests[0].headers["x-webhook-key-id"], "k1");
+    const matchedRequest = requests.find((item) => item.headers["x-webhook-id"] === deliveries[0].deliveryId);
+    assert.equal(Boolean(matchedRequest), true);
+    assert.equal(/^v1=[a-f0-9]{64}$/.test(matchedRequest?.headers["x-webhook-signature"] || ""), true);
+    assert.equal(matchedRequest?.headers["x-webhook-key-id"], "k1");
 
     console.log("[webhook-smoke] dispatch flow passed");
     console.log(

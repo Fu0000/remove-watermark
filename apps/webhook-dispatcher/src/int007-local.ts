@@ -40,7 +40,7 @@ function safeCompare(left: string, right: string) {
 
 async function main() {
   const prisma = new PrismaClient();
-  const userId = "u_1001";
+  const userId = buildId("u_int007");
   const taskId = buildId("tsk_int007");
   const eventId = buildId("evt_int007");
   const endpointId = buildId("wh_ep");

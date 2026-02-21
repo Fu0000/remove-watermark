@@ -24,6 +24,7 @@ export interface DispatchBatchResult {
   deliveriesCreated: number;
   deliverySuccesses: number;
   deliveryFailures: number;
+  retryDeliveries: number;
 }
 
 type EndpointStatus = "ACTIVE" | "PAUSED" | "DELETED";
@@ -61,6 +62,7 @@ type DeliveryAttemptDecision =
 interface DeliveryAttemptResult {
   kind: "SUCCESS" | "FAILED_RETRYABLE" | "FAILED_EXHAUSTED" | "DEFERRED" | "SKIP_SUCCESS";
   deliveryCreated: boolean;
+  attempt: number;
   responseStatus?: number;
   failureCode?: DeliveryFailureCode;
 }
@@ -128,6 +130,7 @@ export async function dispatchPendingEvents(
   let deliveriesCreated = 0;
   let deliverySuccesses = 0;
   let deliveryFailures = 0;
+  let retryDeliveries = 0;
 
   for (const event of events) {
     const handled = await handleOutboxEvent(prisma, event, options);
@@ -137,6 +140,7 @@ export async function dispatchPendingEvents(
     deliveriesCreated += handled.deliveriesCreated;
     deliverySuccesses += handled.deliverySuccesses;
     deliveryFailures += handled.deliveryFailures;
+    retryDeliveries += handled.retryDeliveries;
   }
 
   return {
@@ -146,7 +150,8 @@ export async function dispatchPendingEvents(
     dead,
     deliveriesCreated,
     deliverySuccesses,
-    deliveryFailures
+    deliveryFailures,
+    retryDeliveries
   };
 }
 
@@ -166,6 +171,7 @@ async function handleOutboxEvent(
   deliveriesCreated: number;
   deliverySuccesses: number;
   deliveryFailures: number;
+  retryDeliveries: number;
 }> {
   const context = await resolveEventContext(prisma, event);
   if (!context) {
@@ -180,7 +186,8 @@ async function handleOutboxEvent(
       status: "DEAD",
       deliveriesCreated: 0,
       deliverySuccesses: 0,
-      deliveryFailures: 0
+      deliveryFailures: 0,
+      retryDeliveries: 0
     };
   }
 
@@ -204,7 +211,8 @@ async function handleOutboxEvent(
       status: "PUBLISHED",
       deliveriesCreated: 0,
       deliverySuccesses: 0,
-      deliveryFailures: 0
+      deliveryFailures: 0,
+      retryDeliveries: 0
     };
   }
 
@@ -228,15 +236,15 @@ async function handleOutboxEvent(
     const decision = decideNextAttempt(latestAttempt, endpoint.maxRetries, options);
 
     if (decision.kind === "SKIP_SUCCESS") {
-      deliveryResults.push({ kind: "SKIP_SUCCESS", deliveryCreated: false });
+      deliveryResults.push({ kind: "SKIP_SUCCESS", deliveryCreated: false, attempt: 0 });
       continue;
     }
     if (decision.kind === "DEFERRED") {
-      deliveryResults.push({ kind: "DEFERRED", deliveryCreated: false });
+      deliveryResults.push({ kind: "DEFERRED", deliveryCreated: false, attempt: 0 });
       continue;
     }
     if (decision.kind === "EXHAUSTED") {
-      deliveryResults.push({ kind: "FAILED_EXHAUSTED", deliveryCreated: false });
+      deliveryResults.push({ kind: "FAILED_EXHAUSTED", deliveryCreated: false, attempt: 0 });
       continue;
     }
 
@@ -272,7 +280,8 @@ async function handleOutboxEvent(
     deliverySuccesses: deliveryResults.filter((item) => item.kind === "SUCCESS").length,
     deliveryFailures: deliveryResults.filter(
       (item) => item.kind === "FAILED_RETRYABLE" || item.kind === "FAILED_EXHAUSTED"
-    ).length
+    ).length,
+    retryDeliveries: deliveryResults.filter((item) => item.deliveryCreated && item.attempt > 1).length
   };
 }
 
@@ -505,6 +514,7 @@ async function sendDeliveryAttempt(
     return {
       kind: "FAILED_EXHAUSTED",
       deliveryCreated: true,
+      attempt: input.attempt,
       failureCode: "DISPATCH_SECRET_MISSING",
       responseStatus: 500
     };
@@ -585,7 +595,8 @@ async function sendDeliveryAttempt(
     }
     return {
       kind: "DEFERRED",
-      deliveryCreated: false
+      deliveryCreated: false,
+      attempt: input.attempt
     };
   }
 
@@ -593,6 +604,7 @@ async function sendDeliveryAttempt(
     return {
       kind: "SUCCESS",
       deliveryCreated: true,
+      attempt: input.attempt,
       responseStatus
     };
   }
@@ -600,6 +612,7 @@ async function sendDeliveryAttempt(
   return {
     kind: "FAILED_RETRYABLE",
     deliveryCreated: true,
+    attempt: input.attempt,
     responseStatus,
     failureCode
   };
