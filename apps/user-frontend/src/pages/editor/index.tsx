@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Taro from "@tarojs/taro";
 import { Button, Picker, Text, View } from "@tarojs/components";
 import { PageShell } from "@/modules/common/page-shell";
-import { getUploadPolicy } from "@/services/asset";
+import { deleteAsset, getUploadPolicy } from "@/services/asset";
 import { createTask, upsertTaskMask } from "@/services/task";
 import { ApiError } from "@/services/http";
 import { buildIdempotencyKey } from "@/utils/idempotency";
@@ -64,10 +64,12 @@ export default function EditorPage() {
   const [agreement, setAgreement] = useState(false);
   const [mediaType, setMediaType] = useState<"IMAGE" | "VIDEO">("IMAGE");
   const [loading, setLoading] = useState(false);
+  const [assetDeleting, setAssetDeleting] = useState(false);
   const [maskLoading, setMaskLoading] = useState(false);
   const [errorText, setErrorText] = useState("");
   const [maskVersion, setMaskVersion] = useState(0);
   const [maskId, setMaskId] = useState("");
+  const [assetId, setAssetId] = useState("");
 
   const [mode, setMode] = useState<MaskMode>("POLYGON");
   const [polygons, setPolygons] = useState<MaskPath[]>([]);
@@ -338,6 +340,7 @@ export default function EditorPage() {
         mediaType: mediaType === "IMAGE" ? "image" : "video",
         mimeType: mediaType === "IMAGE" ? "image/png" : "video/mp4"
       });
+      setAssetId(uploadPolicy.data.assetId);
 
       const task = await createTask(
         {
@@ -357,6 +360,32 @@ export default function EditorPage() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteAsset = async () => {
+    if (!assetId) {
+      setErrorText("当前没有可删除的素材");
+      return;
+    }
+
+    setAssetDeleting(true);
+    setErrorText("");
+    try {
+      await deleteAsset(assetId, buildIdempotencyKey());
+      setAssetId("");
+      Taro.showToast({
+        title: "素材已删除",
+        icon: "success"
+      });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setErrorText(`${error.code} ${error.message}`);
+      } else {
+        setErrorText("素材删除失败，请稍后重试");
+      }
+    } finally {
+      setAssetDeleting(false);
     }
   };
 
@@ -433,6 +462,14 @@ export default function EditorPage() {
       <View className="editor-section">
         <Button type="primary" loading={loading} onClick={handleCreateTask}>
           申请上传策略并创建任务（步骤 1）
+        </Button>
+      </View>
+      <View className="editor-section">
+        <Text>当前 assetId：{assetId || "-"}</Text>
+      </View>
+      <View className="editor-section">
+        <Button loading={assetDeleting} disabled={!assetId} onClick={handleDeleteAsset}>
+          删除当前素材（FR-010）
         </Button>
       </View>
 

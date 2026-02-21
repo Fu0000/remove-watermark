@@ -1,4 +1,4 @@
-# 变更日志规范（v1.41）
+# 变更日志规范（v1.42）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.42 | 2026-02-22 | 新增 FE-007 第二阶段（编辑/任务页删除入口）执行记录 |
 | v1.41 | 2026-02-22 | 新增 FE-007（账户隐私页：删除申请与审计查询）执行记录 |
 | v1.40 | 2026-02-22 | 新增 BE-009 第二阶段（删除申请执行态、查询与保留策略）执行记录 |
 | v1.39 | 2026-02-22 | 新增 BE-009 第一阶段（删除与审计最小闭环）执行记录 |
@@ -95,6 +96,33 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.37] - 2026-02-22
+
+### Added
+- 新增前端删除能力服务入口：
+  - `apps/user-frontend/src/services/asset.ts` 增加 `deleteAsset(...)`
+  - `apps/user-frontend/src/services/task.ts` 增加 `deleteTask(...)`
+
+### Changed
+- `apps/user-frontend/src/pages/editor/index.tsx` 新增“删除当前素材（FR-010）”按钮，并展示当前 `assetId`。
+- `apps/user-frontend/src/pages/tasks/index.tsx` 新增“删除当前任务（FR-010）”按钮，删除成功后重置当前任务态。
+- `doc/engineering/rd-progress-management.md`：
+  - 更新 `FE-007` 联调接口描述，纳入 `DELETE /v1/assets/{assetId}` 与 `DELETE /v1/tasks/{taskId}`
+  - 新增第 51 节回填与第二阶段测试证据。
+
+### Fixed
+- 修复 FR-010 在用户端“仅账户页可见、编辑/任务页无直接删除入口”的可达性缺口。
+
+### Security
+- 删除操作继续强制透传 `Idempotency-Key`，并沿用后端鉴权约束，不放宽安全边界。
+
+### Rollback
+- 回退 `editor/tasks` 页面删除入口与 `services/asset.ts`, `services/task.ts` 新增删除方法，恢复到 0.5.36 版本行为。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.36] - 2026-02-22
 

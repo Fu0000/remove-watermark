@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.4 | 2026-02-22 | 新增 FE-007 第二阶段（编辑/任务页删除入口）执行记录 |
 | v1.3 | 2026-02-22 | 新增 FE-007（账户隐私页：删除申请查询与审计日志）执行记录 |
 | v1.2 | 2026-02-22 | 新增 BE-009 第二阶段（删除申请执行态+审计查询+保留策略）执行记录 |
 | v1.1 | 2026-02-19 | 新增 v1.0 执行版研发任务清单、联调计划、测试证据、完成状态与关键结果看板 |
@@ -107,7 +108,7 @@
 | FE-004 | 用户端主链路 | 任务中心（轮询/SSE 回退、重试/取消） | 前端 | 2026-03-09 | 2026-03-18 | In Review | FR-005/FR-006 | `/v1/tasks*` | contract/e2e | 刷新/取消/重试联调动作与 H5 构建验证已通过 |
 | FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | In Review | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 结果查询、预览/复制下载地址、过期提示已联调 |
 | FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | Backlog | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 未开始 |
-| FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | In Review | FR-010/FR-011 | `/v1/account/delete-request*`, `/v1/account/audit-logs` | e2e | 删除申请创建、list/detail 与审计日志查询页面已联调 |
+| FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | In Review | FR-010/FR-011 | `/v1/account/delete-request*`, `/v1/account/audit-logs`, `DELETE /v1/assets/{assetId}`, `DELETE /v1/tasks/{taskId}` | e2e | 删除申请创建、list/detail、审计日志查询已联调，并在编辑/任务页补齐素材删除与任务删除入口 |
 | FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Progress | FR-012 | `/admin/*` | e2e/smoke | 页面与 RBAC 骨架已完成 |
 
 ### 7.5 后端研发任务（API + Worker + Billing）
@@ -189,6 +190,7 @@
 | BE-009 第二阶段 Prisma 隔离 schema 契约回归（本轮） | `DATABASE_URL=postgresql://.../remove_watermark?schema=contract_phase2_<ts> pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma && DATABASE_URL=... TASKS/SUBSCRIPTIONS/WEBHOOKS/COMPLIANCE_STORE=prisma pnpm --filter @apps/api-gateway test:contract` | `passed（22/22）` | 使用临时 schema 隔离历史幂等键，获得稳定 Prisma 合约证据（避免固定库历史数据噪音） |
 | BE-009 运维脚本校验（本轮） | `COMPLIANCE_STORE=prisma pnpm --filter @apps/api-gateway ops:account-delete:reconcile` + `COMPLIANCE_STORE=prisma AUDIT_LOG_RETENTION_DAYS=180 pnpm --filter @apps/api-gateway ops:audit:retention` | `passed` | 已具备删除申请批处理与审计日志保留清理执行入口 |
 | FE-007 账户隐私页前端验证（本轮） | `pnpm --filter @apps/user-frontend typecheck` + `pnpm --filter @apps/user-frontend build:h5` | `passed（build 含 2 条包体告警）` | 删除申请创建、删除申请查询与审计日志查询页面通过多端构建与类型校验 |
+| FE-007 第二阶段（本轮）删除入口验证 | `pnpm --filter @apps/user-frontend typecheck` + `pnpm --filter @apps/user-frontend build:h5` | `passed（build 含 2 条包体告警）` | 编辑页已接入 `DELETE /v1/assets/{assetId}`，任务中心已接入 `DELETE /v1/tasks/{taskId}`，并统一透传 `Idempotency-Key` |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
 | Webhook Dispatcher 本地 smoke（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:smoke` | `passed` | 已验证 outbox `PENDING -> PUBLISHED`、签名头生成与 `webhook_deliveries(SUCCESS)` 持久化闭环 |
@@ -1870,3 +1872,44 @@
 - 下一步：
   - 在 `shared/staging` 云端地址可用后，补齐 FE-007 联调 smoke 证据并推进至 `QA`。
   - 评估将“素材删除/任务删除”入口嵌入编辑页/任务中心，形成 FR-010 全链路用户可见入口。
+
+## 51. 本次执行回填（FE-007 第二阶段：编辑/任务页删除入口）
+
+- 任务编号：`DEV-20260222-FE007-DELETE-ENTRY`
+- 需求映射：`FR-010`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/prd.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/frontend-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+- 负责人：前端
+- 截止时间：`2026-04-06`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/services/asset.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/services/task.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/pages/editor/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/pages/tasks/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增素材删除服务：`deleteAsset(assetId, idempotencyKey)`，对接 `DELETE /v1/assets/{assetId}`。
+  - 新增任务删除服务：`deleteTask(taskId, idempotencyKey)`，对接 `DELETE /v1/tasks/{taskId}`。
+  - 编辑页新增“删除当前素材（FR-010）”按钮，展示当前 `assetId` 并支持一键软删除。
+  - 任务中心新增“删除当前任务（FR-010）”按钮，删除后重置当前任务态并刷新任务查询缓存。
+  - 删除操作全部透传 `Idempotency-Key`，保持与契约一致。
+- 测试证据：
+  - `pnpm --filter @apps/user-frontend typecheck`：通过
+  - `pnpm --filter @apps/user-frontend build:h5`：通过（`2 warnings`，为既有包体告警）
+- 联调结果：
+  - 本地地址（`http://127.0.0.1:3000`）下，素材删除与任务删除已具备用户可见入口并可触发后端契约。
+- 遗留问题：
+  - 删除后 `cleanupStatus` 追踪尚未在页面侧做持续查询展示（当前仅返回一次结果）。
+- 风险与回滚：
+  - 风险：当前删除动作未加二次确认弹窗，误触成本偏高。
+  - 回滚：回退 `editor/tasks` 页面删除入口与 `services` 新增删除方法，恢复到仅账户页入口版本。
+- 下一步：
+  - shared/staging 云端地址可用后，补齐 FE-007 第二阶段 smoke 证据并推进到 `QA`。
+  - 若你同意，下一步我可以补“二次确认 + 删除后提示”来降低误触风险。

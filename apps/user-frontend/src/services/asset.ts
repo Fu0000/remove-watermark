@@ -21,3 +21,17 @@ export function getUploadPolicy(payload: UploadPolicyRequest) {
     data: payload
   });
 }
+
+export interface DeleteAssetResponse {
+  assetId: string;
+  status: "DELETED";
+  deletedAt: string;
+  cleanupStatus: "PENDING" | "DONE";
+}
+
+export function deleteAsset(assetId: string, idempotencyKey: string) {
+  return request<DeleteAssetResponse>(`/v1/assets/${assetId}`, {
+    method: "DELETE",
+    idempotencyKey
+  });
+}

@@ -81,3 +81,10 @@ export function retryTask(taskId: string, idempotencyKey: string) {
     idempotencyKey
   });
 }
+
+export function deleteTask(taskId: string, idempotencyKey: string) {
+  return request<{ taskId: string; status: "DELETED"; deletedAt: string }>(`/v1/tasks/${taskId}`, {
+    method: "DELETE",
+    idempotencyKey
+  });
+}

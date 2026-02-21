@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Taro from "@tarojs/taro";
 import { Button, Text, View } from "@tarojs/components";
 import { PageShell } from "@/modules/common/page-shell";
-import { cancelTask, listTasks, retryTask } from "@/services/task";
+import { cancelTask, deleteTask, listTasks, retryTask } from "@/services/task";
 import { ApiError } from "@/services/http";
 import { buildIdempotencyKey } from "@/utils/idempotency";
 import { useTaskStore } from "@/stores/task.store";
@@ -21,9 +21,10 @@ function resolveErrorText(error: unknown, fallback: string) {
 }
 
 export default function TasksPage() {
-  const { taskId, status, setStatus } = useTaskStore();
+  const { taskId, status, setStatus, reset } = useTaskStore();
   const queryClient = useQueryClient();
   const [actionErrorText, setActionErrorText] = useState("");
+  const [actionText, setActionText] = useState("");
   const [navigatedTaskId, setNavigatedTaskId] = useState<string | undefined>();
 
   useEffect(() => {
@@ -71,6 +72,7 @@ export default function TasksPage() {
     mutationFn: async () => cancelTask(taskId as string, buildIdempotencyKey()),
     onSuccess: (response) => {
       setActionErrorText("");
+      setActionText("");
       setStatus(response.data.status as TaskStatus);
       void queryClient.invalidateQueries({ queryKey: ["tasks", taskId] });
     },
@@ -83,11 +85,26 @@ export default function TasksPage() {
     mutationFn: async () => retryTask(taskId as string, buildIdempotencyKey()),
     onSuccess: (response) => {
       setActionErrorText("");
+      setActionText("");
       setStatus(response.data.status as TaskStatus);
       void queryClient.invalidateQueries({ queryKey: ["tasks", taskId] });
     },
     onError: (error) => {
       setActionErrorText(resolveErrorText(error, "重试任务失败"));
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => deleteTask(taskId as string, buildIdempotencyKey()),
+    onSuccess: () => {
+      setActionErrorText("");
+      setActionText("当前任务已删除（展示已隐藏）");
+      reset();
+      void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
+    onError: (error) => {
+      setActionText("");
+      setActionErrorText(resolveErrorText(error, "删除任务失败"));
     }
   });
 
@@ -101,6 +118,7 @@ export default function TasksPage() {
 
   const handleRefresh = async () => {
     setActionErrorText("");
+    setActionText("");
     await tasksQuery.refetch();
   };
 
@@ -110,6 +128,7 @@ export default function TasksPage() {
       return;
     }
 
+    setActionText("");
     cancelMutation.mutate();
   };
 
@@ -119,7 +138,18 @@ export default function TasksPage() {
       return;
     }
 
+    setActionText("");
     retryMutation.mutate();
+  };
+
+  const handleDelete = () => {
+    if (!taskId) {
+      setActionErrorText("当前无可删除任务");
+      return;
+    }
+
+    setActionText("");
+    deleteMutation.mutate();
   };
 
   const handleGoResult = () => {
@@ -172,6 +202,16 @@ export default function TasksPage() {
           查看结果页
         </Button>
       </View>
+      <View>
+        <Button loading={deleteMutation.isPending} disabled={!taskId} onClick={handleDelete}>
+          删除当前任务（FR-010）
+        </Button>
+      </View>
+      {actionText ? (
+        <View>
+          <Text>{actionText}</Text>
+        </View>
+      ) : null}
       {actionErrorText ? (
         <View>
           <Text>{actionErrorText}</Text>
