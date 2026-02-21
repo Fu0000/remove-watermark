@@ -12,6 +12,7 @@
     "prisma:migrate:dev": "prisma migrate dev --schema prisma/schema.prisma",
     "prisma:push": "prisma db push --schema prisma/schema.prisma",
     "prisma:seed:plans": "tsx prisma/seed-plans.ts",
+    "test:data-dedupe-index": "tsx scripts/data-dedupe-index-check.ts",
     "test:unit": "NODE_ENV=test node --test --import tsx test/tasks.service.spec.ts",
     "test:contract": "NODE_ENV=test node --test --import tsx test/contract.spec.ts",
     "test:shared-smoke": "tsx scripts/shared-smoke.ts",

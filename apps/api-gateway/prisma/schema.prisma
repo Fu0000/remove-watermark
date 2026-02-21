@@ -78,6 +78,7 @@ model UsageLedger {
 
   @@index([userId, consumeAt(sort: Desc)])
   @@index([taskId])
+  @@unique([userId, taskId, status, source], map: "uk_usage_ledger_task_status_source")
   @@map("usage_ledger")
 }
 

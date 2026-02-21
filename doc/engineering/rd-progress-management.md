@@ -82,7 +82,7 @@
 |---|---|---|---|---|---|---|---|---|---|
 | DATA-001 | 数据基线 | Prisma schema 与 DDL 基线同步（含回滚脚本） | 后端 | 2026-02-24 | 2026-02-28 | In Progress | shared 部署 | integration | Prisma schema + init migration 已落地，待 shared PostgreSQL 验证 |
 | DATA-002 | 数据基线 | 初始化套餐/权益种子数据（Free/Pro 月付/年付） | 后端 | 2026-02-26 | 2026-03-01 | In Review | 订阅联调 | integration | `plans` 表与种子命令已落地，`GET /v1/plans` 可由 DB 驱动并保持回退 |
-| DATA-003 | 数据基线 | `idempotency_keys/outbox_events/usage_ledger` 去重索引校验 | 后端 | 2026-02-26 | 2026-03-02 | Backlog | 任务/账务一致性 | contract/integration | 幂等冲突可稳定复现与防重 |
+| DATA-003 | 数据基线 | `idempotency_keys/outbox_events/usage_ledger` 去重索引校验 | 后端 | 2026-02-26 | 2026-03-02 | In Review | 任务/账务一致性 | contract/integration | 去重索引校验脚本已落地，冲突防重可稳定复现 |
 | DATA-004 | 数据基线 | 测试样本库（图片/视频，含失败样本）与标注策略 | 测试+算法 | 2026-02-25 | 2026-03-03 | Ready | E2E 与回归 | e2e/regression | FR 场景样本覆盖 >= 90% |
 
 ### 7.3 服务准备（Service Readiness）
@@ -162,6 +162,7 @@
 | Prisma 客户端生成校验（本轮） | `pnpm --filter @apps/api-gateway prisma:generate` | `passed` | Prisma schema 与客户端代码生成可用，支持后续 shared DB 联调 |
 | 本地 PostgreSQL 迁移部署验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma` | `passed（No pending migrations）` | 本地库迁移链路可执行，DDL 与 Prisma 迁移记录一致 |
 | 套餐种子数据初始化验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway prisma:seed:plans` | `passed（seeded plans=3）` | Free/Pro 月付/年付种子可幂等写入 |
+| 去重索引校验（DATA-003，本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway test:data-dedupe-index` | `passed` | `idempotency_keys/outbox_events/usage_ledger` 去重约束存在且二次写入可被稳定拦截 |
 | Prisma 模式 shared smoke（本轮，本地） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | `INT-002~INT-005` 在 Prisma 持久化分支可通过 |
 | Prisma 持久化重启校验（本轮） | `重启网关后 GET /v1/tasks` + `psql count` | `passed（tasks=2, task_masks=1, idempotency_keys=2, usage_ledger=3, outbox_events=3）` | 本地重启后任务与幂等相关数据不丢失 |
 | Worker 编排类型检查（本轮） | `pnpm --filter @apps/worker-orchestrator typecheck` | `passed` | `worker-orchestrator` 编排循环可编译 |
@@ -1245,3 +1246,47 @@
 - 下一步：
   - 按计划推进 `DATA-003`（幂等与账务去重索引校验）并补齐集成证据。
   - 准备 `BE-007` 最小接口骨架（`/v1/subscriptions/*`、`/v1/usage/me`）。
+
+## 38. 本次执行回填（DATA-003 去重索引校验）
+
+- 任务编号：`DEV-20260221-DATA-003-DEDUPE`
+- 需求映射：`FR-005/FR-008`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/database-design.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-db-standards.md`
+- 负责人：后端
+- 截止时间：`2026-03-02`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：低
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/schema.prisma`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/migrations/20260221235500_add_usage_ledger_dedupe_index/migration.sql`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/scripts/data-dedupe-index-check.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/tasks/tasks.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator/src/main.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 为 `usage_ledger` 新增唯一去重索引：`(user_id, task_id, status, source)`。
+  - 新增 `test:data-dedupe-index` 校验脚本，覆盖 `idempotency_keys/outbox_events/usage_ledger` 三表去重约束存在性与冲突行为（第二次写入返回 0）。
+  - 将 `tasks.service` 与 `worker-orchestrator` 的 `usage_ledger` 写入改为 `createMany + skipDuplicates`，确保重放/并发下写入幂等。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway prisma:generate`：通过
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma`：通过（应用 `20260221235500_add_usage_ledger_dedupe_index`）
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway test:data-dedupe-index`：通过（`idempotency/usage/outbox` 去重结果 `1,0`）
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`11/11`）
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/worker-orchestrator typecheck`：通过
+- 联调结果：
+  - 本地 PostgreSQL 下，账务流水与幂等/事件表均可稳定防重，满足当前阶段 `DATA-003` 口径。
+- 遗留问题：
+  - 云端 shared/staging 仍需在发布前门禁补齐同口径校验证据。
+- 风险与回滚：
+  - 风险：若后续业务需要同一 `task/status/source` 多条账务记录，需先调整唯一键设计再发布。
+  - 回滚：回退 `add_usage_ledger_dedupe_index` 迁移与 `createMany+skipDuplicates` 写入路径，恢复原 `create` 写入逻辑。
+- 下一步：
+  - 推进 `BE-007` 商业化接口最小骨架（`/v1/subscriptions/*`、`/v1/usage/me`）。
+  - 将 `DATA-003` 校验命令接入后续 shared/staging smoke 门禁。

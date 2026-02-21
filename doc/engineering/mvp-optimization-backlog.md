@@ -1,4 +1,4 @@
-# MVP 后优化台账（v1.13）
+# MVP 后优化台账（v1.14）
 
 ## 1. 目标
 - 将研发过程中发现的优化点统一沉淀为可追踪台账，避免仅口头记录。
@@ -33,7 +33,7 @@
 
 | OPT-ID | 类别 | 触发背景 | 当前现状 | 优化建议 | 影响范围 | 收益评估 | 实施成本 | 优先级 | 执行时机 | 依赖 | 验收标准 | 状态 | Owner | 最近更新 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| OPT-ARCH-001 | Architecture | 任务与幂等当前为进程内实现 | Prisma schema 与事务化持久化分支已落地，仍缺 shared PostgreSQL 运行时验收 | 将 `tasks/idempotency_keys/usage_ledger/outbox_events` 迁移到 PostgreSQL + Prisma，替换文件态持久化 | `apps/api-gateway`、DB | 消除状态丢失，提升联调稳定性与可审计性 | 高 | P0 | MVP 内（稳定性前置执行） | PostgreSQL、Prisma schema、迁移脚本、shared 环境 DB 连通 | 服务重启后任务与幂等不丢失；创建任务事务可回放；shared smoke 通过 | In Progress | 后端 | 2026-02-21 |
+| OPT-ARCH-001 | Architecture | 任务与幂等当前为进程内实现 | Prisma schema 与事务化持久化分支已落地，并补齐 `idempotency_keys/outbox_events/usage_ledger` 去重索引校验脚本与 `usage_ledger` 防重写入策略；仍缺 shared PostgreSQL 运行时验收 | 将 `tasks/idempotency_keys/usage_ledger/outbox_events` 迁移到 PostgreSQL + Prisma，替换文件态持久化 | `apps/api-gateway`、DB | 消除状态丢失，提升联调稳定性与可审计性 | 高 | P0 | MVP 内（稳定性前置执行） | PostgreSQL、Prisma schema、迁移脚本、shared 环境 DB 连通 | 服务重启后任务与幂等不丢失；创建任务事务可回放；去重索引校验脚本通过；shared smoke 通过 | In Progress | 后端 | 2026-02-21 |
 | OPT-ARCH-002 | Reliability | 状态推进目前由 API 读取触发模拟推进 | `worker-orchestrator` 已接入 Redis/BullMQ，并新增 deadletter/retry 治理（`maxRetries=2`、指数退避+jitter、不可重试直入死信、outbox 超限转 `DEAD`、死信告警阈值）；已补充手动重放脚本（按 `jobId/taskId/eventId`）与批量能力（来源过滤、时间窗口、并发重放），并落地并发保护（默认上限 `10`，显式开关可临时提升到 `20`）及“高并发+大批量”联动阻断（阈值达标时默认拒绝）；新增一键演练脚本覆盖“阻断+放行+清理”闭环，并提供矩阵报告能力（dev/shared/staging），已完成本地地址映射三目标验收并形成发布前检查清单（可 Done 版本） | 将状态推进迁移至 `worker-orchestrator`，API 仅查询与动作投递 | `apps/api-gateway`、`apps/worker-orchestrator`、Redis | 还原真实链路，降低 API 副作用并提升失败可治理性 | 高 | P0 | MVP 内（稳定性前置执行） | Redis/BullMQ、Outbox 消费、shared/staging 双进程部署 | 状态只由 Worker 推进；API 无推进副作用；双进程 smoke 通过；失败任务可进入死信并触发阈值告警；支持手动/批量重放；默认并发上限受控；高并发批量默认阻断；演练脚本可一键复现阻断与放行；支持矩阵报告；shared/staging 本地映射矩阵已通过；发布前检查清单可执行 | Done | 后端 | 2026-02-21 |
 | OPT-PERF-001 | Performance | H5 构建持续存在包体告警 | `build:h5` 仍有 `AssetsOverSizeLimitWarning` | 页面维度拆包 + 依赖裁剪（react-query/taro 体积控制） | `apps/user-frontend` | 改善首屏性能与加载稳定性 | 中 | P1 | MVP 后第 2 优先级 | 前端构建配置、埋点监控 | 首包体积低于告警阈值；关键页面 TTI 下降 | Backlog | 前端 | 2026-02-21 |
 | OPT-FE-001 | Process | 编辑页联调阶段仅示例蒙版提交 | 已补齐真实绘制首版能力，需进入评审 | 实现真实画笔+多边形编辑器组件，补充冲突回滚交互 | `apps/user-frontend/src/pages/editor` | 提升可用性，降低误操作 | 中 | P1 | MVP 内（已提前执行） | UI 组件设计、e2e 用例 | 支持绘制/撤销/重做；冲突提示与恢复流程可用 | In Review | 前端 | 2026-02-21 |
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.14 | 2026-02-21 | OPT-ARCH-001 补充 DATA-003 去重索引校验与 usage_ledger 防重策略进展 |
 | v1.13 | 2026-02-21 | OPT-ARCH-002 收尾为发布前检查清单可 Done 版本，状态更新为 Done |
 | v1.12 | 2026-02-21 | OPT-ARCH-002 补充 shared/staging 本地映射矩阵验收证据 |
 | v1.11 | 2026-02-21 | OPT-ARCH-002 增加 guard-drill 矩阵执行与报告输出能力 |

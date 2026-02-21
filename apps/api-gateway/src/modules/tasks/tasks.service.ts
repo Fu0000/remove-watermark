@@ -1142,16 +1142,19 @@ export class TasksService {
     status: UsageLedgerRecord["status"],
     source: string
   ) {
-    await tx.usageLedger.create({
-      data: {
-        ledgerId: this.buildId("led"),
-        userId,
-        taskId,
-        status,
-        source,
-        consumeUnit: 1,
-        consumeAt: new Date()
-      }
+    await tx.usageLedger.createMany({
+      data: [
+        {
+          ledgerId: this.buildId("led"),
+          userId,
+          taskId,
+          status,
+          source,
+          consumeUnit: 1,
+          consumeAt: new Date()
+        }
+      ],
+      skipDuplicates: true
     });
   }
 

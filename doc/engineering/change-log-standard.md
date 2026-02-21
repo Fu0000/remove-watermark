@@ -1,4 +1,4 @@
-# 变更日志规范（v1.28）
+# 变更日志规范（v1.29）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.29 | 2026-02-21 | 新增 DATA-003 去重索引校验与账务防重写入策略执行记录 |
 | v1.28 | 2026-02-21 | 新增 DATA-002 套餐种子数据初始化与 `/v1/plans` 数据化改造执行记录 |
 | v1.27 | 2026-02-21 | 新增 OPT-ARCH-002 发布前检查清单（可 Done 版本）收尾记录 |
 | v1.26 | 2026-02-21 | 新增 OPT-ARCH-002 shared/staging 本地映射矩阵验收执行记录 |
@@ -82,6 +83,34 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.24] - 2026-02-21
+
+### Added
+- 新增迁移：`apps/api-gateway/prisma/migrations/20260221235500_add_usage_ledger_dedupe_index/migration.sql`。
+- 新增校验脚本与命令：
+  - `apps/api-gateway/scripts/data-dedupe-index-check.ts`
+  - `pnpm --filter @apps/api-gateway test:data-dedupe-index`
+- `doc/engineering/rd-progress-management.md` 新增第 38 节回填（`DATA-003` 执行证据）。
+
+### Changed
+- `apps/api-gateway/prisma/schema.prisma` 为 `usage_ledger` 补充唯一约束：`(userId, taskId, status, source)`。
+- `apps/api-gateway/src/modules/tasks/tasks.service.ts` 将 `usage_ledger` 写入改为 `createMany + skipDuplicates`。
+- `apps/worker-orchestrator/src/main.ts` 将成功态账务写入改为 `createMany + skipDuplicates`。
+- `DATA-003` 状态由 `Backlog` 更新为 `In Review`。
+
+### Fixed
+- 修复账务流水在重试/并发场景下可能重复写入的问题，确保防重行为可复现、可验证。
+
+### Security
+- 去重校验仅验证索引与冲突行为，不放宽现有鉴权与环境边界。
+
+### Rollback
+- 回退 `add_usage_ledger_dedupe_index`、`data-dedupe-index-check.ts` 与 `usage_ledger` 写入幂等改造，恢复原实现。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.23] - 2026-02-21
 

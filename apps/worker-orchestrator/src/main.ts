@@ -318,16 +318,19 @@ function planTransition(taskId: string, currentStatus: TaskStatus): TransitionPl
 }
 
 async function handleSuccessSideEffects(tx: Prisma.TransactionClient, taskId: string, userId: string) {
-  await tx.usageLedger.create({
-    data: {
-      ledgerId: buildId("led"),
-      userId,
-      taskId,
-      status: "COMMITTED",
-      source: "task_succeeded",
-      consumeUnit: 1,
-      consumeAt: new Date()
-    }
+  await tx.usageLedger.createMany({
+    data: [
+      {
+        ledgerId: buildId("led"),
+        userId,
+        taskId,
+        status: "COMMITTED",
+        source: "task_succeeded",
+        consumeUnit: 1,
+        consumeAt: new Date()
+      }
+    ],
+    skipDuplicates: true
   });
 
   await tx.outboxEvent.create({
