@@ -1,0 +1,66 @@
+.editor-section {
+  margin-top: 16rpx;
+}
+
+.mask-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 16rpx;
+}
+
+.mask-toolbar-item {
+  margin-right: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.mask-board {
+  position: relative;
+  width: 100%;
+  min-height: 520rpx;
+  border: 2rpx dashed #8ca0b3;
+  border-radius: 16rpx;
+  overflow: hidden;
+  background-image: linear-gradient(to right, rgba(140, 160, 179, 0.12) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(140, 160, 179, 0.12) 1px, transparent 1px);
+  background-size: 36rpx 36rpx;
+  background-color: #f8fbff;
+}
+
+.mask-board-tip {
+  position: absolute;
+  left: 16rpx;
+  top: 12rpx;
+  right: 16rpx;
+  font-size: 24rpx;
+  color: #516072;
+  z-index: 2;
+}
+
+.mask-point {
+  position: absolute;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.mask-point-polygon {
+  background: #1a73e8;
+}
+
+.mask-point-draft {
+  background: #fa8c16;
+}
+
+.mask-point-brush {
+  background: #e53935;
+  opacity: 0.6;
+}
+
+.mask-point-active {
+  background: #13a05f;
+}
+
+.platform-h5 .mask-board {
+  min-height: 320px;
+}

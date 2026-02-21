@@ -1,4 +1,4 @@
-# 变更日志规范（v1.10）
+# 变更日志规范（v1.11）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.11 | 2026-02-21 | 新增 FE-003 真实绘制交互与多端坐标适配执行日志 |
 | v1.10 | 2026-02-21 | 新增 BE-003/BE-004（事务化创建、乐观锁、文件态持久化）与优化台账机制 |
 | v1.9 | 2026-02-21 | 新增 BE-006（cancel/retry 动作幂等与冲突互斥）执行日志 |
 | v1.8 | 2026-02-21 | 新增任务中心轮询退避 + 结果页联调闭环执行日志 |
@@ -64,6 +65,35 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.6] - 2026-02-21
+
+### Added
+- 编辑页新增真实蒙版交互能力：
+  - `POLYGON/BRUSH` 双模式绘制
+  - 多边形闭合、撤销/重做、清空
+  - 画板交互样式文件 `apps/user-frontend/src/pages/editor/index.scss`
+- 新增画板区域坐标重算机制：页面重新展示和窗口尺寸变化时刷新画板坐标，提升多端适配稳定性。
+
+### Changed
+- `apps/user-frontend/src/pages/editor/index.tsx` 从“示例蒙版提交”升级为“真实绘制后提交”流程，并补齐 `40901` 版本冲突恢复提示。
+- `doc/engineering/rd-progress-management.md` 更新 `FE-003` 状态为 `In Review`，新增执行回填（含测试证据、联调结果、遗留问题）。
+- `doc/engineering/mvp-optimization-backlog.md` 更新 `OPT-FE-001` 状态与执行时机，新增 `OPT-FE-002`（Canvas 渲染性能优化）记录。
+- `AGENTS.md` 增加“优化项提前执行”回填规则，要求同步更新优化台账执行时机与状态。
+
+### Fixed
+- 修复编辑页在多端尺寸变化后可能出现的画板坐标偏移问题。
+- 修复 `FE-003` 仅支持示例蒙版提交导致的联调不稳定问题。
+
+### Security
+- 编辑页蒙版提交继续保持 `Authorization`、`Idempotency-Key`、`X-Request-Id` 校验链路，不放宽鉴权约束。
+
+### Rollback
+- 回退 `apps/user-frontend/src/pages/editor/index.tsx`、`apps/user-frontend/src/pages/editor/index.scss` 及相关台账文档变更。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`、`/Users/codelei/Documents/ai-project/remove-watermark/AGENTS.md`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.5] - 2026-02-21
 

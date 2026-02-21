@@ -101,7 +101,7 @@
 |---|---|---|---|---|---|---|---|---|---|---|
 | FE-001 | 用户端主链路 | 登录态与会话续期 | 前端 | 2026-03-02 | 2026-03-06 | In Review | FR-001 | `/v1/auth/*` | unit/e2e | 登录会话与鉴权头链路已联调 |
 | FE-002 | 用户端主链路 | 上传页（格式校验、分片上传、失败恢复） | 前端 | 2026-03-02 | 2026-03-10 | In Review | FR-002 | `/v1/assets/upload-policy` | e2e | 上传策略+任务创建链路已联调 |
-| FE-003 | 用户端主链路 | 编辑页（自动检测+手动蒙版） | 前端 | 2026-03-05 | 2026-03-14 | In Progress | FR-003/FR-004 | `/v1/tasks`, `/v1/tasks/{taskId}/mask` | e2e/regression | 示例蒙版提交流程已打通 |
+| FE-003 | 用户端主链路 | 编辑页（自动检测+手动蒙版） | 前端 | 2026-03-05 | 2026-03-14 | In Review | FR-003/FR-004 | `/v1/tasks`, `/v1/tasks/{taskId}/mask` | e2e/regression | 真实绘制交互与版本冲突处理已联调 |
 | FE-004 | 用户端主链路 | 任务中心（轮询/SSE 回退、重试/取消） | 前端 | 2026-03-09 | 2026-03-18 | In Review | FR-005/FR-006 | `/v1/tasks*` | contract/e2e | 刷新/取消/重试联调动作与 H5 构建验证已通过 |
 | FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | In Review | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 结果查询、预览/复制下载地址、过期提示已联调 |
 | FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | Backlog | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 未开始 |
@@ -161,7 +161,7 @@
 | API 网关单元测试 | `pnpm --filter @apps/api-gateway test:unit` | `2 passed / 0 failed` | `BE-003/BE-004`（事务创建与乐观锁）核心规则可回归 |
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
-| 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 任务中心与结果页改动可完成多端构建（保留包体告警待优化） |
+| 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 编辑页真实绘制交互可完成多端构建（保留包体告警待优化） |
 | shared 联调 smoke（INT-002/INT-003，本地 fallback） | `pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 本地地址 `http://127.0.0.1:3000` 联调通过，云端 shared 地址待切换 |
 | 状态机字面量一致性抽检 | `rg -n "UPLOADED -> QUEUED -> PREPROCESSING -> DETECTING -> INPAINTING -> PACKAGING -> SUCCEEDED\\|FAILED\\|CANCELED" doc \| wc -l` | `6` | 关键文档存在统一字面量 |
 | 幂等约束覆盖抽检 | `rg -n "Idempotency-Key" doc \| wc -l` | `11` | 创建任务幂等约束已在多文档显式出现 |
@@ -180,10 +180,10 @@
 | 状态 | 数量 | 占比 |
 |---|---:|---:|
 | Done | 1 | 2.3% |
-| In Progress | 8 | 18.6% |
+| In Progress | 7 | 16.3% |
 | Ready | 8 | 18.6% |
 | Backlog | 14 | 32.6% |
-| In Review | 12 | 27.9% |
+| In Review | 13 | 30.2% |
 | QA | 0 | 0.0% |
 
 ## 10. 关键结果（KR）跟踪（v1.0）
@@ -491,5 +491,49 @@
   - 风险：文件态持久化适合本地联调，不适合多实例生产部署。
   - 回滚：回退本节“改动范围”中代码与文档变更。
 - 下一步：
-  - 进入 `FE-003` 真实绘制交互开发，并基于已实现版本号能力补齐前端冲突处理。
+  - 基于 `FE-003` 已落地能力推进 `INT-004/INT-005` shared/staging 验收。
   - 推进 `OPT-ARCH-001/OPT-ARCH-002`（PostgreSQL + Worker 编排）进入 `Ready`。
+
+## 21. 本次执行回填（FE-003 真实绘制交互）
+
+- 任务编号：`DEV-20260221-FE-0302`
+- 需求映射：`FR-003/FR-004`、`NFR-006`
+- 优化项关联：`OPT-FE-001`（已提前执行，`In Review`）、`OPT-FE-002`（Backlog）
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/frontend-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 负责人：前端
+- 截止时间：`2026-02-22`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/pages/editor/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/pages/editor/index.scss`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/AGENTS.md`
+- 实施摘要：
+  - 编辑页新增真实蒙版交互：`POLYGON/BRUSH` 双模式绘制、闭合多边形、撤销/重做、清空。
+  - 绘制点位按画板坐标归一化到 `1920x1080`，并统一提交到 `/v1/tasks/{taskId}/mask`。
+  - 新增 `40901` 版本冲突处理：解析服务端版本并提示用户重提。
+  - 增加画板区域样式与跨端适配样式；页面重新展示和窗口尺寸变化时重算画板坐标，降低多端坐标偏移风险。
+- 测试证据：
+  - `pnpm --filter @apps/user-frontend typecheck`：通过
+  - `pnpm --filter @apps/user-frontend build:h5`：通过（`2 warnings`）
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`10/10`）
+  - `pnpm -r typecheck`：通过（`15/15`）
+- 联调结果：
+  - 本地 fallback（`http://127.0.0.1:3000`）下，“创建任务 -> 绘制蒙版 -> 提交蒙版 -> 跳转任务中心”链路可执行。
+  - 与 `BE-004` 版本号能力联动生效，冲突提示路径可触发并可恢复提交。
+- 遗留问题：
+  - 当前点阵绘制采用 DOM 点渲染，长画笔路径下可能产生较多节点，后续可切换 Canvas 渲染优化性能。
+  - 云端 shared 地址待切换，尚未补齐该链路云端 smoke 证据。
+- 风险与回滚：
+  - 风险：当前为 MVP 阶段最小可用绘制能力，精细化选区（平滑笔刷/橡皮擦）未覆盖。
+  - 回滚：回退本节“改动范围”中的代码与台账更新。
+- 下一步：
+  - 推进 `INT-004/INT-005` shared/staging 验收并补齐云端证据。
+  - 将 `OPT-FE-002`（Canvas 渲染性能优化）排入 MVP 后优化队列。
