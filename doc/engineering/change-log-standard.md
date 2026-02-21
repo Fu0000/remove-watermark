@@ -1,4 +1,4 @@
-# 变更日志规范（v1.27）
+# 变更日志规范（v1.28）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.28 | 2026-02-21 | 新增 DATA-002 套餐种子数据初始化与 `/v1/plans` 数据化改造执行记录 |
 | v1.27 | 2026-02-21 | 新增 OPT-ARCH-002 发布前检查清单（可 Done 版本）收尾记录 |
 | v1.26 | 2026-02-21 | 新增 OPT-ARCH-002 shared/staging 本地映射矩阵验收执行记录 |
 | v1.25 | 2026-02-21 | 新增 OPT-ARCH-002 guard-drill 矩阵与报告能力执行记录 |
@@ -81,6 +82,35 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.23] - 2026-02-21
+
+### Added
+- 新增迁移：`apps/api-gateway/prisma/migrations/20260221233000_add_plans_seed/migration.sql`，创建 `plans` 表并初始化 `free/pro_month/pro_year` 种子。
+- 新增种子脚本与命令：
+  - `apps/api-gateway/prisma/seed-plans.ts`
+  - `pnpm --filter @apps/api-gateway prisma:seed:plans`
+- 新增服务：`apps/api-gateway/src/modules/plans/plans.service.ts`，支持“优先 DB + 默认回退”读取套餐。
+- `doc/engineering/rd-progress-management.md` 新增第 37 节回填（`DATA-002` 执行证据）。
+
+### Changed
+- `GET /v1/plans` 从静态返回升级为服务化读取（控制器改为调用 `PlansService`）。
+- `apps/api-gateway/prisma/schema.prisma` 增加 `Plan` 模型。
+- `apps/api-gateway/test/contract.spec.ts` 增加 `/v1/plans` 契约用例，契约测试总数更新为 `11`。
+- `DATA-002` 状态由 `Backlog` 更新为 `In Review`。
+
+### Fixed
+- 修复套餐数据仅存在于控制器静态常量、无法复用数据层初始化流程的问题。
+
+### Security
+- 继续保持鉴权头校验路径，`/v1/plans` 仍要求 `Authorization`。
+
+### Rollback
+- 回退 `plans` 迁移、种子脚本、`PlansService` 与控制器改造，恢复静态套餐返回模式。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.22] - 2026-02-21
 

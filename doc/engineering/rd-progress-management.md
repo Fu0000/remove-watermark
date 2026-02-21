@@ -81,7 +81,7 @@
 | Task ID | Epic | Task | Owner | Start | End | 状态 | 联调依赖 | 测试层级 | 关键结果 |
 |---|---|---|---|---|---|---|---|---|---|
 | DATA-001 | 数据基线 | Prisma schema 与 DDL 基线同步（含回滚脚本） | 后端 | 2026-02-24 | 2026-02-28 | In Progress | shared 部署 | integration | Prisma schema + init migration 已落地，待 shared PostgreSQL 验证 |
-| DATA-002 | 数据基线 | 初始化套餐/权益种子数据（Free/Pro 月付/年付） | 后端 | 2026-02-26 | 2026-03-01 | Backlog | 订阅联调 | integration | 套餐查询接口可用 |
+| DATA-002 | 数据基线 | 初始化套餐/权益种子数据（Free/Pro 月付/年付） | 后端 | 2026-02-26 | 2026-03-01 | In Review | 订阅联调 | integration | `plans` 表与种子命令已落地，`GET /v1/plans` 可由 DB 驱动并保持回退 |
 | DATA-003 | 数据基线 | `idempotency_keys/outbox_events/usage_ledger` 去重索引校验 | 后端 | 2026-02-26 | 2026-03-02 | Backlog | 任务/账务一致性 | contract/integration | 幂等冲突可稳定复现与防重 |
 | DATA-004 | 数据基线 | 测试样本库（图片/视频，含失败样本）与标注策略 | 测试+算法 | 2026-02-25 | 2026-03-03 | Ready | E2E 与回归 | e2e/regression | FR 场景样本覆盖 >= 90% |
 
@@ -157,10 +157,11 @@
 | 用户前端目录规范检查 | `for dir in pages components modules stores services utils; do find apps/user-frontend/src/$dir -type f \\| wc -l; done` | `目录均存在且有文件` | 已对齐 `frontend-framework.md` 目录约束 |
 | 管理端构建验证 | `pnpm --filter @apps/admin-console build` | `Next build passed` | 管理端框架可完成生产构建 |
 | API 网关构建验证 | `pnpm --filter @apps/api-gateway build` | `tsc passed` | 后端网关骨架可完成编译 |
-| API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `10 passed / 0 failed` | 关键契约（含 `cancel/retry` 幂等与冲突路径）可联调 |
+| API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `11 passed / 0 failed` | 关键契约（含 `/v1/plans`、`cancel/retry` 幂等与冲突路径）可联调 |
 | API 网关单元测试 | `pnpm --filter @apps/api-gateway test:unit` | `2 passed / 0 failed` | `BE-003/BE-004`（事务创建与乐观锁）核心规则可回归 |
 | Prisma 客户端生成校验（本轮） | `pnpm --filter @apps/api-gateway prisma:generate` | `passed` | Prisma schema 与客户端代码生成可用，支持后续 shared DB 联调 |
 | 本地 PostgreSQL 迁移部署验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma` | `passed（No pending migrations）` | 本地库迁移链路可执行，DDL 与 Prisma 迁移记录一致 |
+| 套餐种子数据初始化验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway prisma:seed:plans` | `passed（seeded plans=3）` | Free/Pro 月付/年付种子可幂等写入 |
 | Prisma 模式 shared smoke（本轮，本地） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | `INT-002~INT-005` 在 Prisma 持久化分支可通过 |
 | Prisma 持久化重启校验（本轮） | `重启网关后 GET /v1/tasks` + `psql count` | `passed（tasks=2, task_masks=1, idempotency_keys=2, usage_ledger=3, outbox_events=3）` | 本地重启后任务与幂等相关数据不丢失 |
 | Worker 编排类型检查（本轮） | `pnpm --filter @apps/worker-orchestrator typecheck` | `passed` | `worker-orchestrator` 编排循环可编译 |
@@ -1195,3 +1196,52 @@
 - 下一步：
   - 等待你提供阿里云地址后，执行云端矩阵复验并追加证据。
   - 保持 `OPT-ARCH-002` 为 `Done`，云端证据归并到发布前总验收记录。
+
+## 37. 本次执行回填（DATA-002 套餐种子数据初始化）
+
+- 任务编号：`DEV-20260221-DATA-002-SEED`
+- 需求映射：`FR-008`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/database-design.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-db-standards.md`
+- 负责人：后端
+- 截止时间：`2026-03-01`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：低
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/schema.prisma`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/migrations/20260221233000_add_plans_seed/migration.sql`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/seed-plans.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/plans/plans.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/plans/plans.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/app.module.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/.env.example`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/contract.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增 `plans` Prisma 模型与迁移脚本，初始化 `free/pro_month/pro_year` 三档套餐种子。
+  - 新增 `prisma:seed:plans` 命令，支持幂等重放套餐种子初始化。
+  - 新增 `PlansService`：优先读取 PostgreSQL `plans`，不可用时回退内置默认套餐，保证联调稳定性。
+  - `GET /v1/plans` 控制器改为服务化读取，补齐契约测试覆盖。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway prisma:generate`：通过
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma`：通过
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway prisma:seed:plans`：通过（`seeded plans=3`）
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`11/11`）
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm -r typecheck`：通过
+  - `pnpm -r lint`：通过
+- 联调结果：
+  - 当前本地口径下，`/v1/plans` 已满足“DB 种子驱动 + 默认回退”双路径，可支撑 FE-006 前置联调。
+- 遗留问题：
+  - `subscriptions/usage` 相关接口仍在后续 `BE-007/INT-006` 任务范围内。
+- 风险与回滚：
+  - 风险：若后续套餐字段扩展与 `api-spec.md` 不同步，可能出现字段语义漂移。
+  - 回滚：回退 `add_plans_seed` 迁移、`PlansService` 与控制器改造，恢复静态套餐返回。
+- 下一步：
+  - 按计划推进 `DATA-003`（幂等与账务去重索引校验）并补齐集成证据。
+  - 准备 `BE-007` 最小接口骨架（`/v1/subscriptions/*`、`/v1/usage/me`）。

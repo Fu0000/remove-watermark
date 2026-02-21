@@ -94,3 +94,19 @@ model OutboxEvent {
   @@index([aggregateType, aggregateId])
   @@map("outbox_events")
 }
+
+model Plan {
+  planId       String   @id @map("plan_id") @db.VarChar(64)
+  name         String   @unique(map: "uk_plans_name") @db.VarChar(64)
+  price        Int
+  currency     String   @default("CNY") @db.Char(3)
+  monthlyQuota Int      @map("monthly_quota")
+  features     Json     @map("features_json")
+  sortOrder    Int      @default(0) @map("sort_order")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @map("updated_at")
+
+  @@index([isActive, sortOrder(sort: Asc)], map: "idx_plans_active_sort")
+  @@map("plans")
+}

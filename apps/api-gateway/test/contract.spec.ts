@@ -37,6 +37,32 @@ test("GET /v1/system/capabilities should return defaults", async () => {
   await app.close();
 });
 
+test("GET /v1/plans should return sorted plans list", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const response = await server.inject({
+    method: "GET",
+    url: "/v1/plans",
+    headers: {
+      authorization: "Bearer test-token",
+      "x-request-id": "req_contract_plans_1"
+    }
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(body.code, 0);
+  assert.equal(body.requestId, "req_contract_plans_1");
+  assert.equal(Array.isArray(body.data), true);
+  assert.equal(body.data.length >= 3, true);
+  assert.equal(body.data[0].planId, "free");
+  assert.equal(typeof body.data[0].sortOrder, "number");
+  assert.equal(body.data[0].sortOrder <= body.data[1].sortOrder, true);
+
+  await app.close();
+});
+
 test("POST /v1/tasks should require Idempotency-Key", async () => {
   const app = await setup();
   const server = app.getHttpAdapter().getInstance();
