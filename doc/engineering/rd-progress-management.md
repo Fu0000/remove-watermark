@@ -167,6 +167,7 @@
 | 双进程联调 smoke（API + Worker，本轮） | `启动 api-gateway(TASKS_STORE=prisma) + worker-orchestrator 后执行 pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 状态由 Worker 推进，API 查询路径不再承担推进副作用 |
 | BullMQ 依赖与消息驱动校验（本轮） | `worker-orchestrator 引入 bullmq` + `outbox dispatch log` | `passed（published>0）` | 已验证 outbox 事件可发布到 Redis 队列并被 consumer 消费 |
 | Worker deadletter/retry 策略校验（本轮） | `pnpm --filter @apps/worker-orchestrator typecheck` + `pnpm --filter @apps/api-gateway test:shared-smoke`（双进程） | `passed` | 已落地 `maxRetries=2`、指数退避+jitter、不可重试直入死信、outbox 超限转 `DEAD` 与死信告警阈值基线 |
+| Deadletter 手动重放脚本校验（本轮） | `DLQ_DRY_RUN=true pnpm --filter @apps/worker-orchestrator ops:deadletter:replay` | `passed` | 已支持按 `jobId/taskId/eventId` 筛选重放；支持 `outbox DEAD -> PENDING` 复位与 dry-run 演练 |
 | 用户前端类型检查（本轮） | `pnpm --filter @apps/user-frontend typecheck` | `passed` | FE 联调代码可通过静态校验 |
 | 工作区类型检查（本轮） | `pnpm -r typecheck` | `15/15 workspace passed` | 前后端联动改动无类型回归 |
 | 用户端 H5 构建验证（本轮） | `pnpm --filter @apps/user-frontend build:h5` | `passed（2 warnings）` | 编辑页真实绘制交互可完成多端构建（保留包体告警待优化） |
@@ -863,3 +864,45 @@
 - 下一步：
   - 增加 deadletter 手动重放脚本（按 `taskId/eventId` 重投）并补充运维 SOP。
   - 在 shared/staging 按同策略执行双进程 smoke，补齐云端验收证据。
+
+## 29. 本次执行回填（OPT-ARCH-002 deadletter 手动重放能力）
+
+- 任务编号：`DEV-20260221-ARCH-02-REPLAY`
+- 需求映射：`FR-005/FR-006/FR-007`、`NFR-006/NFR-007`
+- 优化项关联：`OPT-ARCH-002`（`In Review`）
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/backend-service-framework.md`
+- 负责人：后端
+- 截止时间：`2026-02-22`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator/src/ops/deadletter-replay.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+- 实施摘要：
+  - 新增运维命令：`pnpm --filter @apps/worker-orchestrator ops:deadletter:replay`。
+  - 新增 deadletter 重放脚本：支持按 `DLQ_JOB_ID`、`DLQ_TASK_ID`、`DLQ_EVENT_ID` 精准筛选。
+  - 支持双路径重放：
+    - `task.progress` 死信重投回主队列；
+    - `outbox.dispatch` 死信将 outbox 事件从 `DEAD`/异常态复位为 `PENDING`（并清零 `retryCount`）。
+  - 默认 `DLQ_DRY_RUN=true`，先演练再执行；支持 `DLQ_DELETE_AFTER_REPLAY` 控制重放后是否删除死信记录。
+- 测试证据：
+  - `pnpm --filter @apps/worker-orchestrator typecheck`：通过
+  - `DLQ_DRY_RUN=true DLQ_REPLAY_MAX_SCAN=20 DLQ_REPLAY_MAX_COUNT=5 REDIS_URL=redis://127.0.0.1:6379 pnpm --filter @apps/worker-orchestrator ops:deadletter:replay`：通过
+- 联调结果：
+  - 本地环境下脚本可成功连接 Redis 并执行 dry-run 扫描流程，返回结构化执行结果。
+- 遗留问题：
+  - 目前仅提供命令行脚本，尚未接入管理端可视化重放入口。
+  - shared/staging 云端环境仍待补充真实 deadletter 样本回放证据。
+- 风险与回滚：
+  - 风险：误操作可能重复重放同一死信记录，造成额外队列负载。
+  - 回滚：回退 `src/ops/deadletter-replay.ts` 与 `package.json` 新增命令及相关台账更新。
+- 下一步：
+  - 增加“按时间窗口批量重放 + 最大重放并发”参数，降低人工筛选成本。
+  - shared/staging 拿到云端地址后，补齐 deadletter 实样回放证据并更新 `OPT-ARCH-002` 状态。

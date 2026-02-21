@@ -1,4 +1,4 @@
-# 变更日志规范（v1.19）
+# 变更日志规范（v1.20）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.20 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter 手动重放能力执行记录 |
 | v1.19 | 2026-02-21 | 新增 OPT-ARCH-002 deadletter/retry 策略落地执行记录 |
 | v1.18 | 2026-02-21 | 新增 OPT-ARCH-002 Redis/BullMQ 消息驱动编排执行记录 |
 | v1.17 | 2026-02-21 | 新增 OPT-ARCH-002（Worker 编排去副作用）执行记录与双进程 smoke 证据 |
@@ -73,6 +74,34 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.15] - 2026-02-21
+
+### Added
+- 新增运维脚本：`apps/worker-orchestrator/src/ops/deadletter-replay.ts`。
+- 新增命令：`pnpm --filter @apps/worker-orchestrator ops:deadletter:replay`。
+- 脚本支持：
+  - 按 `DLQ_JOB_ID`、`DLQ_TASK_ID`、`DLQ_EVENT_ID` 筛选 deadletter 重放目标
+  - `task.progress` 死信重投主队列
+  - `outbox.dispatch` 死信将 outbox 事件复位为 `PENDING` 并清零 `retryCount`
+  - `DLQ_DRY_RUN=true` 默认演练模式，`DLQ_DELETE_AFTER_REPLAY` 可选删除已重放死信
+- `doc/engineering/rd-progress-management.md` 新增第 29 节执行回填（手动重放能力与测试证据）。
+
+### Changed
+- `doc/engineering/mvp-optimization-backlog.md` 更新 `OPT-ARCH-002` 当前现状与验收标准，纳入“手动重放”能力。
+
+### Fixed
+- 修复 deadletter 仅可观测不可操作的问题，补齐运维侧最小重放闭环。
+
+### Security
+- 脚本默认 dry-run，不直接执行重放；仅在显式设置参数时执行实际写入，降低误操作风险。
+
+### Rollback
+- 回退 `apps/worker-orchestrator/src/ops/deadletter-replay.ts`、`apps/worker-orchestrator/package.json` 新增命令与相关台账更新。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.14] - 2026-02-21
 
