@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.9 | 2026-02-22 | 新增 `/admin/*` 密钥安全门禁（受保护环境禁用默认口令）与环境模板 |
 | v1.8 | 2026-02-22 | 新增 `/admin/*` 最小契约落地与 FE-008 后台写入能力（任务检索/重放、套餐新增/编辑） |
 | v1.7 | 2026-02-22 | 新增 FE-008 管理端真实数据流接入（任务检索/异常重放/套餐查询/Webhook 运维） |
 | v1.6 | 2026-02-22 | 新增 FE-007 本地 smoke 证据补齐（shared-smoke 覆盖删除与审计链路） |
@@ -200,6 +201,7 @@
 | FE-007 本地 smoke 矩阵（dev-local，本轮） | `SMOKE_MATRIX_TARGETS=dev=http://127.0.0.1:3000 SHARED_SMOKE_MAX_POLL_ATTEMPTS=80 SHARED_SMOKE_POLL_INTERVAL_MS=300 pnpm --filter @apps/api-gateway test:shared-smoke:matrix` | `passed（dev=passed）` | 报告文件：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/.runtime/reports/shared-smoke-matrix-2026-02-21T19-59-34-171Z.md` |
 | FE-008 管理端真实数据流验证（本轮） | `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed` | 已验证管理端任务检索/异常重放、套餐查询、Webhook 投递查询/重试页面可构建并通过类型检查 |
 | FE-008 `/admin/*` 契约与后台写入验证（本轮） | `pnpm --filter @apps/api-gateway typecheck` + `pnpm --filter @apps/api-gateway test:contract` + `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed（contract 25/25）` | 已验证 `/admin/tasks`（检索+重放）与 `/admin/plans`（检索+新增+编辑）RBAC、错误码与页面接入闭环 |
+| `/admin/*` 密钥安全门禁验证（本轮） | `pnpm --filter @apps/api-gateway exec tsx -e \"...assertAdminRbacConfig...\"`（`APP_ENV=staging` 且未设置 `ADMIN_RBAC_SECRET`） | `passed（blocked）` | 已验证受保护环境会拒绝默认/缺失密钥配置，避免 `admin123` 漏入 shared/staging/prod |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
 | Webhook Dispatcher 本地 smoke（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:smoke` | `passed` | 已验证 outbox `PENDING -> PUBLISHED`、签名头生成与 `webhook_deliveries(SUCCESS)` 持久化闭环 |
@@ -2104,3 +2106,46 @@
   - 回滚：回退 `admin.controller` 与后台页面 `/admin/*` 接入改造，恢复至 `v1` 只读联调路径。
 - 下一步：
   - 在 shared/staging 云端地址上复跑管理端 smoke，用同一套契约验证将 FE-008 推进到 `QA`。
+
+## 56. 本次执行回填（`/admin/*` 密钥安全门禁收敛）
+
+- 任务编号：`DEV-20260222-ADMIN-SECRET-HARDEN`
+- 需求映射：`FR-012`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/project-constraints.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/admin-framework.md`
+- 负责人：后端 + 前端（后台）
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：shared/staging 环境变量注入待运维同步
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/common/admin-rbac.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/main.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/services/http.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/.env.example`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/.env.example`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 后端新增启动前安全校验：`shared/staging/prod` 环境下若 `ADMIN_RBAC_SECRET` 缺失或为默认值 `admin123`，直接拒绝启动。
+  - 管理端请求新增非本地目标保护：当 `NEXT_PUBLIC_API_BASE_URL` 非 `localhost/127.0.0.1` 时，禁止使用默认 `NEXT_PUBLIC_ADMIN_SECRET`。
+  - 新增前后端 `.env.example`，明确默认密钥仅限本地联调，受保护环境必须替换为高强度随机值。
+  - `api-spec` 同步补充 `/admin/*` 密钥门禁约束。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`25/25`）
+  - `pnpm --filter @apps/admin-console typecheck`：通过
+  - `pnpm --filter @apps/admin-console build`：通过
+  - `pnpm --filter @apps/api-gateway exec tsx -e "assertAdminRbacConfig(...)"`：通过（`APP_ENV=staging` + 缺失密钥时输出 `blocked`）
+- 联调结果：
+  - 本地地址口径保持可用；受保护环境的默认密钥风险被代码门禁拦截。
+- 遗留问题：
+  - `X-Admin-Secret` 仍属阶段性方案，后续应切换为 JWT/SSO 角色声明或网关服务鉴权。
+- 风险与回滚：
+  - 风险：若运维未配置 `ADMIN_RBAC_SECRET`，shared/staging 启动会被阻断。
+  - 回滚：回退安全门禁逻辑，恢复到仅请求时校验的旧行为（不建议）。
+- 下一步：
+  - 在 shared/staging 注入高强度密钥并复跑 FE-008 smoke；之后评估去除前端明文密钥方案。

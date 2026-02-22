@@ -1,4 +1,4 @@
-# 变更日志规范（v1.46）
+# 变更日志规范（v1.47）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.47 | 2026-02-22 | 新增 `/admin/*` 密钥安全门禁（受保护环境禁用默认口令）与环境模板 |
 | v1.46 | 2026-02-22 | 新增 `/admin/*` 最小契约与 FE-008 后台写入能力（任务检索/重放、套餐新增/编辑） |
 | v1.45 | 2026-02-22 | 新增 FE-008 管理端真实数据流接入（任务检索/异常重放/套餐查询/Webhook 运维） |
 | v1.44 | 2026-02-22 | 新增 FE-007 本地 smoke 证据补齐（shared-smoke 覆盖删除与审计链路） |
@@ -100,6 +101,36 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.42] - 2026-02-22
+
+### Added
+- 新增环境模板：
+  - `apps/api-gateway/.env.example`
+  - `apps/admin-console/.env.example`
+- 明确 `/admin/*` 密钥配置要求与本地默认口径边界。
+
+### Changed
+- `apps/api-gateway/src/common/admin-rbac.ts` 增加运行时安全门禁：
+  - `APP_ENV in {shared,staging,prod}` 或 `NODE_ENV=production` 时，禁止 `ADMIN_RBAC_SECRET` 缺失或为默认值 `admin123`
+- `apps/api-gateway/src/main.ts` 启动前执行 `assertAdminRbacConfig()`，不合规配置直接阻断启动。
+- `apps/admin-console/src/services/http.ts` 增加非本地 API 目标保护：
+  - 非 `localhost/127.0.0.1` 下拒绝默认 `NEXT_PUBLIC_ADMIN_SECRET`
+- `doc/api-spec.md` 补充 `/admin/*` 密钥安全门禁说明。
+- `doc/engineering/rd-progress-management.md` 新增第 56 节回填与验证证据。
+
+### Fixed
+- 修复 `/admin/*` 在 shared/staging/prod 可能沿用 `admin123` 默认口令的高风险配置漏洞。
+
+### Security
+- 受保护环境默认口令由“可运行”升级为“启动即拒绝”，降低误配置上线风险。
+
+### Rollback
+- 回退 `assertAdminRbacConfig` 启动门禁与前端非本地目标保护逻辑，恢复到 0.5.41 行为（不建议）。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console`、`/Users/codelei/Documents/ai-project/remove-watermark/doc`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.41] - 2026-02-22
 

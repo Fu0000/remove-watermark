@@ -24,6 +24,7 @@ const SHARED_USERNAME = process.env.NEXT_PUBLIC_SHARED_USERNAME || "admin";
 const SHARED_PASSWORD = process.env.NEXT_PUBLIC_SHARED_PASSWORD || "admin123";
 const ADMIN_ROLE = process.env.NEXT_PUBLIC_ADMIN_ROLE || "admin";
 const ADMIN_SECRET = process.env.NEXT_PUBLIC_ADMIN_SECRET || "admin123";
+const DEFAULT_ADMIN_SECRET = "admin123";
 
 let accessTokenCache: string | undefined;
 let accessTokenInFlight: Promise<string> | undefined;
@@ -72,6 +73,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
 
   if (isAdminPath(path)) {
+    assertAdminSecretPolicy(path);
     headers["X-Admin-Role"] = ADMIN_ROLE;
     headers["X-Admin-Secret"] = ADMIN_SECRET;
   }
@@ -176,4 +178,22 @@ function buildRequestUrl(path: string, query?: Record<string, string | number | 
 
 function isAdminPath(path: string) {
   return path === "/admin" || path.startsWith("/admin/");
+}
+
+function assertAdminSecretPolicy(path: string) {
+  if (!isAdminPath(path)) {
+    return;
+  }
+
+  const apiHost = new URL(API_BASE_URL).hostname;
+  const isLocalTarget = apiHost === "127.0.0.1" || apiHost === "localhost";
+  if (isLocalTarget) {
+    return;
+  }
+
+  if (!ADMIN_SECRET || ADMIN_SECRET === DEFAULT_ADMIN_SECRET) {
+    throw new Error(
+      "NEXT_PUBLIC_ADMIN_SECRET must be configured with a non-default value for non-local admin API targets"
+    );
+  }
 }

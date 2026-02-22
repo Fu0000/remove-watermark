@@ -639,6 +639,9 @@ Query：
 - `Authorization: Bearer <token>`
 - `X-Admin-Role: admin|operator|auditor`
 - `X-Admin-Secret: <shared-secret>`
+- 安全门禁：
+  - `shared/staging/prod` 禁止默认密钥（`admin123`）
+  - 必须通过环境变量配置高强度口令（建议 32+ 字节随机值）
 - 权限矩阵：
   - `admin`：`admin:task:read`、`admin:task:replay`、`admin:plan:read`、`admin:plan:write`
   - `operator`：`admin:task:read`、`admin:task:replay`、`admin:plan:read`
@@ -951,6 +954,7 @@ Query：
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.6 | 2026-02-22 | 补充 `/admin/*` 密钥安全门禁（shared/staging/prod 禁止默认口令） |
 | v1.5 | 2026-02-22 | 新增 `/admin/*` 最小运营后台契约（任务检索、异常重放、套餐检索/写入）与 RBAC 头约束 |
 | v1.4 | 2026-02-21 | 补充 Webhook 验签协议细节（`X-Webhook-Id/Timestamp/Key-Id/Signature`、常量时间比较、5 分钟窗口、24h 去重） |
 | v1.3 | 2026-02-21 | 补充 Webhook test 本地联调语义（`fail` URL 可触发失败并演练 retry） |
