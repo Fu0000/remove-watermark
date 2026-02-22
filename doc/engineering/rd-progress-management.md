@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.19 | 2026-02-22 | 新增 FE-008 Playwright UI smoke 矩阵脚本与 `dev/shared/staging` 本地映射验收证据 |
 | v1.18 | 2026-02-22 | 新增 FE-008 分层验收（API 轻量 e2e + Playwright UI smoke）与本地执行证据 |
 | v1.17 | 2026-02-22 | 新增 FE-008 管理端独立 smoke 矩阵脚本与本地 `dev/shared/staging` 映射验收能力 |
 | v1.16 | 2026-02-22 | 修复 shared-smoke `PREPROCESSING` 卡点：补齐 `task.masked` 事件触发并收敛 Worker `WAIT_MASK` 跟进队列策略 |
@@ -218,6 +219,7 @@
 | FE-008 管理端 Webhook 独立 smoke 矩阵（本轮，dev/shared/staging-local） | `FE008_MATRIX_TARGETS=dev=http://127.0.0.1:3000,shared=http://127.0.0.1:3000,staging=http://127.0.0.1:3000 pnpm --filter @apps/api-gateway test:fe008-admin-smoke:matrix` | `passed（dev/shared/staging=passed）` | 已支持一键矩阵验收与 Markdown 报告输出，云端地址就绪后可直接替换目标 URL 复用 |
 | FE-008 API 驱动轻量 e2e（本轮，本地） | `SHARED_BASE_URL=http://127.0.0.1:3000 SHARED_USERNAME=admin SHARED_PASSWORD=admin123 SHARED_ADMIN_SECRET=admin123 pnpm --filter @apps/api-gateway test:fe008-admin-e2e-lite` | `passed` | 已覆盖 `/admin/tasks` 检索+重放权限边界、`/admin/plans` 新增+编辑、`/admin/webhooks/*` 查询+重试+跨租户隔离 |
 | FE-008 Playwright UI smoke（本轮，本地） | `pnpm --filter @apps/admin-console exec playwright install chromium` + `pnpm --filter @apps/admin-console test:e2e:fe008` | `passed（1/1）` | 已覆盖管理端 `/webhooks` 页面“上下文必填 -> 查询 -> 重试确认”真实交互，报告目录：`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/.runtime/reports/playwright-fe008` |
+| FE-008 Playwright UI smoke 矩阵（本轮，dev/shared/staging-local） | `FE008_E2E_MATRIX_TARGETS=dev=http://127.0.0.1:3000,shared=http://127.0.0.1:3000,staging=http://127.0.0.1:3000 pnpm --filter @apps/admin-console test:e2e:fe008:matrix` | `passed（dev/shared/staging=passed）` | 已支持多目标批量 UI smoke 与 Markdown 报告输出，报告文件：`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/.runtime/reports/fe008-e2e-matrix-2026-02-22T10-42-26-523Z.md` |
 | `.env` 注入脚本验证（本轮） | `scripts/setup-admin-env.sh --dry-run` + `scripts/setup-admin-env.sh` | `passed` | 已生成 `apps/api-gateway` 与 `apps/admin-console` 的 `shared/staging/prod` 本地 `.env` 文件（权限 `600`），且被 `.gitignore` 忽略 |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
@@ -2557,3 +2559,48 @@
   - 回滚：回退 `e2e` 目录与 `test:e2e:fe008` 命令，暂时恢复到 API 驱动验收路径。
 - 下一步：
   - 获取 shared/staging 云端地址后，先复跑 `fe008-admin-smoke:matrix` 与 `test:e2e:fe008`，再推进 FE-008 到 `QA`。
+
+## 66. 本次执行回填（FE-008 Playwright UI smoke 矩阵化）
+
+- 任务编号：`DEV-20260222-FE008-PLAYWRIGHT-MATRIX`
+- 需求映射：`FR-012`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+- 负责人：前端（后台）+ 测试
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：无（云端地址待切换）
+- 风险等级：低
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/e2e/playwright.config.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/e2e/fe008-e2e-matrix.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/AGENTS.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - Playwright 配置支持按 `ADMIN_E2E_API_BASE_URL` 动态决定是否拉起本地 `api-gateway`：
+    - 本地目标自动拉起本地 API；
+    - 非本地目标可跳过本地 API，直接对接目标环境。
+  - 新增 `fe008-e2e-matrix.ts`：
+    - 支持 `FE008_E2E_MATRIX_TARGETS`（格式 `name=url`）批量执行；
+    - 兼容默认 `dev/shared/staging` 目标解析；
+    - 输出矩阵报告到 `apps/admin-console/.runtime/reports/fe008-e2e-matrix-*.md`。
+  - `package.json` 新增命令：`test:e2e:fe008:matrix`。
+  - `AGENTS.md` 命令基线补充该矩阵命令，统一 FE-008 分层门禁执行口径。
+- 测试证据：
+  - `pnpm --filter @apps/admin-console typecheck`：通过
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `FE008_E2E_MATRIX_TARGETS=dev=http://127.0.0.1:3000,shared=http://127.0.0.1:3000,staging=http://127.0.0.1:3000 ADMIN_E2E_USERNAME=admin ADMIN_E2E_PASSWORD=admin123 ADMIN_E2E_AUTH_CODE=admin ADMIN_E2E_ADMIN_SECRET=admin123 pnpm --filter @apps/admin-console test:e2e:fe008:matrix`：通过（`dev/shared/staging=passed`）
+  - 报告文件：`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/.runtime/reports/fe008-e2e-matrix-2026-02-22T10-42-26-523Z.md`
+- 联调结果：
+  - FE-008 UI smoke 已具备多目标一键复用能力，云端地址切换后可直接复跑获取最终发布前证据。
+- 遗留问题：
+  - 当前 shared/staging 仍为本地映射地址，需在云端地址就绪后补齐真实环境证据。
+- 风险与回滚：
+  - 风险：矩阵目标变量配置错误会导致验证命中错误环境。
+  - 回滚：回退 `fe008-e2e-matrix.ts` 与 `test:e2e:fe008:matrix`，恢复单目标 `test:e2e:fe008` 执行。
+- 下一步：
+  - 你提供 shared/staging 云端地址后，直接替换 `FE008_E2E_MATRIX_TARGETS` 并复跑，补齐发布前门禁证据。

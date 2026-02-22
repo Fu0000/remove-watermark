@@ -1,4 +1,4 @@
-# 变更日志规范（v1.56）
+# 变更日志规范（v1.57）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.57 | 2026-02-22 | 新增 FE-008 Playwright UI smoke 矩阵脚本与多目标复用门禁 |
 | v1.56 | 2026-02-22 | 新增 FE-008 分层验收（API 轻量 e2e + Playwright UI smoke）并固化命令基线 |
 | v1.55 | 2026-02-22 | 新增 FE-008 管理端独立 smoke 矩阵脚本与多目标本地映射验收能力 |
 | v1.54 | 2026-02-22 | 修复 shared-smoke `PREPROCESSING` 卡点：补齐 `task.masked` 事件触发与 Worker `WAIT_MASK` 跟进队列去重 |
@@ -110,6 +111,35 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.52] - 2026-02-22
+
+### Added
+- 新增脚本：`apps/admin-console/e2e/fe008-e2e-matrix.ts`
+  - 支持 FE-008 Playwright UI smoke 的多目标批量执行（`dev/shared/staging`）。
+  - 支持 `FE008_E2E_MATRIX_TARGETS` 自定义目标集（格式 `name=url`）。
+  - 支持输出矩阵 Markdown 报告：`apps/admin-console/.runtime/reports/fe008-e2e-matrix-*.md`。
+- `apps/admin-console/package.json` 新增命令：`test:e2e:fe008:matrix`。
+
+### Changed
+- `apps/admin-console/e2e/playwright.config.ts`：
+  - 按 `ADMIN_E2E_API_BASE_URL` 动态决定是否拉起本地 API webServer；
+  - 支持 `ADMIN_E2E_REPORTER` 与报告目录环境变量覆盖，便于矩阵执行复用。
+- `AGENTS.md` 命令基线新增 `pnpm --filter @apps/admin-console test:e2e:fe008:matrix`。
+- `doc/engineering/rd-progress-management.md` 新增第 66 节执行回填与矩阵验收证据。
+
+### Fixed
+- 修复 FE-008 Playwright 验收只能单目标执行的问题，降低 shared/staging 云端切换时的人工重复成本。
+
+### Security
+- 矩阵化 UI smoke 仍沿用 `/admin/*` 显式上下文与密钥门禁，不放宽 RBAC。
+
+### Rollback
+- 回退 `fe008-e2e-matrix.ts`、Playwright 配置动态逻辑与 `test:e2e:fe008:matrix` 命令，恢复单目标 UI smoke 流程。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`、`/Users/codelei/Documents/ai-project/remove-watermark/AGENTS.md`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.51] - 2026-02-22
 

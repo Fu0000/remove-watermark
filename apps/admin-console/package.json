@@ -8,7 +8,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "echo 'lint admin-console: pending eslint setup'",
-    "test:e2e:fe008": "playwright test -c e2e/playwright.config.ts"
+    "test:e2e:fe008": "playwright test -c e2e/playwright.config.ts",
+    "test:e2e:fe008:matrix": "tsx e2e/fe008-e2e-matrix.ts"
   },
   "dependencies": {
     "antd": "^5.24.2",
