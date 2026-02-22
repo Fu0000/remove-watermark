@@ -394,13 +394,16 @@ def create_video_mask(video_path: Path, task_id: str, region_payload: Dict[str, 
         raise InferenceError(status_code=422, error_code="VIDEO_META_INVALID", message=f"invalid video metadata: {video_path}")
 
     task_dir = task_work_dir(task_id)
-    mask_path = task_dir / "mask.mp4"
-    writer = cv2.VideoWriter(str(mask_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+    _ = fps
+    mask_dir = task_dir / "mask-frames"
+    if mask_dir.exists():
+        for stale in mask_dir.glob("*.png"):
+            stale.unlink(missing_ok=True)
+    mask_dir.mkdir(parents=True, exist_ok=True)
 
     global_regions, keyed_regions = split_video_regions(regions_list(region_payload))
     if not global_regions and not keyed_regions:
         capture.release()
-        writer.release()
         raise InferenceError(status_code=422, error_code="REGION_INVALID", message="video regions are empty")
 
     frame_index = 0
@@ -412,16 +415,14 @@ def create_video_mask(video_path: Path, task_id: str, region_payload: Dict[str, 
         active_regions = frame_regions(frame_index, width, height, global_regions, keyed_regions)
         mask_img = draw_region_mask(width, height, active_regions)
         mask_frame = np.array(mask_img)
-        mask_bgr = cv2.cvtColor(mask_frame, cv2.COLOR_GRAY2BGR)
-        writer.write(mask_bgr)
+        cv2.imwrite(str(mask_dir / f"{frame_index:05d}.png"), mask_frame)
         frame_index += 1
 
     capture.release()
-    writer.release()
     if frame_index == 0:
         raise InferenceError(status_code=422, error_code="VIDEO_EMPTY", message=f"video has no decodable frames: {video_path}")
 
-    return mask_path
+    return mask_dir
 
 
 def resolve_video_output(output_dir: Path) -> Path:
