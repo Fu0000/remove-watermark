@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "echo 'lint admin-console: pending eslint setup'"
+    "lint": "echo 'lint admin-console: pending eslint setup'",
+    "test:e2e:fe008": "playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
     "antd": "^5.24.2",
@@ -16,6 +17,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5"
   }

@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.18 | 2026-02-22 | 新增 FE-008 分层验收（API 轻量 e2e + Playwright UI smoke）与本地执行证据 |
 | v1.17 | 2026-02-22 | 新增 FE-008 管理端独立 smoke 矩阵脚本与本地 `dev/shared/staging` 映射验收能力 |
 | v1.16 | 2026-02-22 | 修复 shared-smoke `PREPROCESSING` 卡点：补齐 `task.masked` 事件触发并收敛 Worker `WAIT_MASK` 跟进队列策略 |
 | v1.15 | 2026-02-22 | 新增 FE-008 管理端 Webhook 独立 smoke（本地）与上下文/租户过滤验收证据 |
@@ -122,7 +123,7 @@
 | FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | In Review | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 结果查询、预览/复制下载地址、过期提示已联调 |
 | FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | Backlog | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 未开始 |
 | FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | In Review | FR-010/FR-011 | `/v1/account/delete-request*`, `/v1/account/audit-logs`, `DELETE /v1/assets/{assetId}`, `DELETE /v1/tasks/{taskId}` | e2e | 删除申请创建、list/detail、审计日志查询已联调；编辑/任务页删除入口已补齐并新增二次确认与成功提示 |
-| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Review | FR-012 | `/admin/*` | e2e/smoke | `/admin/tasks`、`/admin/plans`、`/admin/webhooks/deliveries*` 已打通；Webhook 运维已改为显式上下文（用户/租户）驱动且 `tenant` 已切换为真实数据层过滤；新增本地 `fe008-admin-smoke` 证据，待补 e2e 后可进 QA |
+| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Review | FR-012 | `/admin/*` | e2e/smoke | `/admin/tasks`、`/admin/plans`、`/admin/webhooks/deliveries*` 已打通；Webhook 运维已改为显式上下文（用户/租户）驱动且 `tenant` 已切换为真实数据层过滤；已补齐本地 `fe008-admin-e2e-lite` 与 Playwright UI smoke 证据，云端地址切换后复跑即可推进 QA |
 
 ### 7.5 后端研发任务（API + Worker + Billing）
 
@@ -215,6 +216,8 @@
 | FE-008 服务端 admin 代理验证（本轮） | `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed` | 已新增 `pages/api/admin/[...path]` 代理并将浏览器侧 `/admin/*` 调用改为服务端注入 `X-Admin-Secret` |
 | FE-008 管理端 Webhook 独立 smoke（本轮，本地） | `pnpm --filter @apps/api-gateway test:fe008-admin-smoke` | `passed` | 已覆盖 `scopeType/scopeId` 缺失拦截（`40001`）、tenant 查询隔离、tenant 重试成功与跨租户重试 `40401` |
 | FE-008 管理端 Webhook 独立 smoke 矩阵（本轮，dev/shared/staging-local） | `FE008_MATRIX_TARGETS=dev=http://127.0.0.1:3000,shared=http://127.0.0.1:3000,staging=http://127.0.0.1:3000 pnpm --filter @apps/api-gateway test:fe008-admin-smoke:matrix` | `passed（dev/shared/staging=passed）` | 已支持一键矩阵验收与 Markdown 报告输出，云端地址就绪后可直接替换目标 URL 复用 |
+| FE-008 API 驱动轻量 e2e（本轮，本地） | `SHARED_BASE_URL=http://127.0.0.1:3000 SHARED_USERNAME=admin SHARED_PASSWORD=admin123 SHARED_ADMIN_SECRET=admin123 pnpm --filter @apps/api-gateway test:fe008-admin-e2e-lite` | `passed` | 已覆盖 `/admin/tasks` 检索+重放权限边界、`/admin/plans` 新增+编辑、`/admin/webhooks/*` 查询+重试+跨租户隔离 |
+| FE-008 Playwright UI smoke（本轮，本地） | `pnpm --filter @apps/admin-console exec playwright install chromium` + `pnpm --filter @apps/admin-console test:e2e:fe008` | `passed（1/1）` | 已覆盖管理端 `/webhooks` 页面“上下文必填 -> 查询 -> 重试确认”真实交互，报告目录：`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/.runtime/reports/playwright-fe008` |
 | `.env` 注入脚本验证（本轮） | `scripts/setup-admin-env.sh --dry-run` + `scripts/setup-admin-env.sh` | `passed` | 已生成 `apps/api-gateway` 与 `apps/admin-console` 的 `shared/staging/prod` 本地 `.env` 文件（权限 `600`），且被 `.gitignore` 忽略 |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
@@ -2504,3 +2507,53 @@
   - 回滚：回退新增矩阵脚本与命令，恢复单目标 `test:fe008-admin-smoke` 执行方式。
 - 下一步：
   - 继续推进 FE-008 e2e 最小回归脚本，并在云端地址可用后复跑矩阵补齐发布前门禁证据。
+
+## 65. 本次执行回填（FE-008 分层验收落地：API 轻量 e2e + Playwright UI smoke）
+
+- 任务编号：`DEV-20260222-FE008-E2E-LAYERED`
+- 需求映射：`FR-012`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+- 负责人：后端 + 前端（后台）
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：无（云端复跑后补最终发布证据）
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/scripts/fe008-admin-e2e-lite.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/e2e/playwright.config.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/e2e/fe008-webhooks.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/.gitignore`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/AGENTS.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增 `fe008-admin-e2e-lite`（API 驱动轻量 e2e）：
+    - 覆盖 `/admin/tasks` 检索与重放权限/状态边界；
+    - 覆盖 `/admin/plans` 新增+编辑+查询；
+    - 覆盖 `/admin/webhooks/*` 查询、重试、跨租户隔离。
+  - 新增 Playwright UI smoke：
+    - 引入最小配置 `apps/admin-console/e2e/playwright.config.ts`；
+    - 新增 `fe008-webhooks.spec.ts`，覆盖 `/webhooks` 页面“上下文必填 -> 查询 -> 重试确认”真实交互；
+    - webServer 同时拉起 `api-gateway + admin-console`，支持本地复现。
+  - 更新 AGENTS 命令基线，纳入 FE-008 分层验收建议命令。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/admin-console typecheck`：通过
+  - `SHARED_BASE_URL=http://127.0.0.1:3000 SHARED_USERNAME=admin SHARED_PASSWORD=admin123 SHARED_ADMIN_SECRET=admin123 pnpm --filter @apps/api-gateway test:fe008-admin-e2e-lite`：通过
+  - `pnpm --filter @apps/admin-console exec playwright install chromium`：通过
+  - `pnpm --filter @apps/admin-console test:e2e:fe008`：通过（`1/1`）
+  - Playwright 报告目录：`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/.runtime/reports/playwright-fe008`
+- 联调结果：
+  - FE-008 已形成“API 轻量 e2e + UI smoke + 独立 smoke/matrix”分层证据链，本地地址下可稳定复现。
+- 遗留问题：
+  - shared/staging 仍为本地映射地址，云端地址切换后需原样复跑以上命令补齐发布前证据。
+- 风险与回滚：
+  - 风险：Playwright `webServer` 依赖本机端口，若端口被占用会导致执行失败。
+  - 回滚：回退 `e2e` 目录与 `test:e2e:fe008` 命令，暂时恢复到 API 驱动验收路径。
+- 下一步：
+  - 获取 shared/staging 云端地址后，先复跑 `fe008-admin-smoke:matrix` 与 `test:e2e:fe008`，再推进 FE-008 到 `QA`。

@@ -1,4 +1,4 @@
-# 变更日志规范（v1.55）
+# 变更日志规范（v1.56）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.56 | 2026-02-22 | 新增 FE-008 分层验收（API 轻量 e2e + Playwright UI smoke）并固化命令基线 |
 | v1.55 | 2026-02-22 | 新增 FE-008 管理端独立 smoke 矩阵脚本与多目标本地映射验收能力 |
 | v1.54 | 2026-02-22 | 修复 shared-smoke `PREPROCESSING` 卡点：补齐 `task.masked` 事件触发与 Worker `WAIT_MASK` 跟进队列去重 |
 | v1.53 | 2026-02-22 | 新增 FE-008 管理端 Webhook 独立 smoke（本地）与联调证据 |
@@ -109,6 +110,40 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.51] - 2026-02-22
+
+### Added
+- 新增脚本：`apps/api-gateway/scripts/fe008-admin-e2e-lite.ts`
+  - 覆盖 FE-008 API 驱动轻量 e2e：
+    - `/admin/tasks` 检索与重放权限/状态边界；
+    - `/admin/plans` 新增+编辑+查询；
+    - `/admin/webhooks/*` 查询+重试+跨租户隔离。
+- 新增 Playwright UI smoke：
+  - `apps/admin-console/e2e/playwright.config.ts`
+  - `apps/admin-console/e2e/fe008-webhooks.spec.ts`
+- `apps/admin-console/package.json` 新增命令：`test:e2e:fe008`。
+- `apps/api-gateway/package.json` 新增命令：`test:fe008-admin-e2e-lite`。
+
+### Changed
+- `AGENTS.md` 命令基线新增：
+  - `pnpm --filter @apps/api-gateway test:fe008-admin-e2e-lite`
+  - `pnpm --filter @apps/admin-console test:e2e:fe008`
+- `.gitignore` 新增 `apps/admin-console/.runtime/`，隔离 Playwright 产物。
+- `doc/engineering/rd-progress-management.md` 新增第 65 节执行回填与分层验收证据。
+
+### Fixed
+- 修复 FE-008 仅依赖单层 smoke 证据的问题，形成“API 轻量 e2e + UI 冒烟 + smoke/matrix”分层门禁。
+
+### Security
+- 新增 e2e 与 UI smoke 仍沿用 `/admin/*` 显式上下文与 `X-Admin-Secret` 约束，不放宽 RBAC。
+
+### Rollback
+- 回退 `fe008-admin-e2e-lite` 与 Playwright `e2e` 目录及脚本命令，恢复到 0.5.50 的 smoke 验收口径。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`、`/Users/codelei/Documents/ai-project/remove-watermark/AGENTS.md`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.50] - 2026-02-22
 

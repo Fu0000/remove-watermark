@@ -19,6 +19,7 @@
     "test:contract": "NODE_ENV=test node --test --import tsx test/contract.spec.ts",
     "test:shared-smoke": "tsx scripts/shared-smoke.ts",
     "test:fe008-admin-smoke": "tsx scripts/fe008-admin-smoke.ts",
+    "test:fe008-admin-e2e-lite": "tsx scripts/fe008-admin-e2e-lite.ts",
     "test:fe008-admin-smoke:matrix": "tsx scripts/fe008-admin-smoke-matrix.ts",
     "test:shared-smoke:matrix": "tsx scripts/shared-smoke-matrix.ts"
   },
