@@ -1272,3 +1272,115 @@ test("admin plans should support read/write with RBAC", async () => {
 
   await app.close();
 });
+
+test("GET /admin/webhooks/deliveries should enforce RBAC and support query", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const create = await server.inject({
+    method: "POST",
+    url: "/v1/webhooks/endpoints",
+    headers: {
+      authorization: "Bearer test-token",
+      "content-type": "application/json"
+    },
+    payload: {
+      name: "admin-read-endpoint",
+      url: "https://client.example.com/fail",
+      events: ["task.failed"],
+      timeoutMs: 5000,
+      maxRetries: 2
+    }
+  });
+  assert.equal(create.statusCode, 200);
+  const endpointId = create.json().data.endpointId as string;
+
+  const testDelivery = await server.inject({
+    method: "POST",
+    url: `/v1/webhooks/endpoints/${endpointId}/test`,
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(testDelivery.statusCode, 200);
+  const deliveryId = testDelivery.json().data.deliveryId as string;
+
+  const forbidden = await server.inject({
+    method: "GET",
+    url: `/admin/webhooks/deliveries?endpointId=${endpointId}&status=FAILED&page=1&pageSize=10`,
+    headers: {
+      authorization: "Bearer test-token",
+      "x-admin-role": "auditor"
+    }
+  });
+  assert.equal(forbidden.statusCode, 403);
+  assert.equal(forbidden.json().code, 40301);
+
+  const list = await server.inject({
+    method: "GET",
+    url: `/admin/webhooks/deliveries?endpointId=${endpointId}&status=FAILED&page=1&pageSize=10`,
+    headers: adminHeaders("auditor")
+  });
+  assert.equal(list.statusCode, 200);
+  assert.equal(list.json().code, 0);
+  assert.equal(list.json().data.total >= 1, true);
+  assert.equal(
+    list.json().data.items.some((item: { deliveryId: string }) => item.deliveryId === deliveryId),
+    true
+  );
+
+  await app.close();
+});
+
+test("POST /admin/webhooks/deliveries/{deliveryId}/retry should enforce RBAC", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const create = await server.inject({
+    method: "POST",
+    url: "/v1/webhooks/endpoints",
+    headers: {
+      authorization: "Bearer test-token",
+      "content-type": "application/json"
+    },
+    payload: {
+      name: "admin-retry-endpoint",
+      url: "https://client.example.com/fail",
+      events: ["task.failed"],
+      timeoutMs: 5000,
+      maxRetries: 2
+    }
+  });
+  assert.equal(create.statusCode, 200);
+  const endpointId = create.json().data.endpointId as string;
+
+  const testDelivery = await server.inject({
+    method: "POST",
+    url: `/v1/webhooks/endpoints/${endpointId}/test`,
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(testDelivery.statusCode, 200);
+  const deliveryId = testDelivery.json().data.deliveryId as string;
+
+  const auditorRetry = await server.inject({
+    method: "POST",
+    url: `/admin/webhooks/deliveries/${deliveryId}/retry`,
+    headers: adminHeaders("auditor")
+  });
+  assert.equal(auditorRetry.statusCode, 403);
+  assert.equal(auditorRetry.json().code, 40301);
+
+  const operatorRetry = await server.inject({
+    method: "POST",
+    url: `/admin/webhooks/deliveries/${deliveryId}/retry`,
+    headers: adminHeaders("operator")
+  });
+  assert.equal(operatorRetry.statusCode, 200);
+  assert.equal(operatorRetry.json().code, 0);
+  assert.equal(typeof operatorRetry.json().data.deliveryId, "string");
+  assert.notEqual(operatorRetry.json().data.deliveryId, deliveryId);
+
+  await app.close();
+});

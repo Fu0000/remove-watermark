@@ -1,4 +1,4 @@
-# 变更日志规范（v1.49）
+# 变更日志规范（v1.50）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.50 | 2026-02-22 | 新增 FE-008 Webhook 运维切换 `/admin/webhooks/*`，补齐 RBAC 与契约回归 |
 | v1.49 | 2026-02-22 | 新增 `.env` 注入脚本与忽略规则，落地 shared/staging/prod 本地密钥文件生成流程 |
 | v1.48 | 2026-02-22 | 新增 FE-008 admin 服务端代理（浏览器去密钥化）与 `ADMIN_PROXY_*` 配置模板 |
 | v1.47 | 2026-02-22 | 新增 `/admin/*` 密钥安全门禁（受保护环境禁用默认口令）与环境模板 |
@@ -103,6 +104,35 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.45] - 2026-02-22
+
+### Added
+- `apps/api-gateway/src/modules/admin/admin.controller.ts` 新增：
+  - `GET /admin/webhooks/deliveries`
+  - `POST /admin/webhooks/deliveries/{deliveryId}/retry`
+- `apps/api-gateway/src/common/admin-rbac.ts` 新增管理端权限：
+  - `admin:webhook:read`
+  - `admin:webhook:retry`
+- `apps/api-gateway/test/contract.spec.ts` 新增 `/admin/webhooks/*` RBAC 契约用例（读取与重试）。
+
+### Changed
+- `apps/admin-console/src/services/webhooks.ts` 从 `/v1/webhooks/*` 切换为 `/admin/webhooks/*`，统一走 admin 代理链路。
+- `doc/api-spec.md` 同步新增管理端 Webhook 契约与权限矩阵。
+- `doc/engineering/rd-progress-management.md` 新增第 59 节回填并更新 FE-008 测试看板（contract `27/27`）。
+
+### Fixed
+- 修复 FE-008 中 Webhook 运维仍依赖用户侧 `v1` 接口、与管理端 `/admin/*` 鉴权链路不一致的问题。
+
+### Security
+- 管理端 Webhook 重试操作纳入 `X-Admin-Role/X-Admin-Secret` RBAC 约束，并写入后台审计动作 `admin.webhook.retry`。
+
+### Rollback
+- 回退 `admin.controller` Webhook 管理端接口、`admin-rbac` 权限增量与 `admin-console` webhooks 服务路径切换，恢复到 0.5.44。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console`、`/Users/codelei/Documents/ai-project/remove-watermark/doc`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.44] - 2026-02-22
 

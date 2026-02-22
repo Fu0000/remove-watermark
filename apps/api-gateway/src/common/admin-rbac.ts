@@ -2,15 +2,28 @@ import { ensureAuthorization } from "./auth";
 import { forbidden } from "./http-errors";
 
 export type AdminRole = "admin" | "operator" | "auditor";
-export type AdminPermission = "admin:task:read" | "admin:task:replay" | "admin:plan:read" | "admin:plan:write";
+export type AdminPermission =
+  | "admin:task:read"
+  | "admin:task:replay"
+  | "admin:plan:read"
+  | "admin:plan:write"
+  | "admin:webhook:read"
+  | "admin:webhook:retry";
 
 const DEFAULT_ADMIN_SECRET = "admin123";
 const PROTECTED_RUNTIME_ENV = new Set(["shared", "staging", "prod", "production"]);
 
 const ROLE_PERMISSIONS: Record<AdminRole, AdminPermission[]> = {
-  admin: ["admin:task:read", "admin:task:replay", "admin:plan:read", "admin:plan:write"],
-  operator: ["admin:task:read", "admin:task:replay", "admin:plan:read"],
-  auditor: ["admin:task:read", "admin:plan:read"]
+  admin: [
+    "admin:task:read",
+    "admin:task:replay",
+    "admin:plan:read",
+    "admin:plan:write",
+    "admin:webhook:read",
+    "admin:webhook:retry"
+  ],
+  operator: ["admin:task:read", "admin:task:replay", "admin:plan:read", "admin:webhook:read", "admin:webhook:retry"],
+  auditor: ["admin:task:read", "admin:plan:read", "admin:webhook:read"]
 };
 
 export function assertAdminRbacConfig() {

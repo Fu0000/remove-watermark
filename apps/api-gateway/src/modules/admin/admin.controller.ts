@@ -1,12 +1,13 @@
 import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Patch, Post, Query } from "@nestjs/common";
 import type { TaskStatus } from "@packages/contracts";
-import { ensureAdminPermission, type AdminRole } from "../../common/admin-rbac";
+import { ensureAdminPermission } from "../../common/admin-rbac";
 import { badRequest, conflict, notFound, unprocessableEntity } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
 import { TASK_STATUS } from "../../common/task-status";
 import { ComplianceService } from "../compliance/compliance.service";
 import { PlansService } from "../plans/plans.service";
 import { TasksService } from "../tasks/tasks.service";
+import { WebhooksService } from "../webhooks/webhooks.service";
 
 interface ReplayTaskRequest {
   reason: string;
@@ -36,7 +37,8 @@ export class AdminController {
   constructor(
     @Inject(TasksService) private readonly tasksService: TasksService,
     @Inject(PlansService) private readonly plansService: PlansService,
-    @Inject(ComplianceService) private readonly complianceService: ComplianceService
+    @Inject(ComplianceService) private readonly complianceService: ComplianceService,
+    @Inject(WebhooksService) private readonly webhooksService: WebhooksService
   ) {}
 
   @Get("tasks")
@@ -175,6 +177,92 @@ export class AdminController {
     return ok(result, requestIdHeader);
   }
 
+  @Get("webhooks/deliveries")
+  async listWebhookDeliveries(
+    @Headers("authorization") authorization: string | undefined,
+    @Headers("x-request-id") requestIdHeader: string | undefined,
+    @Headers("x-admin-role") adminRole: string | undefined,
+    @Headers("x-admin-secret") adminSecret: string | undefined,
+    @Query("userId") userIdRaw: string | undefined,
+    @Query("endpointId") endpointId: string | undefined,
+    @Query("eventType") eventType: string | undefined,
+    @Query("status") status: string | undefined,
+    @Query("page") pageRaw: string | undefined,
+    @Query("pageSize") pageSizeRaw: string | undefined
+  ) {
+    ensureAdminPermission({
+      authorization,
+      role: adminRole,
+      secret: adminSecret,
+      permission: "admin:webhook:read",
+      requestId: requestIdHeader
+    });
+
+    const result = await this.webhooksService.listDeliveries(parseAdminUserId(userIdRaw, requestIdHeader), {
+      endpointId: endpointId || undefined,
+      eventType: eventType || undefined,
+      status: parseDeliveryStatus(status, requestIdHeader),
+      page: parsePositiveInt(pageRaw, 1, "page", requestIdHeader),
+      pageSize: parsePositiveInt(pageSizeRaw, 20, "pageSize", requestIdHeader)
+    });
+
+    return ok(result, requestIdHeader);
+  }
+
+  @Post("webhooks/deliveries/:deliveryId/retry")
+  @HttpCode(200)
+  async retryWebhookDelivery(
+    @Headers("authorization") authorization: string | undefined,
+    @Headers("x-request-id") requestIdHeader: string | undefined,
+    @Headers("x-admin-role") adminRole: string | undefined,
+    @Headers("x-admin-secret") adminSecret: string | undefined,
+    @Headers("x-forwarded-for") forwardedFor: string | undefined,
+    @Headers("user-agent") userAgent: string | undefined,
+    @Param("deliveryId") deliveryId: string,
+    @Query("userId") userIdRaw: string | undefined
+  ) {
+    const role = ensureAdminPermission({
+      authorization,
+      role: adminRole,
+      secret: adminSecret,
+      permission: "admin:webhook:retry",
+      requestId: requestIdHeader
+    });
+
+    if (!deliveryId) {
+      badRequest(40001, "参数非法：deliveryId", requestIdHeader);
+    }
+
+    const userId = parseAdminUserId(userIdRaw, requestIdHeader);
+    const retried = await this.webhooksService.retryDelivery(userId, deliveryId);
+
+    if (retried.kind === "NOT_FOUND") {
+      notFound(40401, "资源不存在：delivery", requestIdHeader);
+    }
+    if (retried.kind === "ENDPOINT_NOT_FOUND") {
+      notFound(40401, "资源不存在：endpoint", requestIdHeader);
+    }
+    if (retried.kind === "INVALID_STATUS") {
+      unprocessableEntity(42201, `状态机非法迁移：当前状态=${retried.status}`, requestIdHeader);
+    }
+
+    await this.complianceService.appendAdminAuditLog(userId, {
+      action: "admin.webhook.retry",
+      resourceType: "webhook_delivery",
+      resourceId: deliveryId,
+      role,
+      reason: `retry ${deliveryId}`,
+      requestId: requestIdHeader,
+      ip: parseForwardedIp(forwardedFor),
+      userAgent,
+      meta: {
+        retriedDeliveryId: retried.deliveryId
+      }
+    });
+
+    return ok({ deliveryId: retried.deliveryId }, requestIdHeader);
+  }
+
   @Post("plans")
   @HttpCode(200)
   async createPlan(
@@ -309,6 +397,27 @@ function parseBoolean(raw: string | undefined, field: string, requestIdHeader?: 
     return false;
   }
   badRequest(40001, `参数非法：${field}`, requestIdHeader);
+}
+
+function parseDeliveryStatus(raw: string | undefined, requestIdHeader?: string): "SUCCESS" | "FAILED" | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  if (raw === "SUCCESS" || raw === "FAILED") {
+    return raw;
+  }
+  badRequest(40001, "参数非法：status", requestIdHeader);
+}
+
+function parseAdminUserId(raw: string | undefined, requestIdHeader?: string): string {
+  if (!raw) {
+    return "u_1001";
+  }
+  const value = raw.trim();
+  if (!value) {
+    badRequest(40001, "参数非法：userId", requestIdHeader);
+  }
+  return value;
 }
 
 function validateDateTime(field: string, raw: string | undefined, requestIdHeader?: string) {

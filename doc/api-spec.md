@@ -145,7 +145,7 @@ flowchart LR
 
 ### 6.2 权限模型
 - 用户端：仅可访问本人资源（`userId` 隔离）。
-- 管理端：RBAC（`admin:task:read`、`admin:task:replay`、`admin:plan:read`、`admin:plan:write`）。
+- 管理端：RBAC（`admin:task:read`、`admin:task:replay`、`admin:plan:read`、`admin:plan:write`、`admin:webhook:read`、`admin:webhook:retry`）。
 - 内部 API：`Service Token` + mTLS（可选）。
 
 ### 6.3 安全最佳实践
@@ -254,6 +254,8 @@ flowchart LR
 | GET | `/admin/plans` | 是（管理端） | 否 | 管理端套餐检索 |
 | POST | `/admin/plans` | 是（管理端） | 否 | 管理端新增套餐 |
 | PATCH | `/admin/plans/{planId}` | 是（管理端） | 否 | 管理端更新套餐 |
+| GET | `/admin/webhooks/deliveries` | 是（管理端） | 否 | 管理端投递记录检索 |
+| POST | `/admin/webhooks/deliveries/{deliveryId}/retry` | 是（管理端） | 否 | 管理端手动重试投递 |
 
 ## 11. 详细 API 契约
 
@@ -644,9 +646,9 @@ Query：
   - 必须通过环境变量配置高强度口令（建议 32+ 字节随机值）
   - 管理端前端不得在浏览器暴露该口令，必须由服务端代理/BFF 注入
 - 权限矩阵：
-  - `admin`：`admin:task:read`、`admin:task:replay`、`admin:plan:read`、`admin:plan:write`
-  - `operator`：`admin:task:read`、`admin:task:replay`、`admin:plan:read`
-  - `auditor`：`admin:task:read`、`admin:plan:read`
+  - `admin`：`admin:task:read`、`admin:task:replay`、`admin:plan:read`、`admin:plan:write`、`admin:webhook:read`、`admin:webhook:retry`
+  - `operator`：`admin:task:read`、`admin:task:replay`、`admin:plan:read`、`admin:webhook:read`、`admin:webhook:retry`
+  - `auditor`：`admin:task:read`、`admin:plan:read`、`admin:webhook:read`
 
 ### `GET /admin/tasks`
 - 查询参数：
@@ -688,6 +690,21 @@ Query：
 ### `PATCH /admin/plans/{planId}`
 - 支持更新字段：`name/price/monthlyQuota/features/sortOrder/isActive`
 - 语义：更新套餐并写入审计动作 `admin.plan.update`
+
+### `GET /admin/webhooks/deliveries`
+- 查询参数：
+  - `userId`（可选，默认 `u_1001`）
+  - `endpointId`、`eventType`、`status`
+  - `page`、`pageSize`
+- 返回：`items[] + page + pageSize + total`
+- 语义：管理端读取投递观测与失败记录，支持按筛选条件分页。
+
+### `POST /admin/webhooks/deliveries/{deliveryId}/retry`
+- 查询参数：`userId`（可选，默认 `u_1001`）
+- 语义：对失败投递执行后台重试，并写入审计动作 `admin.webhook.retry`。
+- 错误码：
+  - `40401`：delivery 或 endpoint 不存在
+  - `42201`：delivery 状态不允许重试（非 `FAILED`）
 
 ## 12. 实时进度协议（推荐）
 
@@ -955,6 +972,7 @@ Query：
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.8 | 2026-02-22 | 新增 `/admin/webhooks/deliveries*` 契约与 RBAC 权限矩阵（`admin:webhook:*`） |
 | v1.7 | 2026-02-22 | 补充管理端密钥“服务端代理注入”要求，禁止浏览器侧暴露 `X-Admin-Secret` |
 | v1.6 | 2026-02-22 | 补充 `/admin/*` 密钥安全门禁（shared/staging/prod 禁止默认口令） |
 | v1.5 | 2026-02-22 | 新增 `/admin/*` 最小运营后台契约（任务检索、异常重放、套餐检索/写入）与 RBAC 头约束 |

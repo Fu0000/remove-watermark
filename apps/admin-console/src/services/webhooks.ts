@@ -37,7 +37,7 @@ interface RetryDeliveryData {
 }
 
 export async function listDeliveries(input: ListDeliveriesInput) {
-  return request<DeliveryListData>("/v1/webhooks/deliveries", {
+  return request<DeliveryListData>("/admin/webhooks/deliveries", {
     query: {
       endpointId: input.endpointId,
       eventType: input.eventType,
@@ -49,7 +49,7 @@ export async function listDeliveries(input: ListDeliveriesInput) {
 }
 
 export async function retryDelivery(deliveryId: string) {
-  return request<RetryDeliveryData>(`/v1/webhooks/deliveries/${encodeURIComponent(deliveryId)}/retry`, {
+  return request<RetryDeliveryData>(`/admin/webhooks/deliveries/${encodeURIComponent(deliveryId)}/retry`, {
     method: "POST"
   });
 }
