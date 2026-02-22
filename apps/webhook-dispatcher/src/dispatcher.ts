@@ -38,6 +38,7 @@ type DeliveryFailureCode =
 interface EndpointRecord {
   endpointId: string;
   userId: string;
+  tenantId: string;
   url: string;
   events: string[];
   timeoutMs: number;
@@ -376,6 +377,7 @@ async function resolveEventContext(
 function normalizeEndpoint(record: {
   endpointId: string;
   userId: string;
+  tenantId: string;
   url: string;
   status: string;
   eventsJson: Prisma.JsonValue;
@@ -387,6 +389,7 @@ function normalizeEndpoint(record: {
   return {
     endpointId: record.endpointId,
     userId: record.userId,
+    tenantId: record.tenantId,
     url: record.url,
     status: normalizeEndpointStatus(record.status),
     events: normalizeEvents(record.eventsJson),
@@ -495,6 +498,7 @@ async function sendDeliveryAttempt(
       deliveryId,
       eventId: input.eventId,
       userId: input.endpoint.userId,
+      tenantId: input.endpoint.tenantId,
       endpointId: input.endpoint.endpointId,
       eventType: input.eventType,
       attempt: input.attempt,
@@ -574,6 +578,7 @@ async function sendDeliveryAttempt(
         deliveryId,
         eventId: input.eventId,
         userId: input.endpoint.userId,
+        tenantId: input.endpoint.tenantId,
         endpointId: input.endpoint.endpointId,
         eventType: input.eventType,
         status: success ? "SUCCESS" : "FAILED",
@@ -624,6 +629,7 @@ async function createFailedDelivery(
     deliveryId: string;
     eventId: string;
     userId: string;
+    tenantId: string;
     endpointId: string;
     eventType: string;
     attempt: number;
@@ -640,6 +646,7 @@ async function createFailedDelivery(
         deliveryId: input.deliveryId,
         eventId: input.eventId,
         userId: input.userId,
+        tenantId: input.tenantId,
         endpointId: input.endpointId,
         eventType: input.eventType,
         status: "FAILED",

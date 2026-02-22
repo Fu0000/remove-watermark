@@ -186,6 +186,7 @@ model BillingReconcileRun {
 model WebhookEndpoint {
   endpointId   String    @id @map("endpoint_id") @db.VarChar(64)
   userId       String    @map("user_id") @db.VarChar(64)
+  tenantId     String    @map("tenant_id") @db.VarChar(64)
   name         String    @db.VarChar(128)
   url          String
   status       String    @db.VarChar(16)
@@ -200,6 +201,7 @@ model WebhookEndpoint {
   deliveries   WebhookDelivery[]
 
   @@index([userId, status, createdAt(sort: Desc)], map: "idx_webhook_endpoints_user_status_created")
+  @@index([tenantId, status, createdAt(sort: Desc)], map: "idx_webhook_endpoints_tenant_status_created")
   @@index([status, updatedAt(sort: Desc)], map: "idx_webhook_endpoints_status_updated")
   @@map("webhook_endpoints")
 }
@@ -208,6 +210,7 @@ model WebhookDelivery {
   deliveryId          String          @id @map("delivery_id") @db.VarChar(64)
   eventId             String          @map("event_id") @db.VarChar(64)
   userId              String          @map("user_id") @db.VarChar(64)
+  tenantId            String          @map("tenant_id") @db.VarChar(64)
   endpointId          String          @map("endpoint_id") @db.VarChar(64)
   eventType           String          @map("event_type") @db.VarChar(64)
   status              String          @db.VarChar(16)
@@ -223,6 +226,7 @@ model WebhookDelivery {
   endpoint            WebhookEndpoint @relation(fields: [endpointId], references: [endpointId], onDelete: Cascade)
 
   @@index([endpointId, status, createdAt(sort: Desc)], map: "idx_webhook_deliveries_endpoint_status_created")
+  @@index([tenantId, status, createdAt(sort: Desc)], map: "idx_webhook_deliveries_tenant_status_created")
   @@index([eventId, attempt], map: "idx_webhook_deliveries_event_attempt")
   @@index([status, createdAt(sort: Desc)], map: "idx_webhook_deliveries_status_created")
   @@unique([endpointId, eventId, attempt], map: "uk_webhook_endpoint_event_attempt")

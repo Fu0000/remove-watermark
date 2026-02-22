@@ -44,6 +44,7 @@ async function main() {
   const taskId = buildId("tsk_int007");
   const eventId = buildId("evt_int007");
   const endpointId = buildId("wh_ep");
+  const tenantId = buildId("t_int007");
   const signingSecret = "int007_local_secret_k1";
   const signingKeyId = "k1";
   const processedEvents = new Set<string>();
@@ -168,6 +169,7 @@ async function main() {
       data: {
         endpointId,
         userId,
+        tenantId,
         name: "int007-local-endpoint",
         url: endpointUrl,
         status: "ACTIVE",

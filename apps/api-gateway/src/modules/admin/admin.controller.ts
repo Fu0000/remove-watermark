@@ -7,7 +7,7 @@ import { TASK_STATUS } from "../../common/task-status";
 import { ComplianceService } from "../compliance/compliance.service";
 import { PlansService } from "../plans/plans.service";
 import { TasksService } from "../tasks/tasks.service";
-import { WebhooksService } from "../webhooks/webhooks.service";
+import { type WebhookScope, WebhooksService } from "../webhooks/webhooks.service";
 
 interface ReplayTaskRequest {
   reason: string;
@@ -211,7 +211,7 @@ export class AdminController {
       requestIdHeader
     );
 
-    const result = await this.webhooksService.listDeliveries(scope.userId, {
+    const result = await this.webhooksService.listDeliveries(scope, {
       endpointId: endpointId || undefined,
       eventType: eventType || undefined,
       status: parseDeliveryStatus(status, requestIdHeader),
@@ -258,7 +258,7 @@ export class AdminController {
       },
       requestIdHeader
     );
-    const retried = await this.webhooksService.retryDelivery(scope.userId, deliveryId);
+    const retried = await this.webhooksService.retryDelivery(scope, deliveryId);
 
     if (retried.kind === "NOT_FOUND") {
       notFound(40401, "资源不存在：delivery", requestIdHeader);
@@ -270,7 +270,7 @@ export class AdminController {
       unprocessableEntity(42201, `状态机非法迁移：当前状态=${retried.status}`, requestIdHeader);
     }
 
-    await this.complianceService.appendAdminAuditLog(scope.userId, {
+    await this.complianceService.appendAdminAuditLog(resolveAuditSubject(scope), {
       action: "admin.webhook.retry",
       resourceType: "webhook_delivery",
       resourceId: deliveryId,
@@ -443,14 +443,13 @@ function resolveWebhookScope(
     tenantIdRaw: string | undefined;
   },
   requestIdHeader?: string
-): { scopeType: "USER" | "TENANT"; scopeId: string; userId: string } {
+): WebhookScope {
   if (input.scopeTypeRaw || input.scopeIdRaw) {
     const scopeType = normalizeScopeType(input.scopeTypeRaw, requestIdHeader);
     const scopeId = parseScopeId(input.scopeIdRaw, requestIdHeader);
     return {
       scopeType,
-      scopeId,
-      userId: scopeId
+      scopeId
     };
   }
 
@@ -458,8 +457,7 @@ function resolveWebhookScope(
     const userId = parseScopeId(input.userIdRaw, requestIdHeader);
     return {
       scopeType: "USER",
-      scopeId: userId,
-      userId
+      scopeId: userId
     };
   }
 
@@ -467,8 +465,7 @@ function resolveWebhookScope(
     const tenantId = parseScopeId(input.tenantIdRaw, requestIdHeader);
     return {
       scopeType: "TENANT",
-      scopeId: tenantId,
-      userId: tenantId
+      scopeId: tenantId
     };
   }
 
@@ -492,6 +489,13 @@ function parseScopeId(raw: string | undefined, requestIdHeader?: string): string
     badRequest(40001, "参数非法：scopeId", requestIdHeader);
   }
   return value;
+}
+
+function resolveAuditSubject(scope: WebhookScope) {
+  if (scope.scopeType === "TENANT") {
+    return `tenant:${scope.scopeId}`;
+  }
+  return scope.scopeId;
 }
 
 function validateDateTime(field: string, raw: string | undefined, requestIdHeader?: string) {

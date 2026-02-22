@@ -7,6 +7,7 @@ import type { INestApplication } from "@nestjs/common";
 import { AppModule } from "../src/modules/app.module";
 import { TasksService } from "../src/modules/tasks/tasks.service";
 import { ComplianceService } from "../src/modules/compliance/compliance.service";
+import { WebhooksService } from "../src/modules/webhooks/webhooks.service";
 
 async function setup(): Promise<INestApplication> {
   const app = await NestFactory.create(AppModule, new FastifyAdapter());
@@ -1381,6 +1382,87 @@ test("POST /admin/webhooks/deliveries/{deliveryId}/retry should enforce RBAC", a
   assert.equal(operatorRetry.json().code, 0);
   assert.equal(typeof operatorRetry.json().data.deliveryId, "string");
   assert.notEqual(operatorRetry.json().data.deliveryId, deliveryId);
+
+  await app.close();
+});
+
+test("admin webhook deliveries should support tenant scope filtering", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+  const webhooksService = app.get(WebhooksService);
+
+  const tenantScope = "t_admin_contract_scope";
+  const endpointA = await webhooksService.createEndpoint(
+    "u_scope_user_a",
+    {
+      name: "tenant-a-ep",
+      url: "https://client.example.com/fail",
+      events: ["task.failed"],
+      timeoutMs: 5000,
+      maxRetries: 2
+    },
+    { tenantId: tenantScope }
+  );
+  const endpointB = await webhooksService.createEndpoint(
+    "u_scope_user_b",
+    {
+      name: "tenant-b-ep",
+      url: "https://client.example.com/fail",
+      events: ["task.failed"],
+      timeoutMs: 5000,
+      maxRetries: 2
+    },
+    { tenantId: tenantScope }
+  );
+  const endpointOther = await webhooksService.createEndpoint(
+    "u_scope_user_other",
+    {
+      name: "other-tenant-ep",
+      url: "https://client.example.com/fail",
+      events: ["task.failed"],
+      timeoutMs: 5000,
+      maxRetries: 2
+    },
+    { tenantId: "t_admin_contract_scope_other" }
+  );
+
+  const deliveryA = await webhooksService.sendTestDelivery("u_scope_user_a", endpointA.endpointId);
+  const deliveryB = await webhooksService.sendTestDelivery("u_scope_user_b", endpointB.endpointId);
+  const deliveryOther = await webhooksService.sendTestDelivery("u_scope_user_other", endpointOther.endpointId);
+
+  assert.equal(Boolean(deliveryA), true);
+  assert.equal(Boolean(deliveryB), true);
+  assert.equal(Boolean(deliveryOther), true);
+  const deliveryAId = deliveryA?.deliveryId as string;
+  const deliveryBId = deliveryB?.deliveryId as string;
+  const deliveryOtherId = deliveryOther?.deliveryId as string;
+
+  const tenantList = await server.inject({
+    method: "GET",
+    url: `/admin/webhooks/deliveries?scopeType=tenant&scopeId=${tenantScope}&status=FAILED&page=1&pageSize=50`,
+    headers: adminHeaders("admin")
+  });
+  assert.equal(tenantList.statusCode, 200);
+  const tenantItems = tenantList.json().data.items as Array<{ deliveryId: string }>;
+  assert.equal(tenantItems.some((item) => item.deliveryId === deliveryAId), true);
+  assert.equal(tenantItems.some((item) => item.deliveryId === deliveryBId), true);
+  assert.equal(tenantItems.some((item) => item.deliveryId === deliveryOtherId), false);
+
+  const tenantRetry = await server.inject({
+    method: "POST",
+    url: `/admin/webhooks/deliveries/${deliveryAId}/retry?scopeType=tenant&scopeId=${tenantScope}`,
+    headers: adminHeaders("operator")
+  });
+  assert.equal(tenantRetry.statusCode, 200);
+  assert.equal(tenantRetry.json().code, 0);
+
+  const tenantRetryWrongScope = await server.inject({
+    method: "POST",
+    url: `/admin/webhooks/deliveries/${deliveryAId}/retry?scopeType=tenant&scopeId=t_not_match`,
+    headers: adminHeaders("operator")
+  });
+  assert.equal(tenantRetryWrongScope.statusCode, 404);
+  assert.equal(tenantRetryWrongScope.json().code, 40401);
 
   await app.close();
 });

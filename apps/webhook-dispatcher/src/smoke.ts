@@ -45,6 +45,7 @@ async function main() {
   const eventId = buildId("evt_smoke");
   const endpointId = buildId("wh_ep");
   const userId = buildId("u_smoke");
+  const tenantId = buildId("t_smoke");
 
   try {
     await prisma.task.create({
@@ -79,6 +80,7 @@ async function main() {
       data: {
         endpointId,
         userId,
+        tenantId,
         name: "smoke-endpoint",
         url: endpointUrl,
         status: "ACTIVE",

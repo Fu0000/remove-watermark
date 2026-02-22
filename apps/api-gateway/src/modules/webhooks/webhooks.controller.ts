@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Headers, HttpCode, Inject, Param, Patch,
 import { ensureAuthorization } from "../../common/auth";
 import { badRequest, notFound, unprocessableEntity } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
+import type { WebhookScope } from "./webhooks.service";
 import { WebhooksService } from "./webhooks.service";
 
 interface CreateEndpointRequest {
@@ -33,12 +34,15 @@ export class WebhooksController {
   async createEndpoint(
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined,
+    @Headers("x-tenant-id") tenantIdHeader: string | undefined,
     @Body() body: CreateEndpointRequest
   ) {
     ensureAuthorization(authorization, requestIdHeader);
     this.assertCreatePayload(body, requestIdHeader);
 
-    const result = await this.webhooksService.createEndpoint("u_1001", body);
+    const result = await this.webhooksService.createEndpoint("u_1001", body, {
+      tenantId: normalizeTenantIdHeader(tenantIdHeader)
+    });
     return ok(result, requestIdHeader);
   }
 
@@ -135,7 +139,7 @@ export class WebhooksController {
     const normalizedPage = this.parsePositiveInt(page, 1, "page", requestIdHeader);
     const normalizedPageSize = this.parsePositiveInt(pageSize, 20, "pageSize", requestIdHeader);
 
-    const result = await this.webhooksService.listDeliveries("u_1001", {
+    const result = await this.webhooksService.listDeliveries(toUserScope("u_1001"), {
       endpointId,
       eventType,
       status: normalizedStatus,
@@ -157,7 +161,7 @@ export class WebhooksController {
       badRequest(40001, "参数非法：deliveryId", requestIdHeader);
     }
 
-    const retried = await this.webhooksService.retryDelivery("u_1001", deliveryId);
+    const retried = await this.webhooksService.retryDelivery(toUserScope("u_1001"), deliveryId);
     if (retried.kind === "NOT_FOUND") {
       notFound(40401, "资源不存在：delivery", requestIdHeader);
     }
@@ -261,4 +265,16 @@ export class WebhooksController {
     }
     return value;
   }
+}
+
+function toUserScope(userId: string): WebhookScope {
+  return {
+    scopeType: "USER",
+    scopeId: userId
+  };
+}
+
+function normalizeTenantIdHeader(raw: string | undefined) {
+  const value = (raw || "").trim();
+  return value.length > 0 ? value : undefined;
 }

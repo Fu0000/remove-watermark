@@ -1,4 +1,4 @@
-# 变更日志规范（v1.51）
+# 变更日志规范（v1.52）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.52 | 2026-02-22 | 新增 BE-008 租户模型落地（`tenantId` 持久化 + 管理端真实租户级过滤）与回归证据 |
 | v1.51 | 2026-02-22 | 新增 FE-008 Webhook 显式上下文驱动（`scopeType/scopeId` 必填）与默认用户移除 |
 | v1.50 | 2026-02-22 | 新增 FE-008 Webhook 运维切换 `/admin/webhooks/*`，补齐 RBAC 与契约回归 |
 | v1.49 | 2026-02-22 | 新增 `.env` 注入脚本与忽略规则，落地 shared/staging/prod 本地密钥文件生成流程 |
@@ -105,6 +106,44 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.47] - 2026-02-22
+
+### Added
+- 新增 Prisma 迁移：`apps/api-gateway/prisma/migrations/20260222153000_add_webhook_tenant_scope/migration.sql`
+  - `webhook_endpoints`/`webhook_deliveries` 新增 `tenant_id`
+  - 历史数据回填并收敛为 `NOT NULL`
+  - 新增租户维度索引
+- `apps/api-gateway/test/contract.spec.ts` 新增“tenant scope 过滤与重试授权边界”契约用例。
+
+### Changed
+- `apps/api-gateway/prisma/schema.prisma`：
+  - `WebhookEndpoint`/`WebhookDelivery` 新增 `tenantId` 字段与租户索引。
+- `apps/api-gateway/src/modules/webhooks/webhooks.service.ts`：
+  - `listDeliveries/retryDelivery` 改为 `WebhookScope(USER|TENANT)` 统一入口；
+  - `scopeType=tenant` 走真实 `tenantId` 过滤；
+  - 创建 endpoint/delivery 时持久化 `tenantId`。
+- `apps/api-gateway/src/modules/webhooks/webhooks.controller.ts`：
+  - `POST /v1/webhooks/endpoints` 支持可选 `X-Tenant-Id` 透传。
+- `apps/api-gateway/src/modules/admin/admin.controller.ts`：
+  - 管理端 webhook 查询/重试改为真实租户字段语义，不再使用用户等价映射。
+- `apps/webhook-dispatcher/src/dispatcher.ts`、`apps/webhook-dispatcher/src/smoke.ts`、`apps/webhook-dispatcher/src/int007-local.ts`：
+  - 出站派发与本地验证链路同步 `tenantId` 字段。
+- `doc/api-spec.md` 更新租户过滤契约：`scopeType=tenant` 明确为真实租户级过滤。
+- `doc/engineering/rd-progress-management.md` 新增第 61 节回填与测试证据（contract `29/29`）。
+
+### Fixed
+- 修复管理端 `scopeType=tenant` 在数据层仍按 `userId` 等价过滤的语义偏差。
+
+### Security
+- 租户级查询与重试边界下沉到持久化字段，避免跨租户误读/误重试风险。
+
+### Rollback
+- 回退 `tenantId` 迁移与 scope 逻辑改造，恢复到 0.5.46 的用户主维度过滤模型。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/webhook-dispatcher`、`/Users/codelei/Documents/ai-project/remove-watermark/doc`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.46] - 2026-02-22
 

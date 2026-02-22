@@ -22,6 +22,7 @@ const DEFAULT_KEY_ID = "k1";
 interface EndpointRecord {
   endpointId: string;
   userId: string;
+  tenantId: string;
   name: string;
   url: string;
   status: EndpointStatus;
@@ -38,6 +39,7 @@ interface EndpointRecord {
 interface DeliveryRecord {
   deliveryId: string;
   userId: string;
+  tenantId: string;
   endpointId: string;
   eventId: string;
   eventType: string;
@@ -117,6 +119,11 @@ export interface ListDeliveriesInput {
   pageSize: number;
 }
 
+export interface WebhookScope {
+  scopeType: "USER" | "TENANT";
+  scopeId: string;
+}
+
 export type RetryResult =
   | { kind: "SUCCESS"; deliveryId: string }
   | { kind: "NOT_FOUND" }
@@ -134,8 +141,9 @@ export class WebhooksService {
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  async createEndpoint(userId: string, input: CreateEndpointInput) {
+  async createEndpoint(userId: string, input: CreateEndpointInput, options?: { tenantId?: string }) {
     const endpointId = this.buildId("wh_ep");
+    const tenantId = resolveTenantId(userId, options?.tenantId);
     const activeKeyId = DEFAULT_KEY_ID;
     const secretByKeyId: Record<string, string> = {
       [activeKeyId]: this.buildSecret()
@@ -148,6 +156,7 @@ export class WebhooksService {
           data: {
             endpointId,
             userId,
+            tenantId,
             name: input.name,
             url: input.url,
             status: "ACTIVE",
@@ -175,6 +184,7 @@ export class WebhooksService {
     const record: EndpointRecord = {
       endpointId,
       userId,
+      tenantId,
       name: input.name,
       url: input.url,
       status: "ACTIVE",
@@ -337,7 +347,7 @@ export class WebhooksService {
   async sendTestDelivery(userId: string, endpointId: string): Promise<{ deliveryId: string } | undefined> {
     if (this.preferPrismaStore) {
       try {
-        const endpoint = await this.loadActiveEndpointWithPrisma(userId, endpointId);
+        const endpoint = await this.loadActiveEndpointWithPrisma(toUserScope(userId), endpointId);
         if (!endpoint) {
           return undefined;
         }
@@ -358,12 +368,10 @@ export class WebhooksService {
     return { deliveryId: created.deliveryId };
   }
 
-  async listDeliveries(userId: string, input: ListDeliveriesInput) {
+  async listDeliveries(scope: WebhookScope, input: ListDeliveriesInput) {
     if (this.preferPrismaStore) {
       try {
-        const where: Prisma.WebhookDeliveryWhereInput = {
-          userId
-        };
+        const where: Prisma.WebhookDeliveryWhereInput = toDeliveryScopeWhere(scope);
         if (input.endpointId) {
           where.endpointId = input.endpointId;
         }
@@ -396,7 +404,7 @@ export class WebhooksService {
     }
 
     const filtered = [...this.deliveries.values()]
-      .filter((item) => item.userId === userId)
+      .filter((item) => matchesDeliveryScope(item, scope))
       .filter((item) => !input.endpointId || item.endpointId === input.endpointId)
       .filter((item) => !input.eventType || item.eventType === input.eventType)
       .filter((item) => !input.status || item.status === input.status)
@@ -413,11 +421,11 @@ export class WebhooksService {
     };
   }
 
-  async retryDelivery(userId: string, deliveryId: string): Promise<RetryResult> {
+  async retryDelivery(scope: WebhookScope, deliveryId: string): Promise<RetryResult> {
     if (this.preferPrismaStore) {
       try {
         const delivery = await this.prisma.webhookDelivery.findUnique({ where: { deliveryId } });
-        if (!delivery || delivery.userId !== userId) {
+        if (!delivery || !matchesDeliveryScope(this.normalizeDbDelivery(delivery), scope)) {
           return { kind: "NOT_FOUND" };
         }
 
@@ -426,7 +434,7 @@ export class WebhooksService {
           return { kind: "INVALID_STATUS", status: normalizedDelivery.status };
         }
 
-        const endpoint = await this.loadActiveEndpointWithPrisma(userId, delivery.endpointId);
+        const endpoint = await this.loadActiveEndpointWithPrisma(scope, delivery.endpointId);
         if (!endpoint) {
           return { kind: "ENDPOINT_NOT_FOUND" };
         }
@@ -443,7 +451,7 @@ export class WebhooksService {
     }
 
     const delivery = this.deliveries.get(deliveryId);
-    if (!delivery || delivery.userId !== userId) {
+    if (!delivery || !matchesDeliveryScope(delivery, scope)) {
       return { kind: "NOT_FOUND" };
     }
 
@@ -452,7 +460,7 @@ export class WebhooksService {
     }
 
     const endpoint = this.endpoints.get(delivery.endpointId);
-    if (!endpoint || endpoint.userId !== userId || endpoint.status === "DELETED") {
+    if (!endpoint || !matchesEndpointScope(endpoint, scope) || endpoint.status === "DELETED") {
       return { kind: "ENDPOINT_NOT_FOUND" };
     }
 
@@ -463,11 +471,11 @@ export class WebhooksService {
     };
   }
 
-  private async loadActiveEndpointWithPrisma(userId: string, endpointId: string): Promise<EndpointRecord | undefined> {
+  private async loadActiveEndpointWithPrisma(scope: WebhookScope, endpointId: string): Promise<EndpointRecord | undefined> {
     const row = await this.prisma.webhookEndpoint.findFirst({
       where: {
         endpointId,
-        userId,
+        ...(scope.scopeType === "TENANT" ? { tenantId: scope.scopeId } : { userId: scope.scopeId }),
         status: { not: "DELETED" }
       }
     });
@@ -493,6 +501,7 @@ export class WebhooksService {
         deliveryId: draft.deliveryId,
         eventId: draft.eventId,
         userId: endpoint.userId,
+        tenantId: endpoint.tenantId,
         endpointId: endpoint.endpointId,
         eventType,
         status: draft.status,
@@ -518,6 +527,7 @@ export class WebhooksService {
     const record: DeliveryRecord = {
       deliveryId: draft.deliveryId,
       userId: endpoint.userId,
+      tenantId: endpoint.tenantId,
       endpointId: endpoint.endpointId,
       eventId: draft.eventId,
       eventType,
@@ -614,6 +624,7 @@ export class WebhooksService {
     return {
       endpointId: record.endpointId,
       userId: record.userId,
+      tenantId: record.tenantId,
       name: record.name,
       url: record.url,
       status: normalizeEndpointStatus(record.status),
@@ -632,6 +643,7 @@ export class WebhooksService {
     return {
       deliveryId: record.deliveryId,
       userId: record.userId,
+      tenantId: record.tenantId,
       endpointId: record.endpointId,
       eventId: record.eventId,
       eventType: record.eventType,
@@ -761,6 +773,46 @@ export class WebhooksService {
       }
     }
   }
+}
+
+function resolveTenantId(userId: string, tenantIdRaw: string | undefined) {
+  const normalized = (tenantIdRaw || "").trim();
+  if (normalized.length > 0) {
+    return normalized;
+  }
+  return userId;
+}
+
+function toUserScope(userId: string): WebhookScope {
+  return {
+    scopeType: "USER",
+    scopeId: userId
+  };
+}
+
+function toDeliveryScopeWhere(scope: WebhookScope): Prisma.WebhookDeliveryWhereInput {
+  if (scope.scopeType === "TENANT") {
+    return {
+      tenantId: scope.scopeId
+    };
+  }
+  return {
+    userId: scope.scopeId
+  };
+}
+
+function matchesDeliveryScope(record: DeliveryRecord, scope: WebhookScope) {
+  if (scope.scopeType === "TENANT") {
+    return record.tenantId === scope.scopeId;
+  }
+  return record.userId === scope.scopeId;
+}
+
+function matchesEndpointScope(record: EndpointRecord, scope: WebhookScope) {
+  if (scope.scopeType === "TENANT") {
+    return record.tenantId === scope.scopeId;
+  }
+  return record.userId === scope.scopeId;
 }
 
 function normalizeEvents(value: unknown): string[] {

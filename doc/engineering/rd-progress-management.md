@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.14 | 2026-02-22 | 新增 BE-008 租户模型落地（`tenantId` 持久化 + 管理端真实租户级过滤）与契约回归证据 |
 | v1.13 | 2026-02-22 | 新增 FE-008 Webhook 运维“显式上下文驱动”改造（`scopeType/scopeId` 必填）与契约回归证据 |
 | v1.12 | 2026-02-22 | 新增 FE-008 Webhook 运维链路切换到 `/admin/webhooks/*`，补齐后台 RBAC 与契约回归证据 |
 | v1.11 | 2026-02-22 | 新增 `.env` 注入落地脚本（shared/staging/prod）并完成本地文件生成 |
@@ -118,7 +119,7 @@
 | FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | In Review | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 结果查询、预览/复制下载地址、过期提示已联调 |
 | FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | Backlog | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 未开始 |
 | FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | In Review | FR-010/FR-011 | `/v1/account/delete-request*`, `/v1/account/audit-logs`, `DELETE /v1/assets/{assetId}`, `DELETE /v1/tasks/{taskId}` | e2e | 删除申请创建、list/detail、审计日志查询已联调；编辑/任务页删除入口已补齐并新增二次确认与成功提示 |
-| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Review | FR-012 | `/admin/*` | e2e/smoke | `/admin/tasks`、`/admin/plans`、`/admin/webhooks/deliveries*` 已打通；Webhook 运维已改为显式上下文（用户/租户）驱动并去除默认用户；待补 e2e 后可进 QA |
+| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Review | FR-012 | `/admin/*` | e2e/smoke | `/admin/tasks`、`/admin/plans`、`/admin/webhooks/deliveries*` 已打通；Webhook 运维已改为显式上下文（用户/租户）驱动且 `tenant` 已切换为真实数据层过滤；待补 e2e 后可进 QA |
 
 ### 7.5 后端研发任务（API + Worker + Billing）
 
@@ -131,7 +132,7 @@
 | BE-005 | 结果交付 | `GET /v1/tasks/{taskId}/result` + 结果 TTL | 后端 | 2026-03-09 | 2026-03-15 | In Review | FR-007 | integration | 契约测试已通过（含结果可用路径） | 结果链接按策略失效 |
 | BE-006 | 失败恢复 | retry/cancel 语义与并发互斥 | 后端 | 2026-03-09 | 2026-03-16 | In Review | FR-005/FR-006 | unit/contract | 动作幂等与冲突路径契约测试已通过 | 重试与取消冲突可控 |
 | BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | In Review | FR-008 | integration/contract | 已补齐本地订阅确认（mock-confirm）+ 任务创建配额门禁（40302）+ 净额扣减口径；真实支付回调/退款回滚待补齐 | 订阅、配额与对账基线可联调 |
-| BE-008 | 通知回调 | webhook endpoint 管理/投递/重试/手动重放 | 后端 | 2026-03-24 | 2026-04-10 | In Progress | FR-009 | integration/contract | 已落地 endpoint 管理 + test/retry + HMAC-SHA256 签名头，并接入 dispatcher（outbox 轮询、签名出站、delivery 持久化、指标告警）；本地外部验签联调已通过，待 shared/staging 云端验收 | DEAD 信队列可运维回放 |
+| BE-008 | 通知回调 | webhook endpoint 管理/投递/重试/手动重放 | 后端 | 2026-03-24 | 2026-04-10 | In Progress | FR-009 | integration/contract | 已落地 endpoint 管理 + test/retry + HMAC-SHA256 签名头，并接入 dispatcher（outbox 轮询、签名出站、delivery 持久化、指标告警）；新增 `tenantId` 持久化与管理端租户级过滤，待 shared/staging 云端验收 | DEAD 信队列可运维回放 |
 | BE-009 | 合规治理 | 素材/任务/账户删除与审计日志链路 | 后端 | 2026-03-30 | 2026-04-12 | In Review | FR-010/FR-011 | integration/e2e | 已补齐删除申请状态查询（list/detail）、执行态流转（PENDING->PROCESSING->DONE/FAILED）、审计查询与 180 天保留清理脚本；本地 Prisma 证据完成，待 shared/staging 云端验收 | 删除 SLA <= 24h（`eta + finishedAt` 可追踪） |
 
 ### 7.6 联调对接任务（FE/BE/QA/OPS）
@@ -173,6 +174,7 @@
 | API 网关单元测试 | `pnpm --filter @apps/api-gateway test:unit` | `2 passed / 0 failed` | `BE-003/BE-004`（事务创建与乐观锁）核心规则可回归 |
 | Prisma 客户端生成校验（本轮） | `pnpm --filter @apps/api-gateway prisma:generate` | `passed` | Prisma schema 与客户端代码生成可用，支持后续 shared DB 联调 |
 | 本地 PostgreSQL 迁移部署验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma` | `passed（应用 20260222030000_add_webhook_tables）` | webhook 持久化表（`webhook_endpoints/webhook_deliveries`）已在本地 PostgreSQL 生效 |
+| Webhook `tenantId` 迁移部署验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma` | `passed（应用 20260222153000_add_webhook_tenant_scope）` | 已完成 `webhook_endpoints/webhook_deliveries` 的 `tenant_id` 回填与非空约束落地 |
 | 账务对账迁移部署验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma` | `passed（应用 20260222013500_add_billing_reconciliation_tables）` | 对账基础表（monthly/checkpoints/runs）已在本地 PostgreSQL 生效 |
 | 套餐种子数据初始化验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway prisma:seed:plans` | `passed（seeded plans=3）` | Free/Pro 月付/年付种子可幂等写入 |
 | 去重索引校验（DATA-003，本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway test:data-dedupe-index` | `passed` | `idempotency_keys/outbox_events/usage_ledger` 去重约束存在且二次写入可被稳定拦截 |
@@ -205,6 +207,7 @@
 | FE-007 本地 smoke 矩阵（dev-local，本轮） | `SMOKE_MATRIX_TARGETS=dev=http://127.0.0.1:3000 SHARED_SMOKE_MAX_POLL_ATTEMPTS=80 SHARED_SMOKE_POLL_INTERVAL_MS=300 pnpm --filter @apps/api-gateway test:shared-smoke:matrix` | `passed（dev=passed）` | 报告文件：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/.runtime/reports/shared-smoke-matrix-2026-02-21T19-59-34-171Z.md` |
 | FE-008 管理端真实数据流验证（本轮） | `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed` | 已验证管理端任务检索/异常重放、套餐查询、Webhook 投递查询/重试页面可构建并通过类型检查 |
 | FE-008 `/admin/*` 契约与后台写入验证（本轮） | `pnpm --filter @apps/api-gateway typecheck` + `pnpm --filter @apps/api-gateway test:contract` + `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed（contract 28/28）` | 已验证 `/admin/tasks`（检索+重放）、`/admin/plans`（检索+新增+编辑）与 `/admin/webhooks/deliveries*`（查询+重试）RBAC、错误码、显式上下文（`scopeType/scopeId`）与页面接入闭环 |
+| BE-008 租户级过滤契约回归（本轮） | `pnpm --filter @apps/api-gateway typecheck` + `pnpm --filter @apps/api-gateway test:contract` | `passed（contract 29/29）` | 新增 `scopeType=tenant` 场景：同租户跨用户可查/可重试，跨租户访问返回 `40401` |
 | `/admin/*` 密钥安全门禁验证（本轮） | `pnpm --filter @apps/api-gateway exec tsx -e \"...assertAdminRbacConfig...\"`（`APP_ENV=staging` 且未设置 `ADMIN_RBAC_SECRET`） | `passed（blocked）` | 已验证受保护环境会拒绝默认/缺失密钥配置，避免 `admin123` 漏入 shared/staging/prod |
 | FE-008 服务端 admin 代理验证（本轮） | `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed` | 已新增 `pages/api/admin/[...path]` 代理并将浏览器侧 `/admin/*` 调用改为服务端注入 `X-Admin-Secret` |
 | `.env` 注入脚本验证（本轮） | `scripts/setup-admin-env.sh --dry-run` + `scripts/setup-admin-env.sh` | `passed` | 已生成 `apps/api-gateway` 与 `apps/admin-console` 的 `shared/staging/prod` 本地 `.env` 文件（权限 `600`），且被 `.gitignore` 忽略 |
@@ -2323,3 +2326,52 @@
   - 回滚：回退 scope 必填改造，恢复 `u_1001` 默认（不建议）。
 - 下一步：
   - 在 FE-008 smoke 中补“上下文为空阻断 + 上下文切换查询/重试”证据后推进 QA。
+
+## 61. 本次执行回填（BE-008 租户模型落地：tenantId 持久化 + 真实租户级过滤）
+
+- 任务编号：`DEV-20260222-BE008-TENANT-SCOPE`
+- 需求映射：`FR-009`、`FR-012`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 负责人：后端
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：无（云端 shared/staging 验收按发布前门禁执行）
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/schema.prisma`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/migrations/20260222153000_add_webhook_tenant_scope/migration.sql`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/webhooks/webhooks.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/webhooks/webhooks.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/admin/admin.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/contract.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/webhook-dispatcher/src/dispatcher.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/webhook-dispatcher/src/smoke.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/webhook-dispatcher/src/int007-local.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - Prisma 模型新增 `webhook_endpoints.tenant_id` 与 `webhook_deliveries.tenant_id`，并补齐索引。
+  - 新增迁移 `20260222153000_add_webhook_tenant_scope`：历史数据按 `user_id`/endpoint 归属回填后置为 `NOT NULL`。
+  - `webhooks.service` 引入统一 `WebhookScope(USER|TENANT)`，查询与重试在 Prisma/内存分支均按真实 `tenantId` 过滤。
+  - 管理端 `/admin/webhooks/*` 的 `scopeType=tenant` 从“等价口径”切换为“真实租户字段口径”。
+  - `webhook-dispatcher` 出站投递持久化同步写入 `tenantId`，确保派发链路与 API 查询语义一致。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway prisma:generate`：通过
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`29/29`）
+  - `pnpm --filter @apps/webhook-dispatcher typecheck`：通过
+  - `pnpm --filter @apps/webhook-dispatcher test:unit`：通过（`3/3`）
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma`：通过（应用 `20260222153000_add_webhook_tenant_scope`）
+- 联调结果：
+  - 本地地址口径下，已完成“同租户跨用户可观测/可重试，跨租户隔离”的管理端联调闭环。
+- 遗留问题：
+  - `shared/staging` 云端地址切换后，需复用同一套契约与 smoke 脚本补齐最终发布前证据。
+- 风险与回滚：
+  - 风险：若历史数据回填异常，可能导致租户查询漏数。
+  - 回滚：回退迁移与 service scope 逻辑到 `userId` 单维模型（仅用于紧急回退，不建议长期保留）。
+- 下一步：
+  - 按计划继续 FE-008 e2e/smoke 与 shared/staging 发布前验收项收尾。
