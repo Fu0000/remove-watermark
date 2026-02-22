@@ -272,6 +272,7 @@
 ### 14.3 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.6 | 2026-02-22 | 增加 FE-008 管理端独立矩阵命令 `test:fe008-admin-smoke:matrix`，用于多环境本地映射验收 |
 | v1.5 | 2026-02-21 | 增加持久化任务提交前附加门禁（Prisma 生成/迁移校验）并补充提交闭环最佳实践 |
 | v1.4 | 2026-02-21 | 增加联调任务基线命令 `test:shared-smoke:matrix`（多环境 smoke） |
 | v1.3 | 2026-02-21 | 新增优化项“提前执行”同步回填规则（执行时机/状态/日期/任务关联） |
@@ -305,6 +306,7 @@ pnpm -r lint
 pnpm --filter @apps/api-gateway test:contract
 pnpm --filter @apps/api-gateway prisma:generate
 pnpm --filter @apps/api-gateway test:shared-smoke:matrix
+pnpm --filter @apps/api-gateway test:fe008-admin-smoke:matrix
 
 # 2) 检查变更范围
 git status --short

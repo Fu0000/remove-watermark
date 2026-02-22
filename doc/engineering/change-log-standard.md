@@ -1,4 +1,4 @@
-# 变更日志规范（v1.54）
+# 变更日志规范（v1.55）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.55 | 2026-02-22 | 新增 FE-008 管理端独立 smoke 矩阵脚本与多目标本地映射验收能力 |
 | v1.54 | 2026-02-22 | 修复 shared-smoke `PREPROCESSING` 卡点：补齐 `task.masked` 事件触发与 Worker `WAIT_MASK` 跟进队列去重 |
 | v1.53 | 2026-02-22 | 新增 FE-008 管理端 Webhook 独立 smoke（本地）与联调证据 |
 | v1.52 | 2026-02-22 | 新增 BE-008 租户模型落地（`tenantId` 持久化 + 管理端真实租户级过滤）与回归证据 |
@@ -108,6 +109,32 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.50] - 2026-02-22
+
+### Added
+- 新增脚本：`apps/api-gateway/scripts/fe008-admin-smoke-matrix.ts`
+  - 支持 FE-008 管理端独立 smoke 的多目标批量执行（`dev/shared/staging`）。
+  - 支持 `FE008_MATRIX_TARGETS` 自定义目标集（格式 `name=url`）。
+  - 支持生成 Markdown 报告：`apps/api-gateway/.runtime/reports/fe008-admin-smoke-matrix-*.md`。
+- `apps/api-gateway/package.json` 新增命令：`test:fe008-admin-smoke:matrix`。
+
+### Changed
+- `AGENTS.md` 命令基线新增 `pnpm --filter @apps/api-gateway test:fe008-admin-smoke:matrix`，纳入提交前验证建议。
+- `doc/engineering/rd-progress-management.md` 新增第 64 节执行回填与矩阵验收证据。
+
+### Fixed
+- 修复 FE-008 验收仅依赖单目标 smoke 的复用性不足问题，降低 shared/staging 切换时的人工重复操作成本。
+
+### Security
+- 矩阵执行仍沿用 `/admin/*` 密钥与显式上下文约束，不引入新的鉴权放宽路径。
+
+### Rollback
+- 回退 `fe008-admin-smoke-matrix.ts` 与 `test:fe008-admin-smoke:matrix` 命令，恢复单目标验收流程。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`、`/Users/codelei/Documents/ai-project/remove-watermark/AGENTS.md`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.49] - 2026-02-22
 

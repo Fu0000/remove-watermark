@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.17 | 2026-02-22 | 新增 FE-008 管理端独立 smoke 矩阵脚本与本地 `dev/shared/staging` 映射验收能力 |
 | v1.16 | 2026-02-22 | 修复 shared-smoke `PREPROCESSING` 卡点：补齐 `task.masked` 事件触发并收敛 Worker `WAIT_MASK` 跟进队列策略 |
 | v1.15 | 2026-02-22 | 新增 FE-008 管理端 Webhook 独立 smoke（本地）与上下文/租户过滤验收证据 |
 | v1.14 | 2026-02-22 | 新增 BE-008 租户模型落地（`tenantId` 持久化 + 管理端真实租户级过滤）与契约回归证据 |
@@ -213,6 +214,7 @@
 | `/admin/*` 密钥安全门禁验证（本轮） | `pnpm --filter @apps/api-gateway exec tsx -e \"...assertAdminRbacConfig...\"`（`APP_ENV=staging` 且未设置 `ADMIN_RBAC_SECRET`） | `passed（blocked）` | 已验证受保护环境会拒绝默认/缺失密钥配置，避免 `admin123` 漏入 shared/staging/prod |
 | FE-008 服务端 admin 代理验证（本轮） | `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed` | 已新增 `pages/api/admin/[...path]` 代理并将浏览器侧 `/admin/*` 调用改为服务端注入 `X-Admin-Secret` |
 | FE-008 管理端 Webhook 独立 smoke（本轮，本地） | `pnpm --filter @apps/api-gateway test:fe008-admin-smoke` | `passed` | 已覆盖 `scopeType/scopeId` 缺失拦截（`40001`）、tenant 查询隔离、tenant 重试成功与跨租户重试 `40401` |
+| FE-008 管理端 Webhook 独立 smoke 矩阵（本轮，dev/shared/staging-local） | `FE008_MATRIX_TARGETS=dev=http://127.0.0.1:3000,shared=http://127.0.0.1:3000,staging=http://127.0.0.1:3000 pnpm --filter @apps/api-gateway test:fe008-admin-smoke:matrix` | `passed（dev/shared/staging=passed）` | 已支持一键矩阵验收与 Markdown 报告输出，云端地址就绪后可直接替换目标 URL 复用 |
 | `.env` 注入脚本验证（本轮） | `scripts/setup-admin-env.sh --dry-run` + `scripts/setup-admin-env.sh` | `passed` | 已生成 `apps/api-gateway` 与 `apps/admin-console` 的 `shared/staging/prod` 本地 `.env` 文件（权限 `600`），且被 `.gitignore` 忽略 |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
@@ -2460,3 +2462,45 @@
   - 回滚：回退 `task.masked` 事件触发与固定 followup `jobId` 逻辑，恢复到前一版队列策略（不建议）。
 - 下一步：
   - 继续按计划推进 FE-008 e2e 验收，并在云端地址就绪后补齐 shared/staging smoke 证据。
+
+## 64. 本次执行回填（FE-008 管理端独立 smoke 矩阵接入）
+
+- 任务编号：`DEV-20260222-FE008-SMOKE-MATRIX`
+- 需求映射：`FR-012`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+- 负责人：后端 + 前端（后台）
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：无（云端地址按阶段后置）
+- 风险等级：低
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/scripts/fe008-admin-smoke-matrix.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/AGENTS.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增 `fe008-admin-smoke-matrix` 脚本，支持按 `dev/shared/staging` 批量执行 FE-008 管理端 Webhook 独立 smoke。
+  - 默认目标：
+    - `dev=DEV_BASE_URL|LOCAL_BASE_URL|http://127.0.0.1:3000`
+    - 可选 `shared=SHARED_BASE_URL`
+    - 可选 `staging=STAGING_BASE_URL`
+  - 支持 `FE008_MATRIX_TARGETS`（或兼容 `SMOKE_MATRIX_TARGETS`）自定义目标集，格式 `name=url`。
+  - 生成矩阵报告到 `apps/api-gateway/.runtime/reports/fe008-admin-smoke-matrix-*.md`，可作为联调证据归档。
+  - `AGENTS.md` 命令基线新增 `test:fe008-admin-smoke:matrix`，纳入提测前闭环建议。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`29/29`）
+  - `FE008_MATRIX_TARGETS=dev=http://127.0.0.1:3000,shared=http://127.0.0.1:3000,staging=http://127.0.0.1:3000 pnpm --filter @apps/api-gateway test:fe008-admin-smoke:matrix`：通过（`dev/shared/staging=passed`）
+- 联调结果：
+  - 本地地址口径下，FE-008 管理端独立 smoke 已具备多目标一次执行能力，可直接作为 shared/staging 云端切换后的复用入口。
+- 遗留问题：
+  - 当前 shared/staging 仍为本地映射地址，云端证据需在地址切换后补录。
+- 风险与回滚：
+  - 风险：若环境变量误配置，矩阵报告可能出现“目标可达但地址错误”的假阳性。
+  - 回滚：回退新增矩阵脚本与命令，恢复单目标 `test:fe008-admin-smoke` 执行方式。
+- 下一步：
+  - 继续推进 FE-008 e2e 最小回归脚本，并在云端地址可用后复跑矩阵补齐发布前门禁证据。
