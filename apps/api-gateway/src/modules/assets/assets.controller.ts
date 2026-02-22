@@ -7,7 +7,7 @@ import { ComplianceService } from "../compliance/compliance.service";
 interface UploadPolicyRequest {
   fileName: string;
   fileSize: number;
-  mediaType: "image" | "video";
+  mediaType: "image" | "video" | "pdf" | "ppt";
   mimeType: string;
   sha256?: string;
 }
@@ -28,6 +28,10 @@ export class AssetsController {
 
     if (!body.fileName || !body.fileSize || body.fileSize <= 0) {
       badRequest(40001, "参数非法", requestIdHeader);
+    }
+
+    if (!isSupportedMime(body.mediaType, body.mimeType)) {
+      badRequest(40001, "不支持的媒体类型或 MIME", requestIdHeader);
     }
 
     const payload = await this.complianceService.createUploadPolicy("u_1001", body, {
@@ -77,4 +81,19 @@ function parseForwardedIp(forwardedFor: string | undefined): string | undefined 
 
   const first = forwardedFor.split(",")[0]?.trim();
   return first && first.length > 0 ? first : undefined;
+}
+
+const MEDIA_MIME_ALLOWLIST: Record<UploadPolicyRequest["mediaType"], string[]> = {
+  image: ["image/png", "image/jpeg", "image/jpg", "image/webp"],
+  video: ["video/mp4", "video/quicktime", "video/webm"],
+  pdf: ["application/pdf"],
+  ppt: [
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ]
+};
+
+function isSupportedMime(mediaType: UploadPolicyRequest["mediaType"], mimeType: string) {
+  const list = MEDIA_MIME_ALLOWLIST[mediaType] || [];
+  return list.includes(mimeType.toLowerCase());
 }

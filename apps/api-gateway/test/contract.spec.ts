@@ -54,7 +54,8 @@ test("GET /v1/system/capabilities should return defaults", async () => {
   const body = response.json();
   assert.equal(body.code, 0);
   assert.equal(body.requestId, "req_contract_1");
-  assert.equal(body.data.defaults.imagePolicy, "FAST");
+  assert.equal(body.data.defaults.taskPolicy, "FAST");
+  assert.equal(Array.isArray(body.data.riskFlags), true);
 
   await app.close();
 });
@@ -729,6 +730,31 @@ test("POST /v1/tasks should be idempotent for same key and payload", async () =>
   await app.close();
 });
 
+test("POST /v1/tasks should accept PDF media type", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const create = await server.inject({
+    method: "POST",
+    url: "/v1/tasks",
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_pdf_create",
+      "content-type": "application/json"
+    },
+    payload: {
+      assetId: "ast_pdf_1001",
+      mediaType: "PDF",
+      taskPolicy: "FAST"
+    }
+  });
+
+  assert.equal(create.statusCode, 200);
+  assert.equal(create.json().data.input.mediaType, "PDF");
+
+  await app.close();
+});
+
 test("tasks list/detail/cancel should work with authorization", async () => {
   const app = await setup();
   const server = app.getHttpAdapter().getInstance();
@@ -934,6 +960,47 @@ test("POST /v1/assets/upload-policy should return signed payload envelope", asyn
   assert.equal(body.code, 0);
   assert.equal(typeof body.data.assetId, "string");
   assert.equal(typeof body.data.expireAt, "string");
+
+  await app.close();
+});
+
+test("POST /v1/assets/upload-policy should support PDF and reject invalid mime", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const pdfUpload = await server.inject({
+    method: "POST",
+    url: "/v1/assets/upload-policy",
+    headers: {
+      authorization: "Bearer test-token",
+      "content-type": "application/json"
+    },
+    payload: {
+      fileName: "demo.pdf",
+      fileSize: 2048,
+      mediaType: "pdf",
+      mimeType: "application/pdf"
+    }
+  });
+  assert.equal(pdfUpload.statusCode, 201);
+  assert.equal(pdfUpload.json().code, 0);
+
+  const invalid = await server.inject({
+    method: "POST",
+    url: "/v1/assets/upload-policy",
+    headers: {
+      authorization: "Bearer test-token",
+      "content-type": "application/json"
+    },
+    payload: {
+      fileName: "bad.pdf",
+      fileSize: 2048,
+      mediaType: "pdf",
+      mimeType: "image/png"
+    }
+  });
+  assert.equal(invalid.statusCode, 400);
+  assert.equal(invalid.json().code, 40001);
 
   await app.close();
 });
@@ -1259,6 +1326,82 @@ test("POST /v1/tasks/{taskId}/mask should update version", async () => {
   await app.close();
 });
 
+test("POST /v1/tasks/{taskId}/regions should update version and unblock waiting state", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const create = await server.inject({
+    method: "POST",
+    url: "/v1/tasks",
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_regions_create",
+      "content-type": "application/json"
+    },
+    payload: {
+      assetId: "ast_regions_1001",
+      mediaType: "PDF",
+      taskPolicy: "FAST"
+    }
+  });
+  assert.equal(create.statusCode, 200);
+  const taskId = create.json().data.taskId as string;
+
+  let waited = false;
+  for (let index = 0; index < 6; index += 1) {
+    const detailBefore = await server.inject({
+      method: "GET",
+      url: `/v1/tasks/${taskId}`,
+      headers: {
+        authorization: "Bearer test-token"
+      }
+    });
+    assert.equal(detailBefore.statusCode, 200);
+    if (detailBefore.json().data.waitReason === "WAITING_REGIONS") {
+      waited = true;
+      break;
+    }
+  }
+  assert.equal(waited, true);
+
+  const upsert = await server.inject({
+    method: "POST",
+    url: `/v1/tasks/${taskId}/regions`,
+    headers: {
+      authorization: "Bearer test-token",
+      "idempotency-key": "idem_contract_regions_1",
+      "content-type": "application/json"
+    },
+    payload: {
+      version: 0,
+      mediaType: "PDF",
+      schemaVersion: "gemini-box-2d/v1",
+      regions: [
+        {
+          pageIndex: 0,
+          box_2d: [100, 120, 200, 260]
+        }
+      ]
+    }
+  });
+
+  assert.equal(upsert.statusCode, 200);
+  assert.equal(typeof upsert.json().data.regionId, "string");
+  assert.equal(upsert.json().data.version, 1);
+
+  const detailAfter = await server.inject({
+    method: "GET",
+    url: `/v1/tasks/${taskId}`,
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(detailAfter.statusCode, 200);
+  assert.equal(detailAfter.json().data.waitReason, undefined);
+
+  await app.close();
+});
+
 test("GET /v1/tasks/{taskId}/result should return url after processing", async () => {
   const app = await setup();
   const server = app.getHttpAdapter().getInstance();
@@ -1335,6 +1478,7 @@ test("GET /v1/tasks/{taskId}/result should return url after processing", async (
   assert.equal(result.statusCode, 200);
   assert.equal(typeof result.json().data.resultUrl, "string");
   assert.equal(typeof result.json().data.expireAt, "string");
+  assert.equal(Array.isArray(result.json().data.artifacts), true);
 
   await app.close();
 });

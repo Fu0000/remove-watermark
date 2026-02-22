@@ -57,6 +57,9 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.26 | 2026-02-22 | 新增 ProPainter + LaMa 多媒体后端落地回填（`regions` 接口、`task_regions/result_json`、`inference-gateway`、`IMAGE/VIDEO/PDF/PPT` 编排闭环） |
+| v1.25 | 2026-02-22 | 新增用户端自动化全流程体验回填，沉淀操作优化项 `OPT-FE-003/004/005` |
+| v1.24 | 2026-02-22 | 新增 user-frontend H5 空白页修复（补齐 index.html 模板 + 浏览器环境变量兼容）与人工测试交接 |
 | v1.23 | 2026-02-22 | 新增 FE-008 管理端简约化视觉重构（布局/主题/页面头部）与人工测试交接证据 |
 | v1.22 | 2026-02-22 | 新增 shared 本地双进程一键验收脚本（reset + api + worker + smoke）并形成 INT-006 收尾证据 |
 | v1.21 | 2026-02-22 | 新增 INT-006 本地配额脏数据清理脚本与 Prisma 双进程 shared 全量 smoke 复验证据 |
@@ -2853,3 +2856,161 @@
 - 下一步：
   - 执行人工测试（总览、任务、套餐、Webhook、风险、审计六页）并回填结果。
   - 人工测试通过后，复跑 FE-008 分层验收命令并将状态推进到 `QA`。
+
+## 72. 本次执行回填（FE-006 用户端 H5 空白页修复）
+
+- 任务编号：`DEV-20260222-FE006-H5-BLANK-PAGE-FIX`
+- 需求映射：`FR-001`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/prd.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/frontend-framework.md`
+- 负责人：前端（用户端）
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：低
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/config/index.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/index.html`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/config/runtime.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/utils/platform.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/modules/common/page-shell.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/modules/common/page-shell.scss`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/pages/result/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/pages/home/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/pages/home/index.scss`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/app.scss`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 补齐 `user-frontend` H5 入口模板 `src/index.html`，恢复 webpack-dev-server 首页可访问能力。
+  - 修复浏览器运行时直接访问 `process.env` 导致的 `process is not defined` 白屏问题。
+  - 修复 `designWidth=375` 且 `deviceRatio` 缺失 `375` 映射导致的 `rpx -> rem` 产物 `NaNrem` 问题。
+  - 增强首页与公共壳层样式（卡片层级、信息块、按钮视觉与基础排版）。
+  - 将结果页 H5 分支判断改为复用平台工具函数，避免再次出现浏览器端 Node 全局对象依赖。
+- 测试证据：
+  - `pnpm --filter @apps/user-frontend typecheck`：通过
+  - `pnpm --filter @apps/user-frontend build:h5`：通过（存在体积告警，不阻塞）
+  - 浏览器自动化验证（Playwright）：
+    - 打开 `http://127.0.0.1:10086/` 无 `pageerror`
+    - 页面文本正常渲染（首页、任务、我的等内容可见）
+    - 样式修复后截图：`/tmp/user-h5-after-style-upgrade.png`
+- 联调结果：
+  - 用户端 H5 首页已恢复渲染，且样式值不再出现 `NaNrem`，可进入人工功能验证。
+- 遗留问题：
+  - `build:h5` 存在 bundle 体积告警（`js/app.js`、`chunk/269.js`），建议后续优化拆包。
+- 风险与回滚：
+  - 风险：仅涉及前端运行时入口与环境变量读取，影响面集中在 H5 启动路径。
+  - 回滚：回退本节列出的 `apps/user-frontend` 文件改动。
+- 下一步：
+  - 你执行用户端人工测试（首页/编辑/任务/结果/订阅/账户）并回填问题清单。
+
+## 73. 本次执行回填（用户端自动化全流程体验与操作优化沉淀）
+
+- 任务编号：`DEV-20260222-FE-USER-FLOW-AUDIT`
+- 需求映射：`FR-002/FR-003/FR-005/FR-007/FR-008/FR-010`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/prd.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/fe-be-integration-workflow.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+- 负责人：前端（用户端）
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 通过自动化脚本完成用户端全链路体验：`首页登录 -> 上传编辑 -> 任务中心 -> 账户隐私 -> 套餐订阅 -> 结果页`。
+  - 形成自动化执行报告：`/tmp/user-flow-audit/report.json`。
+  - 形成全过程截图证据：`/tmp/user-flow-audit/01-home.png` 至 `/tmp/user-flow-audit/10-result.png`。
+  - 根据自动化实测阻塞点与操作冗余，新增并回填优化项：
+    - `OPT-FE-003`：编辑页输入兼容与步骤 2 自动跳转稳定性（MVP 内，P0）。
+    - `OPT-FE-004`：任务/结果页状态反馈与动作可用性引导（MVP 内，P1）。
+    - `OPT-FE-005`：订阅页 checkout 后自动回填 `orderId`，减少手工中转（MVP 后，P2）。
+- 测试证据：
+  - 自动化执行：基于 Playwright 临时脚本完成用户链路全流程操作回放（登录、上传编辑、任务、账户、订阅、结果）。
+  - 自动化结果：`/tmp/user-flow-audit/report.json`（`24` 步中 `23` 步通过，`1` 步失败为 `editor->tasks:auto-jump`）。
+  - 关键链路截图：
+    - `/tmp/user-flow-audit/02-editor-initial.png`
+    - `/tmp/user-flow-audit/05-tasks.png`
+    - `/tmp/user-flow-audit/07-account-delete-submitted.png`
+    - `/tmp/user-flow-audit/09-subscription-actions.png`
+    - `/tmp/user-flow-audit/10-result.png`
+- 联调结果：
+  - 前后端接口链路已可达：登录、上传策略、任务创建、删除申请、订阅 checkout/mock-confirm、结果查询均可执行。
+  - 发现操作链路体验问题：编辑页步骤 2 未自动进入任务中心（对应 `OPT-FE-003`）。
+- 遗留问题：
+  - `OPT-FE-003`、`OPT-FE-004`、`OPT-FE-005` 已入台账，待按优先级排期实施。
+- 风险与回滚：
+  - 风险：若不优先处理 `OPT-FE-003`，上传编辑链路在桌面 H5 场景仍可能造成“提交后无反馈/未跳转”体验风险。
+  - 回滚：本轮为文档回填，不涉及业务代码回滚。
+- 下一步：
+  - 先执行 `OPT-FE-003`（编辑页事件兼容 + 步骤 2 成功强制跳转），完成后复跑同一自动化链路。
+  - 再执行 `OPT-FE-004`（任务/结果状态引导）并补充人工可用性验证结论。
+
+## 74. 本次执行回填（V1.1 提前落地：ProPainter + LaMa 多媒体后端编排闭环）
+
+- 任务编号：`DEV-20260222-BE-MULTI-MEDIA-V11`
+- 需求映射：`FR-002/FR-003/FR-005/FR-006/FR-007`、`NFR-001/NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/prd.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/project-constraints.md`
+- 负责人：后端
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：无（生产 GPU 资源与模型产线治理后置）
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/packages/contracts/src/task.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/tasks/tasks.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/tasks/tasks.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/assets/assets.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/compliance/compliance.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/system/system.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/schema.prisma`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/prisma/migrations/20260222233000_add_task_regions_and_result_json/migration.sql`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator/src/main.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/inference-gateway/*`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/docker-compose.local-stack.yml`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/prd.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/project-constraints.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/mvp-optimization-backlog.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+- 实施摘要：
+  - 扩展任务媒体类型为 `IMAGE/VIDEO/PDF/PPT`，保持 `/v1` 兼容并保留旧 `mask` 链路。
+  - 新增 `POST /v1/tasks/{taskId}/regions`，支持 Gemini 前端上报多媒体区域；`DETECTING` 阶段无区域时维持等待补框。
+  - 新增 `task_regions` 表与 `tasks.result_json` 字段，承载区域版本与多产物元数据（`artifacts`）。
+  - `GET /v1/tasks/{taskId}/result` 增加 `artifacts[]`，保留 `resultUrl` 兼容旧调用方。
+  - 上传策略扩展到 `image/video/pdf/ppt`，并增加 MIME 白名单校验。
+  - `GET /v1/system/capabilities` 改为环境变量动态配置，不再硬编码能力列表。
+  - `worker-orchestrator` 接入真实执行链路：`PREPROCESSING -> DETECTING -> INPAINTING -> PACKAGING`，并通过 `INFERENCE_GATEWAY_URL` 对接推理网关。
+  - 新增 Python `inference-gateway`（LaMa/ProPainter + 文档转换渲染封装）及单机 GPU `docker-compose` 本地栈。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway prisma:generate`：通过
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/worker-orchestrator typecheck`：通过
+  - `pnpm --filter @apps/worker-orchestrator test:integration`：通过（`6/6`，覆盖 IMAGE/VIDEO/PDF/PPT、等待补框恢复、超时重试语义）
+  - `pnpm --filter @apps/user-frontend typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:unit`：通过（`6/6`）
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`35/35`，覆盖 `regions`、`PDF` 任务创建、`artifacts`、upload-policy MIME 拦截）
+- 联调结果：
+  - 本地契约层面已完成 `IMAGE/VIDEO/PDF/PPT` 任务创建与结果结构扩展闭环，`DETECTING` 补框等待语义与恢复路径可用。
+  - `inference-gateway` 与编排链路已完成接口对接，支持后续接入真实模型与 GPU 产线部署。
+- 遗留问题：
+  - `P95` 性能指标（图片 10s、短视频 3min、10 页文档 2min）需在 GPU 环境做实测验收。
+  - `OPT-ARCH-003`（inference-gateway -> Triton 统一治理）已入优化台账，待 MVP 后执行。
+- 风险与回滚：
+  - 风险：文档转换链路依赖 `libreoffice/poppler` 运行时，环境差异可能导致 `DOC_CONVERT_FAILED` 波动。
+  - 风险：推理网关超时与模型加载失败会放大队列堆积，需要依赖现有 retry/deadletter 策略兜底。
+  - 回滚：关闭 `FEATURE_PDF/FEATURE_PPT/FEATURE_VIDEO` 或回退到仅 `IMAGE/VIDEO` 可用模式；必要时临时回退 `inference-gateway` 调用并恢复模拟推进。
+- 下一步：
+  - 在单机 GPU Compose 环境执行 `shared-smoke-media-matrix`，回填性能与失败可解释率证据。

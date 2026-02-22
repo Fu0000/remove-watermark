@@ -1,20 +1,23 @@
 import { request } from "./http";
+import type { TaskMediaType } from "@packages/contracts";
 
 export interface CreateTaskPayload {
   assetId: string;
-  mediaType: "IMAGE" | "VIDEO";
+  mediaType: TaskMediaType;
   taskPolicy?: "FAST" | "QUALITY" | "LOW_COST";
 }
 
 export interface TaskListItem {
   taskId: string;
   status: string;
-  mediaType: "IMAGE" | "VIDEO";
+  mediaType: TaskMediaType;
   taskPolicy: "FAST" | "QUALITY" | "LOW_COST";
   progress: number;
   errorCode?: string;
   errorMessage?: string;
   resultUrl?: string;
+  waitReason?: "WAITING_REGIONS";
+  artifacts?: Array<{ type: "PDF" | "ZIP" | "VIDEO" | "IMAGE"; url: string; expireAt: string }>;
   createdAt: string;
   updatedAt: string;
 }
@@ -60,11 +63,27 @@ export interface TaskResultPayload {
   status: string;
   resultUrl: string;
   expireAt: string;
+  artifacts?: Array<{ type: "PDF" | "ZIP" | "VIDEO" | "IMAGE"; url: string; expireAt: string }>;
+}
+
+export interface UpsertTaskRegionsPayload {
+  version: number;
+  mediaType: TaskMediaType;
+  schemaVersion: string;
+  regions: Array<Record<string, unknown>>;
 }
 
 export function getTaskResult(taskId: string) {
   return request<TaskResultPayload>(`/v1/tasks/${taskId}/result`, {
     method: "GET"
+  });
+}
+
+export function upsertTaskRegions(taskId: string, payload: UpsertTaskRegionsPayload, idempotencyKey: string) {
+  return request<{ taskId: string; regionId: string; version: number }>(`/v1/tasks/${taskId}/regions`, {
+    method: "POST",
+    idempotencyKey,
+    data: payload
   });
 }
 

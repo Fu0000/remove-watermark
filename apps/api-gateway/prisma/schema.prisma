@@ -19,10 +19,12 @@ model Task {
   errorCode    String?  @map("error_code") @db.VarChar(16)
   errorMessage String?  @map("error_message")
   resultUrl    String?  @map("result_url")
+  resultJson   Json?    @map("result_json")
   createdAt    DateTime @map("created_at")
   updatedAt    DateTime @map("updated_at")
 
   mask TaskMask?
+  regions TaskRegion?
 
   @@index([userId, createdAt(sort: Desc)])
   @@map("tasks")
@@ -39,6 +41,20 @@ model TaskMask {
   task Task @relation(fields: [taskId], references: [taskId], onDelete: Cascade)
 
   @@map("task_masks")
+}
+
+model TaskRegion {
+  taskId        String   @id @map("task_id") @db.VarChar(64)
+  regionId      String   @map("region_id") @db.VarChar(64)
+  mediaType     String   @map("media_type") @db.VarChar(16)
+  schemaVersion String   @map("schema_version") @db.VarChar(32)
+  version       Int
+  regionsJson   Json     @map("regions_json")
+  updatedAt     DateTime @map("updated_at")
+
+  task Task @relation(fields: [taskId], references: [taskId], onDelete: Cascade)
+
+  @@map("task_regions")
 }
 
 model TaskIdempotencyKey {

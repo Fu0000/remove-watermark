@@ -75,7 +75,7 @@
 - 工作区：`pnpm workspace`
 - 用户前端（多端）：`/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend`（Taro + React）
 - 管理端：`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console`（Next.js + Ant Design）
-- 后端服务：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway` + `worker-*` + `billing-service` + `webhook-dispatcher`
+- 后端服务：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway` + `worker-*` + `billing-service` + `webhook-dispatcher` + `/Users/codelei/Documents/ai-project/remove-watermark/apps/inference-gateway`
 - 共享包：`/Users/codelei/Documents/ai-project/remove-watermark/packages/{contracts,shared,observability,eslint-config,tsconfig}`
 
 ### 常用命令
@@ -86,6 +86,8 @@
 - 用户前端小程序开发：`pnpm dev:user:weapp`
 - 管理端开发：`pnpm dev:admin`
 - API 网关开发：`pnpm dev:api`
+- 多媒体冒烟矩阵（image/video/pdf/ppt）：`pnpm --filter @apps/api-gateway test:shared-smoke:media-matrix`
+- 本地一键栈（Postgres/Redis/MinIO/API/Worker/Inference）：`docker compose -f docker-compose.local-stack.yml up`
 
 ## 里程碑（12周）
 
@@ -99,3 +101,4 @@
 
 - `2026-02-19`：完成文档体系重构与规范化，对齐深度调研结论并形成可实施文档闭环。
 - `2026-02-19`：新增 `doc/engineering/*` 工程规范文档集（前台/后台/后端框架与研发流程标准）。
+- `2026-02-22`：新增 `regions` 任务接口、PDF/PPT 媒体类型扩展、`inference-gateway` 服务与本地 compose 联调栈。

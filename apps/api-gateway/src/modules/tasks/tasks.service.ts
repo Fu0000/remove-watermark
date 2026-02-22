@@ -1,21 +1,27 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { Injectable } from "@nestjs/common";
-import type { TaskPolicy, TaskStatus } from "@packages/contracts";
+import type { TaskArtifactType, TaskMediaType, TaskPolicy, TaskStatus } from "@packages/contracts";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../common/prisma.service";
 
 export interface CreateTaskInput {
   assetId: string;
-  mediaType: "IMAGE" | "VIDEO";
+  mediaType: TaskMediaType;
   taskPolicy?: TaskPolicy;
+}
+
+export interface TaskArtifact {
+  type: TaskArtifactType;
+  url: string;
+  expireAt: string;
 }
 
 export interface TaskRecord {
   taskId: string;
   userId: string;
   assetId: string;
-  mediaType: "IMAGE" | "VIDEO";
+  mediaType: TaskMediaType;
   taskPolicy: TaskPolicy;
   status: TaskStatus;
   progress: number;
@@ -23,6 +29,9 @@ export interface TaskRecord {
   errorCode?: string;
   errorMessage?: string;
   resultUrl?: string;
+  resultJson?: {
+    artifacts: TaskArtifact[];
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -62,6 +71,16 @@ interface TaskMaskRecord {
   updatedAt: string;
 }
 
+interface TaskRegionRecord {
+  taskId: string;
+  regionId: string;
+  mediaType: TaskMediaType;
+  schemaVersion: string;
+  version: number;
+  regions: Array<Record<string, unknown>>;
+  updatedAt: string;
+}
+
 interface UsageLedgerRecord {
   ledgerId: string;
   userId: string;
@@ -90,6 +109,13 @@ export interface UpsertMaskInput {
   version: number;
 }
 
+export interface UpsertRegionsInput {
+  version: number;
+  mediaType: TaskMediaType;
+  schemaVersion: string;
+  regions: Array<Record<string, unknown>>;
+}
+
 type TaskActionType = "CANCEL" | "RETRY";
 
 interface TaskActionIdempotencyRecord {
@@ -110,6 +136,9 @@ export interface AdvanceTaskStatusInput {
   expectedVersion: number;
   progress?: number;
   resultUrl?: string;
+  resultJson?: {
+    artifacts: TaskArtifact[];
+  };
 }
 
 export type AdvanceTaskStatusResult =
@@ -125,6 +154,7 @@ interface PersistedTaskState {
   idempotency: Array<[string, IdempotencyRecord]>;
   actionIdempotency: Array<[string, TaskActionIdempotencyRecord]>;
   taskMasks: TaskMaskRecord[];
+  taskRegions: TaskRegionRecord[];
   usageLedgers: UsageLedgerRecord[];
   outboxEvents: OutboxEventRecord[];
 }
@@ -178,6 +208,7 @@ export class TasksService {
   private readonly idempotency = new Map<string, IdempotencyRecord>();
   private readonly actionIdempotency = new Map<string, TaskActionIdempotencyRecord>();
   private readonly taskMasks = new Map<string, TaskMaskRecord>();
+  private readonly taskRegions = new Map<string, TaskRegionRecord>();
   private readonly usageLedgers = new Map<string, UsageLedgerRecord>();
   private readonly outboxEvents = new Map<string, OutboxEventRecord>();
 
@@ -288,7 +319,7 @@ export class TasksService {
     }
 
     if (options.advance !== false) {
-      this.maybeAdvanceForSimulation(taskId);
+      await this.maybeAdvanceForSimulationWithPrisma(taskId);
     }
 
     return this.tasks.get(taskId);
@@ -434,6 +465,95 @@ export class TasksService {
     });
   }
 
+  async upsertRegions(
+    userId: string,
+    taskId: string,
+    input: UpsertRegionsInput
+  ): Promise<{ conflict: false; regionId: string; version: number } | { conflict: true; version: number } | undefined> {
+    if (this.usePrismaStore) {
+      return this.upsertRegionsWithPrisma(userId, taskId, input);
+    }
+
+    const task = this.tasks.get(taskId);
+    if (!task || task.userId !== userId) {
+      return undefined;
+    }
+    if (task.mediaType !== input.mediaType) {
+      return {
+        conflict: true,
+        version: task.version
+      };
+    }
+
+    const currentRegion = this.taskRegions.get(taskId);
+    if (currentRegion && input.version !== currentRegion.version) {
+      return {
+        conflict: true,
+        version: currentRegion.version
+      };
+    }
+
+    return this.runInTransaction(() => {
+      const latestTask = this.tasks.get(taskId);
+      if (!latestTask || latestTask.userId !== userId) {
+        return undefined;
+      }
+
+      const activeRegion = this.taskRegions.get(taskId);
+      const nextVersion = activeRegion ? activeRegion.version + 1 : input.version + 1;
+      const regionId = activeRegion?.regionId || this.buildId("reg");
+      const now = new Date().toISOString();
+
+      this.taskRegions.set(taskId, {
+        taskId,
+        regionId,
+        mediaType: input.mediaType,
+        schemaVersion: input.schemaVersion,
+        version: nextVersion,
+        regions: input.regions,
+        updatedAt: now
+      });
+
+      if (!TERMINAL_STATUS.has(latestTask.status)) {
+        if (latestTask.status === "QUEUED") {
+          const transitionResult = this.transitionTaskUnsafe(taskId, "PREPROCESSING", latestTask.version, {
+            progress: 15
+          });
+
+          if (!transitionResult.ok) {
+            return { conflict: true, version: latestTask.version };
+          }
+        } else {
+          const updateResult = this.updateTaskUnsafe(taskId, latestTask.version, (currentTask) => {
+            currentTask.progress = Math.max(currentTask.progress, 35);
+          });
+
+          if (!updateResult.ok) {
+            return { conflict: true, version: latestTask.version };
+          }
+        }
+
+        this.appendOutboxEventUnsafe(taskId, "task.masked");
+      }
+
+      return {
+        conflict: false,
+        regionId,
+        version: nextVersion
+      };
+    });
+  }
+
+  async isWaitingForRegions(userId: string, taskId: string): Promise<boolean> {
+    const task = await this.getByUser(userId, taskId, { advance: false });
+    if (!task || task.status !== "DETECTING") {
+      return false;
+    }
+
+    const hasInput = await this.hasDetectionInput(taskId, task.mediaType);
+    return !hasInput;
+  }
+
   async advanceTaskStatus(userId: string, taskId: string, input: AdvanceTaskStatusInput): Promise<AdvanceTaskStatusResult> {
     if (this.usePrismaStore) {
       return this.advanceTaskStatusWithPrisma(userId, taskId, input);
@@ -466,6 +586,7 @@ export class TasksService {
       const transitionResult = this.transitionTaskUnsafe(taskId, input.toStatus, input.expectedVersion, {
         progress: input.progress,
         resultUrl: input.resultUrl,
+        resultJson: input.resultJson,
         clearError: input.toStatus === "QUEUED"
       });
 
@@ -528,6 +649,7 @@ export class TasksService {
         idempotencyCount: 0,
         actionIdempotencyCount: 0,
         taskMaskCount: 0,
+        taskRegionCount: 0,
         usageLedgerCount: 0,
         outboxEventCount: 0
       };
@@ -538,6 +660,7 @@ export class TasksService {
       idempotencyCount: this.idempotency.size,
       actionIdempotencyCount: this.actionIdempotency.size,
       taskMaskCount: this.taskMasks.size,
+      taskRegionCount: this.taskRegions.size,
       usageLedgerCount: this.usageLedgers.size,
       outboxEventCount: this.outboxEvents.size
     };
@@ -563,14 +686,20 @@ export class TasksService {
     errorCode: string | null;
     errorMessage: string | null;
     resultUrl: string | null;
+    resultJson: Prisma.JsonValue;
     createdAt: Date;
     updatedAt: Date;
   }): TaskRecord {
+    const parsedResultJson =
+      task.resultJson && typeof task.resultJson === "object"
+        ? (task.resultJson as unknown as TaskRecord["resultJson"])
+        : undefined;
+
     return {
       taskId: task.taskId,
       userId: task.userId,
       assetId: task.assetId,
-      mediaType: task.mediaType as "IMAGE" | "VIDEO",
+      mediaType: task.mediaType as TaskMediaType,
       taskPolicy: task.taskPolicy as TaskPolicy,
       status: task.status as TaskStatus,
       progress: task.progress,
@@ -578,6 +707,7 @@ export class TasksService {
       errorCode: task.errorCode || undefined,
       errorMessage: task.errorMessage || undefined,
       resultUrl: task.resultUrl || undefined,
+      resultJson: parsedResultJson,
       createdAt: task.createdAt.toISOString(),
       updatedAt: task.updatedAt.toISOString()
     };
@@ -750,14 +880,23 @@ export class TasksService {
     taskId: string,
     options: GetTaskOptions = {}
   ): Promise<TaskRecord | undefined> {
-    void options;
     const prisma = this.ensurePrismaService();
-    const task = await prisma.task.findUnique({
+    let task = await prisma.task.findUnique({
       where: { taskId }
     });
 
     if (!task || task.userId !== userId) {
       return undefined;
+    }
+
+    if (options.advance !== false) {
+      await this.maybeAdvanceForSimulationWithPrisma(taskId);
+      task = await prisma.task.findUnique({
+        where: { taskId }
+      });
+      if (!task || task.userId !== userId) {
+        return undefined;
+      }
     }
 
     return this.mapDbTask(task);
@@ -953,6 +1092,103 @@ export class TasksService {
     });
   }
 
+  private async upsertRegionsWithPrisma(
+    userId: string,
+    taskId: string,
+    input: UpsertRegionsInput
+  ): Promise<{ conflict: false; regionId: string; version: number } | { conflict: true; version: number } | undefined> {
+    const prisma = this.ensurePrismaService();
+    const task = await prisma.task.findUnique({
+      where: { taskId }
+    });
+    if (!task || task.userId !== userId) {
+      return undefined;
+    }
+    if (task.mediaType !== input.mediaType) {
+      return {
+        conflict: true,
+        version: task.version
+      };
+    }
+
+    const currentRegion = await prisma.taskRegion.findUnique({
+      where: { taskId }
+    });
+    if (currentRegion && input.version !== currentRegion.version) {
+      return {
+        conflict: true,
+        version: currentRegion.version
+      };
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const latestTask = await tx.task.findUnique({
+        where: { taskId }
+      });
+      if (!latestTask || latestTask.userId !== userId) {
+        return undefined;
+      }
+
+      const activeRegion = await tx.taskRegion.findUnique({
+        where: { taskId }
+      });
+      const nextVersion = activeRegion ? activeRegion.version + 1 : input.version + 1;
+      const regionId = activeRegion?.regionId || this.buildId("reg");
+      const now = new Date();
+
+      await tx.taskRegion.upsert({
+        where: { taskId },
+        create: {
+          taskId,
+          regionId,
+          mediaType: input.mediaType,
+          schemaVersion: input.schemaVersion,
+          version: nextVersion,
+          regionsJson: input.regions as unknown as Prisma.InputJsonValue,
+          updatedAt: now
+        },
+        update: {
+          regionId,
+          mediaType: input.mediaType,
+          schemaVersion: input.schemaVersion,
+          version: nextVersion,
+          regionsJson: input.regions as unknown as Prisma.InputJsonValue,
+          updatedAt: now
+        }
+      });
+
+      if (!TERMINAL_STATUS.has(latestTask.status as TaskStatus)) {
+        if (latestTask.status === "QUEUED") {
+          const transitionResult = await this.transitionTaskWithPrisma(tx, taskId, "PREPROCESSING", latestTask.version, {
+            progress: 15
+          });
+          if (!transitionResult.ok) {
+            return {
+              conflict: true,
+              version: latestTask.version
+            };
+          }
+        } else {
+          const updateResult = await this.bumpTaskProgressWithPrisma(tx, taskId, latestTask.version, 35);
+          if (!updateResult.ok) {
+            return {
+              conflict: true,
+              version: latestTask.version
+            };
+          }
+        }
+
+        await this.appendOutboxEventWithPrisma(tx, taskId, "task.masked");
+      }
+
+      return {
+        conflict: false,
+        regionId,
+        version: nextVersion
+      };
+    });
+  }
+
   private async advanceTaskStatusWithPrisma(
     userId: string,
     taskId: string,
@@ -989,6 +1225,7 @@ export class TasksService {
       const transitionResult = await this.transitionTaskWithPrisma(tx, taskId, input.toStatus, input.expectedVersion, {
         progress: input.progress,
         resultUrl: input.resultUrl,
+        resultJson: input.resultJson as unknown as Prisma.InputJsonValue,
         clearError: input.toStatus === "QUEUED"
       });
 
@@ -1056,6 +1293,43 @@ export class TasksService {
     });
   }
 
+  private async hasDetectionInput(taskId: string, mediaType: TaskMediaType): Promise<boolean> {
+    if (this.usePrismaStore) {
+      return this.hasDetectionInputWithPrisma(taskId, mediaType);
+    }
+
+    if (this.taskRegions.has(taskId)) {
+      return true;
+    }
+
+    if (mediaType === "IMAGE") {
+      return this.taskMasks.has(taskId);
+    }
+
+    return false;
+  }
+
+  private async hasDetectionInputWithPrisma(taskId: string, mediaType: TaskMediaType): Promise<boolean> {
+    const prisma = this.ensurePrismaService();
+    const region = await prisma.taskRegion.findUnique({
+      where: { taskId },
+      select: { taskId: true }
+    });
+    if (region) {
+      return true;
+    }
+
+    if (mediaType === "IMAGE") {
+      const mask = await prisma.taskMask.findUnique({
+        where: { taskId },
+        select: { taskId: true }
+      });
+      return Boolean(mask);
+    }
+
+    return false;
+  }
+
   private async maybeAdvanceForSimulationWithPrisma(taskId: string) {
     const prisma = this.ensurePrismaService();
     const current = await prisma.task.findUnique({
@@ -1065,11 +1339,8 @@ export class TasksService {
       return;
     }
 
-    const hasMask = await prisma.taskMask.findUnique({
-      where: { taskId },
-      select: { taskId: true }
-    });
-    if (!hasMask) {
+    const hasDetectionInput = await this.hasDetectionInputWithPrisma(taskId, current.mediaType as TaskMediaType);
+    if ((current.status as TaskStatus) === "DETECTING" && !hasDetectionInput) {
       return;
     }
 
@@ -1113,9 +1384,12 @@ export class TasksService {
 
     await prisma.$transaction(async (tx) => {
       const latest = await tx.task.findUnique({ where: { taskId } });
-      const latestMask = await tx.taskMask.findUnique({ where: { taskId }, select: { taskId: true } });
+      if (!latest || TERMINAL_STATUS.has(latest.status as TaskStatus)) {
+        return;
+      }
 
-      if (!latest || !latestMask || TERMINAL_STATUS.has(latest.status as TaskStatus)) {
+      const latestHasDetectionInput = await this.hasDetectionInputWithPrisma(taskId, latest.mediaType as TaskMediaType);
+      if ((latest.status as TaskStatus) === "DETECTING" && !latestHasDetectionInput) {
         return;
       }
 
@@ -1139,11 +1413,25 @@ export class TasksService {
     toStatus: TaskStatus
   ) {
     if (toStatus === "SUCCEEDED") {
-      if (!task.resultUrl) {
+      const resultUrl = task.resultUrl || `https://minio.local/result/${task.taskId}.png`;
+      const resultJson =
+        task.resultJson ||
+        ({
+          artifacts: [
+            {
+              type: task.mediaType === "VIDEO" ? "VIDEO" : "IMAGE",
+              url: resultUrl,
+              expireAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString()
+            }
+          ]
+        } satisfies NonNullable<TaskRecord["resultJson"]>);
+
+      if (!task.resultUrl || !task.resultJson) {
         await tx.task.update({
           where: { taskId: task.taskId },
           data: {
-            resultUrl: `https://minio.local/result/${task.taskId}.png`,
+            resultUrl,
+            resultJson: resultJson as unknown as Prisma.InputJsonValue,
             updatedAt: new Date()
           }
         });
@@ -1173,6 +1461,7 @@ export class TasksService {
     options: {
       progress?: number;
       resultUrl?: string;
+      resultJson?: Prisma.InputJsonValue;
       clearError?: boolean;
     } = {}
   ): Promise<TaskMutationResult> {
@@ -1208,6 +1497,10 @@ export class TasksService {
 
     if (options.resultUrl) {
       updatePayload.resultUrl = options.resultUrl;
+    }
+
+    if (options.resultJson) {
+      updatePayload.resultJson = options.resultJson;
     }
 
     const updated = await tx.task.updateMany({
@@ -1463,7 +1756,8 @@ export class TasksService {
       return;
     }
 
-    if (!this.taskMasks.has(taskId)) {
+    const hasDetectionInput = this.taskRegions.has(taskId) || (current.mediaType === "IMAGE" && this.taskMasks.has(taskId));
+    if (current.status === "DETECTING" && !hasDetectionInput) {
       return;
     }
 
@@ -1507,7 +1801,8 @@ export class TasksService {
 
     this.runInTransaction(() => {
       const latest = this.tasks.get(taskId);
-      if (!latest || !this.taskMasks.has(taskId) || TERMINAL_STATUS.has(latest.status)) {
+      const latestHasDetectionInput = this.taskRegions.has(taskId) || (latest?.mediaType === "IMAGE" && this.taskMasks.has(taskId));
+      if (!latest || TERMINAL_STATUS.has(latest.status) || (latest.status === "DETECTING" && !latestHasDetectionInput)) {
         return;
       }
 
@@ -1525,9 +1820,19 @@ export class TasksService {
 
   private handlePostTransitionUnsafe(task: TaskRecord, userId: string, fromStatus: TaskStatus, toStatus: TaskStatus) {
     if (toStatus === "SUCCEEDED") {
-      if (!task.resultUrl) {
-        task.resultUrl = `https://minio.local/result/${task.taskId}.png`;
-      }
+      const resultUrl = task.resultUrl || `https://minio.local/result/${task.taskId}.png`;
+      task.resultUrl = resultUrl;
+      task.resultJson =
+        task.resultJson ||
+        ({
+          artifacts: [
+            {
+              type: task.mediaType === "VIDEO" ? "VIDEO" : "IMAGE",
+              url: resultUrl,
+              expireAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString()
+            }
+          ]
+        } satisfies NonNullable<TaskRecord["resultJson"]>);
 
       this.appendUsageLedgerUnsafe(userId, task.taskId, "COMMITTED", "task_succeeded");
       this.appendOutboxEventUnsafe(task.taskId, "task.succeeded");
@@ -1552,6 +1857,7 @@ export class TasksService {
     options: {
       progress?: number;
       resultUrl?: string;
+      resultJson?: TaskRecord["resultJson"];
       clearError?: boolean;
     } = {}
   ): TaskMutationResult {
@@ -1580,6 +1886,10 @@ export class TasksService {
 
     if (options.resultUrl) {
       current.resultUrl = options.resultUrl;
+    }
+
+    if (options.resultJson) {
+      current.resultJson = options.resultJson;
     }
 
     current.version += 1;
@@ -1793,6 +2103,7 @@ export class TasksService {
       idempotency: [...this.idempotency.entries()].map(([key, value]) => [key, structuredClone(value)]),
       actionIdempotency: [...this.actionIdempotency.entries()].map(([key, value]) => [key, structuredClone(value)]),
       taskMasks: [...this.taskMasks.values()].map((mask) => structuredClone(mask)),
+      taskRegions: [...this.taskRegions.values()].map((region) => structuredClone(region)),
       usageLedgers: [...this.usageLedgers.values()].map((ledger) => structuredClone(ledger)),
       outboxEvents: [...this.outboxEvents.values()].map((event) => structuredClone(event))
     };
@@ -1810,6 +2121,9 @@ export class TasksService {
 
     this.taskMasks.clear();
     snapshot.taskMasks.forEach((mask) => this.taskMasks.set(mask.taskId, mask));
+
+    this.taskRegions.clear();
+    snapshot.taskRegions.forEach((region) => this.taskRegions.set(region.taskId, region));
 
     this.usageLedgers.clear();
     snapshot.usageLedgers.forEach((ledger) => this.usageLedgers.set(ledger.ledgerId, ledger));
@@ -1834,6 +2148,7 @@ export class TasksService {
       idempotency: parsed.idempotency || [],
       actionIdempotency: parsed.actionIdempotency || [],
       taskMasks: parsed.taskMasks || [],
+      taskRegions: parsed.taskRegions || [],
       usageLedgers: parsed.usageLedgers || [],
       outboxEvents: parsed.outboxEvents || []
     };

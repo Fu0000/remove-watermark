@@ -1,11 +1,12 @@
-import type { TaskStatus } from "@packages/contracts";
+import type { TaskMediaType, TaskStatus } from "@packages/contracts";
 import { createLogger, readEnv } from "@packages/shared";
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { JobsOptions, Queue, UnrecoverableError, Worker } from "bullmq";
+import { pathToFileURL } from "node:url";
 
 const appName = "worker-orchestrator";
 const logger = createLogger(appName);
-const prisma = new PrismaClient();
+export const prisma = new PrismaClient();
 
 const TERMINAL_STATUS = new Set<TaskStatus>(["SUCCEEDED", "FAILED", "CANCELED"]);
 const OUTBOX_TRIGGER_EVENTS = ["task.created", "task.retried", "task.masked"] as const;
@@ -33,13 +34,7 @@ interface DeadletterJobData {
 }
 type DeadletterQueue = Queue<DeadletterJobData, void, "task.deadletter">;
 
-interface TransitionPlan {
-  nextStatus: TaskStatus;
-  progress: number;
-  resultUrl?: string;
-}
-
-interface RetryPolicyOptions {
+export interface RetryPolicyOptions {
   maxRetries: number;
   baseDelayMs: number;
   jitterRatio: number;
@@ -81,11 +76,25 @@ type TaskStepResult =
   | { kind: "VERSION_CONFLICT" }
   | { kind: "ADVANCED"; status: TaskStatus };
 
-interface WorkerRuntimeOptions {
+export interface WorkerRuntimeOptions {
   stepDelayMs: number;
   waitMaskDelayMs: number;
   maxStepIterations: number;
   followupDelayMs: number;
+  inferenceGatewayUrl: string;
+  inferenceSharedToken: string;
+  resultExpireDays: number;
+}
+
+interface TaskArtifact {
+  type: "PDF" | "ZIP" | "VIDEO" | "IMAGE";
+  url: string;
+  expireAt: string;
+}
+
+interface PackagingResult {
+  resultUrl: string;
+  artifacts: TaskArtifact[];
 }
 
 function parsePositiveInt(value: string, fallback: number) {
@@ -296,25 +305,52 @@ async function publishDeadletter(
   });
 }
 
-function planTransition(taskId: string, currentStatus: TaskStatus): TransitionPlan | undefined {
-  switch (currentStatus) {
-    case "QUEUED":
-      return { nextStatus: "PREPROCESSING", progress: 15 };
-    case "PREPROCESSING":
-      return { nextStatus: "DETECTING", progress: 35 };
-    case "DETECTING":
-      return { nextStatus: "INPAINTING", progress: 60 };
-    case "INPAINTING":
-      return { nextStatus: "PACKAGING", progress: 85 };
-    case "PACKAGING":
-      return {
-        nextStatus: "SUCCEEDED",
-        progress: 100,
-        resultUrl: `https://minio.local/result/${taskId}.png`
-      };
+function buildDefaultResultUrl(taskId: string, mediaType: TaskMediaType) {
+  switch (mediaType) {
+    case "VIDEO":
+      return `https://minio.local/result/${taskId}.mp4`;
+    case "PDF":
+    case "PPT":
+      return `https://minio.local/result/${taskId}.pdf`;
     default:
-      return undefined;
+      return `https://minio.local/result/${taskId}.png`;
   }
+}
+
+function buildExpireAt(days: number) {
+  return new Date(Date.now() + days * 24 * 3600 * 1000).toISOString();
+}
+
+function toRecord(value: Prisma.JsonValue | null | undefined): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+export async function callInferenceGateway<T>(
+  runtime: WorkerRuntimeOptions,
+  path: string,
+  payload: Record<string, unknown>
+): Promise<T> {
+  const response = await fetch(`${runtime.inferenceGatewayUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-inference-token": runtime.inferenceSharedToken
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    if (response.status >= 400 && response.status < 500) {
+      throw new UnrecoverableError(`inference non-retryable ${response.status}: ${body || "unknown"}`);
+    }
+    throw new Error(`inference failed ${response.status}: ${body || "unknown"}`);
+  }
+
+  return (await response.json()) as T;
 }
 
 async function handleSuccessSideEffects(tx: Prisma.TransactionClient, taskId: string, userId: string) {
@@ -346,43 +382,219 @@ async function handleSuccessSideEffects(tx: Prisma.TransactionClient, taskId: st
   });
 }
 
-async function processTaskStep(taskId: string): Promise<TaskStepResult> {
-  return prisma.$transaction(async (tx) => {
+async function markTaskFailed(taskId: string, message: string, code = "50001") {
+  await prisma.$transaction(async (tx) => {
     const task = await tx.task.findUnique({
       where: { taskId }
     });
     if (!task) {
-      return { kind: "NOT_FOUND" };
+      return;
     }
 
     const currentStatus = task.status as TaskStatus;
     if (TERMINAL_STATUS.has(currentStatus)) {
-      return { kind: "TERMINAL", status: currentStatus };
-    }
-
-    const hasMask = await tx.taskMask.findUnique({
-      where: { taskId },
-      select: { taskId: true }
-    });
-    if (!hasMask) {
-      return { kind: "WAIT_MASK", status: currentStatus };
-    }
-
-    const plan = planTransition(taskId, currentStatus);
-    if (!plan) {
-      return { kind: "NO_PLAN", status: currentStatus };
+      return;
     }
 
     const updated = await tx.task.updateMany({
       where: {
         taskId,
-        version: task.version,
-        status: currentStatus
+        version: task.version
       },
       data: {
-        status: plan.nextStatus,
-        progress: plan.progress,
-        resultUrl: plan.resultUrl,
+        status: "FAILED",
+        errorCode: code,
+        errorMessage: message.slice(0, 1024),
+        version: { increment: 1 },
+        updatedAt: new Date()
+      }
+    });
+    if (updated.count !== 1) {
+      return;
+    }
+
+    await tx.usageLedger.createMany({
+      data: [
+        {
+          ledgerId: buildId("led"),
+          userId: task.userId,
+          taskId,
+          status: "RELEASED",
+          source: "task_failed",
+          consumeUnit: 1,
+          consumeAt: new Date()
+        }
+      ],
+      skipDuplicates: true
+    });
+
+    await tx.outboxEvent.create({
+      data: {
+        eventId: buildId("evt"),
+        eventType: "task.failed",
+        aggregateType: "task",
+        aggregateId: taskId,
+        status: "PENDING",
+        retryCount: 0,
+        createdAt: new Date()
+      }
+    });
+  });
+}
+
+async function hasDetectionInput(taskId: string, mediaType: TaskMediaType) {
+  const region = await prisma.taskRegion.findUnique({
+    where: { taskId },
+    select: { taskId: true }
+  });
+  if (region) {
+    return true;
+  }
+
+  if (mediaType === "IMAGE") {
+    const mask = await prisma.taskMask.findUnique({
+      where: { taskId },
+      select: { taskId: true }
+    });
+    return Boolean(mask);
+  }
+
+  return false;
+}
+
+async function executePreprocessing(
+  task: {
+    taskId: string;
+    assetId: string;
+    mediaType: string;
+  },
+  runtime: WorkerRuntimeOptions
+) {
+  if (task.mediaType === "PPT") {
+    await callInferenceGateway(runtime, "/internal/doc/ppt-to-pdf", {
+      taskId: task.taskId,
+      assetId: task.assetId
+    });
+  }
+
+  if (task.mediaType === "PDF" || task.mediaType === "PPT") {
+    await callInferenceGateway(runtime, "/internal/doc/render-pdf", {
+      taskId: task.taskId,
+      assetId: task.assetId,
+      mediaType: task.mediaType
+    });
+  }
+}
+
+async function executeInpainting(
+  task: {
+    taskId: string;
+    assetId: string;
+    mediaType: string;
+  },
+  runtime: WorkerRuntimeOptions
+) {
+  const region = await prisma.taskRegion.findUnique({
+    where: { taskId: task.taskId }
+  });
+  const mask = await prisma.taskMask.findUnique({
+    where: { taskId: task.taskId }
+  });
+
+  const regionsPayload =
+    (region?.regionsJson as Prisma.JsonValue | undefined) ||
+    ({
+      polygons: (mask?.polygons as Prisma.JsonValue | undefined) || [],
+      brushStrokes: (mask?.brushStrokes as Prisma.JsonValue | undefined) || []
+    } satisfies Record<string, unknown>);
+
+  if (task.mediaType === "VIDEO") {
+    return callInferenceGateway<{ outputUrl?: string }>(runtime, "/internal/inpaint/video", {
+      taskId: task.taskId,
+      assetId: task.assetId,
+      regions: regionsPayload
+    });
+  }
+
+  return callInferenceGateway<{ outputUrl?: string }>(runtime, "/internal/inpaint/image", {
+    taskId: task.taskId,
+    assetId: task.assetId,
+    mediaType: task.mediaType,
+    regions: regionsPayload
+  });
+}
+
+async function executePackaging(
+  task: {
+    taskId: string;
+    assetId: string;
+    mediaType: string;
+    resultJson: Prisma.JsonValue | null;
+  },
+  runtime: WorkerRuntimeOptions
+): Promise<PackagingResult> {
+  const staged = toRecord(task.resultJson)?.staging as Record<string, unknown> | undefined;
+  const defaultUrl = buildDefaultResultUrl(task.taskId, task.mediaType as TaskMediaType);
+  const expireAt = buildExpireAt(runtime.resultExpireDays);
+
+  if (task.mediaType === "PDF" || task.mediaType === "PPT") {
+    const packaged = await callInferenceGateway<{ resultUrl?: string; pdfUrl?: string; zipUrl?: string }>(
+      runtime,
+      "/internal/doc/package",
+      {
+        taskId: task.taskId,
+        assetId: task.assetId,
+        mediaType: task.mediaType,
+        staged
+      }
+    );
+
+    const pdfUrl = packaged.pdfUrl || packaged.resultUrl || defaultUrl;
+    const zipUrl = packaged.zipUrl || `https://minio.local/result/${task.taskId}.zip`;
+    return {
+      resultUrl: pdfUrl,
+      artifacts: [
+        { type: "PDF", url: pdfUrl, expireAt },
+        { type: "ZIP", url: zipUrl, expireAt }
+      ]
+    };
+  }
+
+  const stagedOutput = typeof staged?.outputUrl === "string" ? staged.outputUrl : defaultUrl;
+  return {
+    resultUrl: stagedOutput,
+    artifacts: [
+      {
+        type: task.mediaType === "VIDEO" ? "VIDEO" : "IMAGE",
+        url: stagedOutput,
+        expireAt
+      }
+    ]
+  };
+}
+
+async function advanceTask(input: {
+  taskId: string;
+  userId: string;
+  expectedVersion: number;
+  expectedStatus: TaskStatus;
+  nextStatus: TaskStatus;
+  progress: number;
+  resultUrl?: string;
+  resultJson?: Prisma.InputJsonValue;
+}): Promise<TaskStepResult> {
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.task.updateMany({
+      where: {
+        taskId: input.taskId,
+        version: input.expectedVersion,
+        status: input.expectedStatus
+      },
+      data: {
+        status: input.nextStatus,
+        progress: input.progress,
+        resultUrl: input.resultUrl,
+        resultJson: input.resultJson,
         version: { increment: 1 },
         updatedAt: new Date()
       }
@@ -391,15 +603,102 @@ async function processTaskStep(taskId: string): Promise<TaskStepResult> {
       return { kind: "VERSION_CONFLICT" };
     }
 
-    if (plan.nextStatus === "SUCCEEDED") {
-      await handleSuccessSideEffects(tx, taskId, task.userId);
+    if (input.nextStatus === "SUCCEEDED") {
+      await handleSuccessSideEffects(tx, input.taskId, input.userId);
     }
 
-    return { kind: "ADVANCED", status: plan.nextStatus };
+    return { kind: "ADVANCED", status: input.nextStatus };
   });
 }
 
-async function processQueueJob(
+export async function processTaskStep(
+  taskId: string,
+  runtime: WorkerRuntimeOptions
+): Promise<TaskStepResult> {
+  const task = await prisma.task.findUnique({
+    where: { taskId }
+  });
+  if (!task) {
+    return { kind: "NOT_FOUND" };
+  }
+
+  const currentStatus = task.status as TaskStatus;
+  if (TERMINAL_STATUS.has(currentStatus)) {
+    return { kind: "TERMINAL", status: currentStatus };
+  }
+
+  switch (currentStatus) {
+    case "QUEUED":
+      await executePreprocessing(task, runtime);
+      return advanceTask({
+        taskId,
+        userId: task.userId,
+        expectedVersion: task.version,
+        expectedStatus: currentStatus,
+        nextStatus: "PREPROCESSING",
+        progress: 15
+      });
+    case "PREPROCESSING":
+      return advanceTask({
+        taskId,
+        userId: task.userId,
+        expectedVersion: task.version,
+        expectedStatus: currentStatus,
+        nextStatus: "DETECTING",
+        progress: 35
+      });
+    case "DETECTING": {
+      const ready = await hasDetectionInput(taskId, task.mediaType as TaskMediaType);
+      if (!ready) {
+        return { kind: "WAIT_MASK", status: currentStatus };
+      }
+      return advanceTask({
+        taskId,
+        userId: task.userId,
+        expectedVersion: task.version,
+        expectedStatus: currentStatus,
+        nextStatus: "INPAINTING",
+        progress: 60
+      });
+    }
+    case "INPAINTING": {
+      const inpaint = await executeInpainting(task, runtime);
+      const outputUrl = inpaint.outputUrl || buildDefaultResultUrl(taskId, task.mediaType as TaskMediaType);
+      return advanceTask({
+        taskId,
+        userId: task.userId,
+        expectedVersion: task.version,
+        expectedStatus: currentStatus,
+        nextStatus: "PACKAGING",
+        progress: 85,
+        resultJson: {
+          staging: {
+            outputUrl
+          }
+        } as Prisma.InputJsonValue
+      });
+    }
+    case "PACKAGING": {
+      const packaged = await executePackaging(task, runtime);
+      return advanceTask({
+        taskId,
+        userId: task.userId,
+        expectedVersion: task.version,
+        expectedStatus: currentStatus,
+        nextStatus: "SUCCEEDED",
+        progress: 100,
+        resultUrl: packaged.resultUrl,
+        resultJson: {
+          artifacts: packaged.artifacts
+        } as unknown as Prisma.InputJsonValue
+      });
+    }
+    default:
+      return { kind: "NO_PLAN", status: currentStatus };
+  }
+}
+
+export async function processQueueJob(
   queue: OrchestratorQueue,
   taskId: string,
   options: WorkerRuntimeOptions,
@@ -408,7 +707,16 @@ async function processQueueJob(
   const followupJobId = `job_followup_${taskId}`;
 
   for (let index = 0; index < options.maxStepIterations; index += 1) {
-    const result = await processTaskStep(taskId);
+    let result: TaskStepResult;
+    try {
+      result = await processTaskStep(taskId, options);
+    } catch (error) {
+      if (isUnrecoverableError(error)) {
+        await markTaskFailed(taskId, readErrorMessage(error), "50021");
+        return;
+      }
+      throw error;
+    }
     if (result.kind === "NOT_FOUND") {
       throw new UnrecoverableError(`task ${taskId} not found`);
     }
@@ -600,7 +908,10 @@ async function bootstrap() {
     stepDelayMs: parsePositiveInt(readEnv("ORCHESTRATOR_STEP_DELAY_MS", "200"), 200),
     waitMaskDelayMs: parsePositiveInt(readEnv("ORCHESTRATOR_WAIT_MASK_DELAY_MS", "500"), 500),
     maxStepIterations: parsePositiveInt(readEnv("ORCHESTRATOR_MAX_STEP_ITERATIONS", "20"), 20),
-    followupDelayMs: parsePositiveInt(readEnv("ORCHESTRATOR_FOLLOWUP_DELAY_MS", "1000"), 1000)
+    followupDelayMs: parsePositiveInt(readEnv("ORCHESTRATOR_FOLLOWUP_DELAY_MS", "1000"), 1000),
+    inferenceGatewayUrl: readEnv("INFERENCE_GATEWAY_URL", "http://127.0.0.1:8088"),
+    inferenceSharedToken: readEnv("INFERENCE_SHARED_TOKEN", "inference-local-token"),
+    resultExpireDays: parsePositiveInt(readEnv("RESULT_EXPIRE_DAYS", "30"), 30)
   };
   const workerConcurrency = parsePositiveInt(readEnv("ORCHESTRATOR_WORKER_CONCURRENCY", "4"), 4);
   const redisConnection = parseRedisConnection(redisUrl);
@@ -694,7 +1005,14 @@ async function bootstrap() {
       outboxBatchSize,
       outboxMaxRetries,
       workerConcurrency,
-      runtimeOptions,
+      runtimeOptions: {
+        stepDelayMs: runtimeOptions.stepDelayMs,
+        waitMaskDelayMs: runtimeOptions.waitMaskDelayMs,
+        maxStepIterations: runtimeOptions.maxStepIterations,
+        followupDelayMs: runtimeOptions.followupDelayMs,
+        inferenceGatewayUrl: runtimeOptions.inferenceGatewayUrl,
+        resultExpireDays: runtimeOptions.resultExpireDays
+      },
       retryPolicy,
       deadletterAlertOptions: {
         ...deadletterAlertOptions,
@@ -745,7 +1063,22 @@ async function bootstrap() {
   }
 }
 
-bootstrap().catch((error) => {
-  logger.error({ error }, "service startup failed");
-  process.exit(1);
-});
+function isMainModule() {
+  const entry = process.argv[1];
+  if (!entry) {
+    return false;
+  }
+
+  try {
+    return import.meta.url === pathToFileURL(entry).href;
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) {
+  bootstrap().catch((error) => {
+    logger.error({ error }, "service startup failed");
+    process.exit(1);
+  });
+}

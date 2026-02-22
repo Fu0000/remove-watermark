@@ -87,3 +87,25 @@ test("advanceTaskStatus should enforce optimistic version lock", async () => {
 
   assert.equal(stale.kind, "VERSION_CONFLICT");
 });
+
+test("upsertRegions should support PDF regions and waiting hint", async () => {
+  const service = createService();
+  const created = await service.createTask("u_1001", "idem_unit_create_pdf_1", {
+    assetId: "ast_pdf_unit_1",
+    mediaType: "PDF",
+    taskPolicy: "FAST"
+  });
+
+  const upsert = await service.upsertRegions("u_1001", created.task.taskId, {
+    version: 0,
+    mediaType: "PDF",
+    schemaVersion: "gemini-box-2d/v1",
+    regions: [{ pageIndex: 0, box_2d: [1, 2, 3, 4] }]
+  });
+
+  assert.equal(upsert?.conflict, false);
+  if (!upsert || upsert.conflict) {
+    throw new Error("expected region upsert success");
+  }
+  assert.equal(typeof upsert.regionId, "string");
+});

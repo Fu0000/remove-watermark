@@ -1,4 +1,4 @@
-# 变更日志规范（v1.62）
+# 变更日志规范（v1.64）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,9 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.65 | 2026-02-22 | 新增多媒体后端落地记录：`regions` 接口、`task_regions/result_json` 迁移、`inference-gateway` 与本地 compose 栈 |
+| v1.64 | 2026-02-22 | 新增用户端自动化全流程体验回填与优化台账沉淀（`OPT-FE-003/004/005`） |
+| v1.63 | 2026-02-22 | 新增 user-frontend H5 空白页修复（入口模板补齐 + 浏览器环境变量兼容）与人工测试交接 |
 | v1.62 | 2026-02-22 | 新增 FE-008 管理端简约化视觉重构（layout/theme/page-header）与人工测试交接回填 |
 | v1.61 | 2026-02-22 | 新增 shared 本地双进程一键验收脚本（local-stack）与 INT-006 收尾证据 |
 | v1.60 | 2026-02-22 | 新增本地 smoke 用户数据重置脚本与 INT-006 shared 全量 smoke 复验证据 |
@@ -116,6 +119,136 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.60] - 2026-02-22
+
+### Added
+- 新增数据库迁移：`apps/api-gateway/prisma/migrations/20260222233000_add_task_regions_and_result_json/migration.sql`。
+- 新增任务区域接口：`POST /v1/tasks/{taskId}/regions`。
+- 新增多媒体 smoke 脚本：`apps/api-gateway/scripts/shared-smoke-media-matrix.ts`（image/video/pdf/ppt）。
+- 新增推理网关服务：`apps/inference-gateway`（FastAPI + 内网 token 鉴权）。
+- 新增本地联调栈：`docker-compose.local-stack.yml`（postgres/redis/minio/api/worker/inference）。
+- 新增 Worker mock 集成测试：`apps/worker-orchestrator/test/orchestrator.integration.spec.ts`。
+
+### Changed
+- `apps/api-gateway/src/modules/tasks/*`：
+  - 任务媒体类型扩展到 `IMAGE|VIDEO|PDF|PPT`。
+  - 任务结果扩展 `artifacts[]` 并兼容 `resultUrl`。
+  - 任务详情新增 `waitReason=WAITING_REGIONS`（不新增状态）。
+- `apps/api-gateway/src/modules/assets/assets.controller.ts` + `compliance.service.ts`：
+  - 上传策略支持 `pdf/ppt`，并增加 MIME 白名单校验。
+- `apps/api-gateway/src/modules/system/system.controller.ts`：
+  - 能力协商改为环境变量动态配置（`models/renderers/videoPipelines/riskFlags/defaults`）。
+- `apps/worker-orchestrator/src/main.ts`：
+  - 状态推进从纯模拟改为按阶段调用 inference-gateway。
+  - 新增 `isMainModule` 启动保护与可测试导出，支持测试环境按模块导入。
+- `apps/worker-orchestrator/package.json`：
+  - 新增 `test:integration`（node:test + tsx）。
+
+### Fixed
+- 修复文档链路缺少统一区域上报结构导致的编排阻塞问题（统一走 `task_regions`）。
+- 修复结果交付仅单 URL 的限制，补齐文档链路 `PDF + ZIP` 产物表达。
+
+### Security
+- inference-gateway 内部接口统一要求 `x-inference-token`，避免公网裸露模型能力。
+
+### Rollback
+- 回滚下列改动可恢复到本轮前：
+  - `apps/api-gateway/src/modules/tasks/*`
+  - `apps/worker-orchestrator/src/main.ts`
+  - `apps/api-gateway/prisma/schema.prisma`
+  - `apps/api-gateway/prisma/migrations/20260222233000_add_task_regions_and_result_json/*`
+  - `apps/inference-gateway/*`
+  - `docker-compose.local-stack.yml`
+
+### References
+- 影响范围：`apps/api-gateway`、`apps/worker-orchestrator`、`apps/inference-gateway`、`doc/*`
+- 验证证据：`pnpm --filter @apps/api-gateway typecheck`、`test:unit`、`test:contract`、`pnpm --filter @apps/worker-orchestrator typecheck`、`pnpm --filter @apps/worker-orchestrator test:integration`
+
+## [0.5.59] - 2026-02-22
+
+### Added
+- 新增自动化全流程体验回填记录：`doc/engineering/rd-progress-management.md` 第 `73` 节。
+- 新增用户操作优化项台账：
+  - `OPT-FE-003`（编辑链路步骤 2 自动跳转与输入兼容）
+  - `OPT-FE-004`（任务/结果页状态反馈与动作引导）
+  - `OPT-FE-005`（订阅 checkout 后 `orderId` 自动回填）
+
+### Changed
+- `doc/engineering/mvp-optimization-backlog.md`
+  - 版本更新为 `v1.15`；
+  - 新增 `OPT-FE-003/004/005` 条目并明确优先级、执行时机、验收标准。
+- `doc/engineering/rd-progress-management.md`
+  - 版本记录新增 `v1.25`；
+  - 新增第 `73` 节，补齐自动化体验证据、联调结论、遗留问题与下一步。
+
+### Fixed
+- 修复“仅口头反馈体验问题、缺少结构化回填”的流程缺口，确保自动化体验问题具备可追踪 `OPT-ID` 与落地优先级。
+
+### Security
+- 本轮仅更新工程台账文档，不涉及接口鉴权、状态机字面量或幂等语义变更。
+
+### Rollback
+- 回退以下文档变更即可恢复本轮前状态：
+  - `doc/engineering/mvp-optimization-backlog.md`
+  - `doc/engineering/rd-progress-management.md`
+  - `doc/engineering/change-log-standard.md`
+
+### References
+- 自动化证据：
+  - `/tmp/user-flow-audit/report.json`
+  - `/tmp/user-flow-audit/01-home.png` 至 `/tmp/user-flow-audit/10-result.png`
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+
+## [0.5.58] - 2026-02-22
+
+### Added
+- 新增 H5 入口模板：`apps/user-frontend/src/index.html`（恢复首页 HTML 注入与应用挂载点）。
+- 新增用户端样式文件：
+  - `apps/user-frontend/src/modules/common/page-shell.scss`
+  - `apps/user-frontend/src/pages/home/index.scss`
+
+### Changed
+- `apps/user-frontend/src/config/runtime.ts`：环境变量读取改为浏览器安全访问，避免直接依赖 Node `process` 全局对象。
+- `apps/user-frontend/config/index.ts`：补齐 `deviceRatio[375]`，修复 `rpx -> rem` 转换异常。
+- `apps/user-frontend/src/utils/platform.ts`：平台环境识别兼容浏览器运行时。
+- `apps/user-frontend/src/modules/common/page-shell.tsx`：增强页面壳层结构与语义化样式类。
+- `apps/user-frontend/src/pages/result/index.tsx`：H5 分支判断改为复用 `isH5()`。
+- `apps/user-frontend/src/pages/home/index.tsx`：增强首页信息分组与按钮视觉层次。
+- `apps/user-frontend/src/app.scss`：统一页面背景、卡片层级与 H5 容器排版。
+- `doc/engineering/rd-progress-management.md`：新增第 72 节执行回填（用户端 H5 空白页修复）。
+
+### Fixed
+- 修复 `user-frontend` 在 H5 下出现目录索引页/白屏的问题：
+  - 缺失 `index.html` 模板导致首页未挂载应用。
+  - 运行时访问 `process.env` 导致 `ReferenceError: process is not defined`。
+- 修复样式异常问题：
+  - `designWidth=375` 与 `deviceRatio` 配置不匹配导致编译产物出现 `NaNrem`，CSS 大量失效。
+
+### Security
+- 本轮未改变后端接口契约、鉴权头语义、状态机字面量与幂等约束。
+
+### Rollback
+- 回退以下文件：
+  - `apps/user-frontend/src/index.html`
+  - `apps/user-frontend/config/index.ts`
+  - `apps/user-frontend/src/config/runtime.ts`
+  - `apps/user-frontend/src/utils/platform.ts`
+  - `apps/user-frontend/src/modules/common/page-shell.tsx`
+  - `apps/user-frontend/src/modules/common/page-shell.scss`
+  - `apps/user-frontend/src/pages/result/index.tsx`
+  - `apps/user-frontend/src/pages/home/index.tsx`
+  - `apps/user-frontend/src/pages/home/index.scss`
+  - `apps/user-frontend/src/app.scss`
+  - `doc/engineering/rd-progress-management.md`
+  - `doc/engineering/change-log-standard.md`
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 测试证据：
+  - `pnpm --filter @apps/user-frontend typecheck`
+  - `pnpm --filter @apps/user-frontend build:h5`
+  - Playwright 验证截图：`/tmp/user-h5-after-style-upgrade.png`
 
 ## [0.5.57] - 2026-02-22
 

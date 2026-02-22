@@ -47,7 +47,7 @@
 - 首发资源有限：优先模块化单体 + 异步 Worker，避免过早微服务复杂度。
 - 多端调用同一 API 契约，必须稳定向后兼容。
 - 必须支持 MinIO 对象存储与私有化兼容。
-- 推理边界固定：Node 负责控制面，模型推理由 Triton 提供。
+- 推理边界固定：Node 负责控制面，模型推理由 Triton 或推理网关提供（统一通过内网接口接入）。
 
 ### 3.3 合规约束
 - 仅处理用户有权素材，不支持外链抓取。
@@ -125,7 +125,7 @@ flowchart LR
 ### 7.2 任务执行链路（异步）
 1. `PREPROCESSING`：media-worker。
 2. `DETECTING`：detect-worker。
-3. `INPAINTING`：inpaint-router 基于 `taskPolicy` 与系统能力路由到 Triton 推理服务。
+3. `INPAINTING`：inpaint-router 基于 `taskPolicy` 与系统能力路由到 Triton 或 Python inference-gateway。
 4. `PACKAGING`：result-worker。
 5. 成功：写 `task_results` + `usage_ledger(COMMITTED)` + `outbox(task.succeeded)`。
 6. 失败：写 `usage_ledger(RELEASED)` + `outbox(task.failed)`。
@@ -135,6 +135,16 @@ flowchart LR
 2. renderer-worker 按 `PDFium -> Poppler -> PyMuPDF` 顺序做页图渲染。
 3. 同一任务内固定渲染器版本，避免跨页差异。
 4. 渲染失败写入标准错误码与 `traceId`，并生成“建议上传 PDF”回退提示。
+
+### 7.6 推理网关（2026-02-22 增量）
+1. 新增内网 `inference-gateway`（FastAPI）承接开源能力：
+   - `/internal/inpaint/image`（LaMa）
+   - `/internal/inpaint/video`（ProPainter）
+   - `/internal/doc/ppt-to-pdf`（LibreOffice）
+   - `/internal/doc/render-pdf`（PDFium -> Poppler -> PyMuPDF）
+   - `/internal/doc/package`（输出 PDF + ZIP）
+2. `worker-orchestrator` 通过 `INFERENCE_GATEWAY_URL` + `INFERENCE_SHARED_TOKEN` 调用，不暴露公网。
+3. 该网关为过渡层，后续可将热点模型迁移到 Triton 并保持同一内部契约。
 
 ### 7.3 订阅与权益生效链路
 1. 用户创建订阅订单。
@@ -259,6 +269,7 @@ flowchart TB
 | ADR-005 | 出站Webhook标准化 + HMAC签名 | Accepted |
 | ADR-006 | 数据库主键使用字符串ID（业务前缀） | Accepted |
 | ADR-007 | Node 仅承担控制面，模型推理统一由 Triton 承担 | Accepted |
+| ADR-008 | 允许在 V1.1 灰度阶段通过 Python inference-gateway 接入 ProPainter/LaMa，后续再统一至 Triton | Accepted |
 
 ## 15. 运行与变更策略
 
@@ -279,5 +290,6 @@ flowchart TB
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.2 | 2026-02-22 | 新增 inference-gateway 过渡架构、worker 内网鉴权调用与文档链路实现细则 |
 | v1.1 | 2026-02-19 | 增加 Node->Triton 路由边界细节、文档渲染回退链路、GPU容量估算口径与 ADR-007 |
 | v1.0 | 2026-02-19 | 首版TAD，含C4、运行时、部署、NFR映射、ADR清单 |

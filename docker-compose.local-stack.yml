@@ -1,0 +1,96 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: remove_watermark
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  minio:
+    image: minio/minio:RELEASE.2026-01-18T00-00-00Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniopassword
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  inference-gateway:
+    build:
+      context: ./apps/inference-gateway
+      dockerfile: Dockerfile
+    environment:
+      INFERENCE_SHARED_TOKEN: inference-local-token
+      MODEL_LAMA_PATH: /models/lama
+      MODEL_PROPAINTER_PATH: /models/propainter
+      DEFAULT_PDF_RENDERER: pdfium
+    ports:
+      - "8088:8088"
+
+  api-gateway:
+    image: node:20
+    working_dir: /workspace
+    command: >
+      sh -lc "corepack enable && pnpm install --frozen-lockfile &&
+      pnpm --filter @apps/api-gateway prisma:generate &&
+      pnpm --filter @apps/api-gateway dev"
+    volumes:
+      - ./:/workspace
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/remove_watermark
+      REDIS_URL: redis://redis:6379
+      MINIO_ENDPOINT: http://minio:9000
+      INFERENCE_GATEWAY_URL: http://inference-gateway:8088
+      INFERENCE_SHARED_TOKEN: inference-local-token
+      FEATURE_IMAGE: "true"
+      FEATURE_VIDEO: "true"
+      FEATURE_PDF: "true"
+      FEATURE_PPT: "true"
+      TASKS_STORE: prisma
+      SUBSCRIPTIONS_STORE: prisma
+      WEBHOOKS_STORE: prisma
+      COMPLIANCE_STORE: prisma
+    depends_on:
+      - postgres
+      - redis
+      - minio
+      - inference-gateway
+    ports:
+      - "3000:3000"
+
+  worker-orchestrator:
+    image: node:20
+    working_dir: /workspace
+    command: >
+      sh -lc "corepack enable && pnpm install --frozen-lockfile &&
+      pnpm --filter @apps/worker-orchestrator dev"
+    volumes:
+      - ./:/workspace
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/remove_watermark
+      REDIS_URL: redis://redis:6379
+      QUEUE_NAME: task.standard
+      QUEUE_DEADLETTER_NAME: task.standard.deadletter
+      INFERENCE_GATEWAY_URL: http://inference-gateway:8088
+      INFERENCE_SHARED_TOKEN: inference-local-token
+      RESULT_EXPIRE_DAYS: "30"
+    depends_on:
+      - postgres
+      - redis
+      - inference-gateway
+
+volumes:
+  pg_data:
+  minio_data:

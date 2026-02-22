@@ -99,3 +99,19 @@ test("purgeExpiredAuditLogs should cleanup logs older than retention window", as
   });
   assert.equal(after.total, 0);
 });
+
+test("createUploadPolicy should reject unsupported mime combinations", async () => {
+  const tasksService = new TasksService({ disablePersistence: true });
+  const complianceService = new ComplianceService({} as never, tasksService);
+
+  await assert.rejects(
+    () =>
+      complianceService.createUploadPolicy("u_1001", {
+        fileName: "bad.pdf",
+        fileSize: 128,
+        mediaType: "pdf",
+        mimeType: "image/png"
+      }),
+    /unsupported mimeType/
+  );
+});

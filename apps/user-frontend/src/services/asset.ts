@@ -3,7 +3,7 @@ import { request } from "./http";
 export interface UploadPolicyRequest {
   fileName: string;
   fileSize: number;
-  mediaType: "image" | "video";
+  mediaType: "image" | "video" | "pdf" | "ppt";
   mimeType: string;
   sha256?: string;
 }

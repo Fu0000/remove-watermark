@@ -26,7 +26,7 @@
 
 ### 2.3 非范围（v1.0）
 - 外链抓取接口（明确不支持）。
-- PDF/PPT 公开 API（放入 V1.1）。
+- PDF/PPT 公开 API（默认放入 V1.1；可通过 Feature Flag 在灰度环境提前启用）。
 - 多租户企业组织 API（放入 V1.2）。
 
 ## 3. Node 技术选型与架构实践
@@ -443,6 +443,45 @@ Query：
 }
 ```
 
+说明：
+- 仅 `IMAGE` 任务支持该接口。
+
+## 11.6A `POST /v1/tasks/{taskId}/regions`
+
+用途：
+- 接收 Gemini 或人工补框的区域结果，适配 `VIDEO/PDF/PPT`，并可用于 `IMAGE` 自动检测链路。
+
+请求：
+
+```json
+{
+  "version": 0,
+  "mediaType": "PDF",
+  "schemaVersion": "gemini-box-2d/v1",
+  "regions": [
+    {
+      "pageIndex": 0,
+      "box_2d": [100, 120, 200, 260]
+    }
+  ]
+}
+```
+
+响应：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "requestId": "req_xxx",
+  "data": {
+    "taskId": "tsk_3001",
+    "regionId": "reg_001",
+    "version": 1
+  }
+}
+```
+
 ## 11.7 `POST /v1/tasks/{taskId}/retry`
 
 规则：
@@ -466,12 +505,14 @@ Query：
   "requestId": "req_xxx",
   "data": {
     "resultUrl": "https://minio.../result.mp4?sig=...",
-    "previewUrl": "https://minio.../preview.jpg?sig=...",
     "expireAt": "2026-03-21T12:00:00Z",
-    "metrics": {
-      "durationMs": 43872,
-      "qualityLevel": "standard"
-    }
+    "artifacts": [
+      {
+        "type": "VIDEO",
+        "url": "https://minio.../result.mp4?sig=...",
+        "expireAt": "2026-03-21T12:00:00Z"
+      }
+    ]
   }
 }
 ```
@@ -824,7 +865,7 @@ Query：
 {
   "taskId": "tsk_3001",
   "userId": "u_1001",
-  "taskType": "image|video",
+  "taskType": "image|video|pdf|ppt",
   "qualityLevel": "standard|high",
   "status": "QUEUED|PREPROCESSING|DETECTING|INPAINTING|PACKAGING|SUCCEEDED|FAILED|CANCELED",
   "progress": 0,
@@ -1023,6 +1064,7 @@ Query：
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.12 | 2026-02-22 | 新增 `POST /v1/tasks/{taskId}/regions`，结果结构新增 `artifacts[]`，并补充 `PDF/PPT` 提前灰度口径 |
 | v1.11 | 2026-02-22 | 新增 `POST /v1/subscriptions/payment-callback`（HMAC-SHA256 验签）并补充退款回滚语义 |
 | v1.10 | 2026-02-22 | Webhook 持久化模型新增 `tenantId`，管理端 `scopeType=tenant` 升级为真实租户级过滤 |
 | v1.9 | 2026-02-22 | `/admin/webhooks/*` 改为显式上下文驱动（`scopeType/scopeId` 必填），不再允许默认用户 |

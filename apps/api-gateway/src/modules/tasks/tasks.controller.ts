@@ -3,12 +3,12 @@ import { ensureAuthorization } from "../../common/auth";
 import { badRequest, conflict, forbidden, notFound, unprocessableEntity } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
 import { QuotaExceededError, TasksService } from "./tasks.service";
-import type { TaskPolicy } from "@packages/contracts";
+import type { TaskMediaType, TaskPolicy } from "@packages/contracts";
 import { ComplianceService } from "../compliance/compliance.service";
 
 interface CreateTaskRequest {
   assetId: string;
-  mediaType: "IMAGE" | "VIDEO";
+  mediaType: TaskMediaType;
   taskPolicy?: TaskPolicy;
 }
 
@@ -18,6 +18,13 @@ interface UpsertMaskRequest {
   polygons: number[][][];
   brushStrokes: number[][][];
   version: number;
+}
+
+interface UpsertRegionsRequest {
+  version: number;
+  mediaType: TaskMediaType;
+  schemaVersion: string;
+  regions: Array<Record<string, unknown>>;
 }
 
 @Controller("v1/tasks")
@@ -88,13 +95,25 @@ export class TasksController {
     ensureAuthorization(authorization, requestIdHeader);
     const items = await this.tasksService.listByUser("u_1001");
     const visibleItems = await this.complianceService.filterVisibleTasks("u_1001", items);
+    const enhancedItems = await Promise.all(
+      visibleItems.map(async (item) => {
+        const waiting = await this.tasksService.isWaitingForRegions("u_1001", item.taskId);
+        if (!waiting) {
+          return item;
+        }
+        return {
+          ...item,
+          waitReason: "WAITING_REGIONS" as const
+        };
+      })
+    );
 
     return ok(
       {
-        items: visibleItems,
+        items: enhancedItems,
         page: 1,
         pageSize: 20,
-        total: visibleItems.length
+        total: enhancedItems.length
       },
       requestIdHeader
     );
@@ -116,7 +135,16 @@ export class TasksController {
       notFound(40401, "资源不存在", requestIdHeader);
     }
 
-    return ok(task, requestIdHeader);
+    const waiting = await this.tasksService.isWaitingForRegions("u_1001", taskId);
+    return ok(
+      waiting
+        ? {
+            ...task,
+            waitReason: "WAITING_REGIONS"
+          }
+        : task,
+      requestIdHeader
+    );
   }
 
   @Post(":taskId/retry")
@@ -178,6 +206,14 @@ export class TasksController {
       badRequest(40001, "参数非法", requestIdHeader);
     }
 
+    const task = await this.tasksService.getByUser("u_1001", taskId, { advance: false });
+    if (!task) {
+      notFound(40401, "资源不存在", requestIdHeader);
+    }
+    if (task.mediaType !== "IMAGE") {
+      badRequest(40001, "仅 IMAGE 任务支持 mask 接口", requestIdHeader);
+    }
+
     const result = await this.tasksService.upsertMask("u_1001", taskId, body);
     if (!result) {
       notFound(40401, "资源不存在", requestIdHeader);
@@ -191,6 +227,46 @@ export class TasksController {
       {
         taskId,
         maskId: result.maskId,
+        version: result.version
+      },
+      requestIdHeader
+    );
+  }
+
+  @Post(":taskId/regions")
+  @HttpCode(200)
+  async upsertTaskRegions(
+    @Headers("authorization") authorization: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Headers("x-request-id") requestIdHeader: string | undefined,
+    @Param("taskId") taskId: string,
+    @Body() body: UpsertRegionsRequest
+  ) {
+    ensureAuthorization(authorization, requestIdHeader);
+    if (!idempotencyKey) {
+      badRequest(40001, "Idempotency-Key is required", requestIdHeader);
+    }
+    if (await this.complianceService.isTaskDeleted("u_1001", taskId)) {
+      notFound(40401, "资源不存在", requestIdHeader);
+    }
+
+    if (!body.schemaVersion || !Array.isArray(body.regions) || body.version < 0 || !body.mediaType) {
+      badRequest(40001, "参数非法", requestIdHeader);
+    }
+
+    const result = await this.tasksService.upsertRegions("u_1001", taskId, body);
+    if (!result) {
+      notFound(40401, "资源不存在", requestIdHeader);
+    }
+
+    if (result.conflict) {
+      conflict(40901, `版本冲突，当前版本 ${result.version}`, requestIdHeader);
+    }
+
+    return ok(
+      {
+        taskId,
+        regionId: result.regionId,
         version: result.version
       },
       requestIdHeader
@@ -259,8 +335,9 @@ export class TasksController {
       {
         taskId,
         status: task.status,
-        resultUrl: task.resultUrl,
-        expireAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString()
+        resultUrl: task.resultUrl || task.resultJson?.artifacts[0]?.url,
+        expireAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+        artifacts: task.resultJson?.artifacts || []
       },
       requestIdHeader
     );

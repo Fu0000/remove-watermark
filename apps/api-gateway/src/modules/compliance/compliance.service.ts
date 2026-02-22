@@ -7,7 +7,7 @@ import { PrismaService } from "../common/prisma.service";
 interface UploadPolicyInput {
   fileName: string;
   fileSize: number;
-  mediaType: "image" | "video";
+  mediaType: "image" | "video" | "pdf" | "ppt";
   mimeType: string;
   sha256?: string;
 }
@@ -23,7 +23,7 @@ interface AssetRecord {
   userId: string;
   fileName: string;
   fileSize: number;
-  mediaType: "IMAGE" | "VIDEO";
+  mediaType: "IMAGE" | "VIDEO" | "PDF" | "PPT";
   mimeType: string;
   sha256?: string;
   uploadUrl: string;
@@ -152,6 +152,15 @@ export interface ProcessDeleteRequestsSummary {
 
 const DELETE_REQUEST_SLA_HOURS = 24;
 const DEFAULT_AUDIT_RETENTION_DAYS = 180;
+const MEDIA_MIME_ALLOWLIST: Record<UploadPolicyInput["mediaType"], string[]> = {
+  image: ["image/png", "image/jpeg", "image/jpg", "image/webp"],
+  video: ["video/mp4", "video/quicktime", "video/webm"],
+  pdf: ["application/pdf"],
+  ppt: [
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ]
+};
 
 @Injectable()
 export class ComplianceService {
@@ -181,10 +190,16 @@ export class ComplianceService {
     headers: Record<string, string>;
     expireAt: string;
   }> {
+    const normalizedMimeType = input.mimeType.toLowerCase();
+    const supportedMimeList = MEDIA_MIME_ALLOWLIST[input.mediaType] || [];
+    if (!supportedMimeList.includes(normalizedMimeType)) {
+      throw new Error(`unsupported mimeType for ${input.mediaType}: ${input.mimeType}`);
+    }
+
     const assetId = this.buildId("ast");
     const uploadUrl = "https://minio.local/signed-upload-url";
     const now = new Date();
-    const mediaType = input.mediaType.toUpperCase() as "IMAGE" | "VIDEO";
+    const mediaType = input.mediaType.toUpperCase() as "IMAGE" | "VIDEO" | "PDF" | "PPT";
 
     if (this.preferPrismaStore) {
       try {
