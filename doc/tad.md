@@ -145,6 +145,18 @@ flowchart LR
    - `/internal/doc/package`（输出 PDF + ZIP）
 2. `worker-orchestrator` 通过 `INFERENCE_GATEWAY_URL` + `INFERENCE_SHARED_TOKEN` 调用，不暴露公网。
 3. 该网关为过渡层，后续可将热点模型迁移到 Triton 并保持同一内部契约。
+4. 推理网关支持 `INFERENCE_MODEL_MODE=mock|native`：
+   - `mock`：联调与契约验证默认模式，保持可复现 URL 占位返回。
+   - `native`：按开源仓库原生命令执行模型推理。
+5. LaMa 接入遵循官方推理入口 `bin/predict.py`，按 `image + *_mask001.png` 目录结构执行；区域支持 `box_2d/polygon`。
+6. ProPainter 接入遵循官方推理入口 `inference_propainter.py`，网关将 `regions(frameIndex + box_2d)` 转换为时序 mask 视频并按关键帧插值。
+7. 文档链路在 native 模式下执行：
+   - `PPT/PPTX -> LibreOffice(headless) -> PDF`
+   - `PDF -> Poppler(pdftoppm) -> PyMuPDF 回退`
+   - 输出 `PDF + ZIP`（页图打包）
+8. 可观测与错误约定：
+   - 网关统一输出 `errorCode/errorMessage/retryable`。
+   - 配置缺失/输入无效返回 4xx（编排侧不可重试），运行时失败与超时返回 5xx/504（可重试）。
 
 ### 7.3 订阅与权益生效链路
 1. 用户创建订阅订单。
@@ -290,6 +302,7 @@ flowchart TB
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.3 | 2026-02-22 | 新增 ProPainter/LaMa 原生推理接入细则（mock/native 双模式、关键帧区域转 mask、文档链路真实执行与错误约定） |
 | v1.2 | 2026-02-22 | 新增 inference-gateway 过渡架构、worker 内网鉴权调用与文档链路实现细则 |
 | v1.1 | 2026-02-19 | 增加 Node->Triton 路由边界细节、文档渲染回退链路、GPU容量估算口径与 ADR-007 |
 | v1.0 | 2026-02-19 | 首版TAD，含C4、运行时、部署、NFR映射、ADR清单 |

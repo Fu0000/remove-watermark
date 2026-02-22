@@ -33,9 +33,33 @@ services:
       dockerfile: Dockerfile
     environment:
       INFERENCE_SHARED_TOKEN: inference-local-token
+      INFERENCE_MODEL_MODE: ${INFERENCE_MODEL_MODE:-mock}
+      INFERENCE_PYTHON_BIN: python3
+      LAMA_REPO_DIR: /opt/repos/lama
+      PROPAINTER_REPO_DIR: /opt/repos/propainter
       MODEL_LAMA_PATH: /models/lama
       MODEL_PROPAINTER_PATH: /models/propainter
+      INFERENCE_ASSET_DIR: /data/assets
+      INFERENCE_RESULT_DIR: /data/results
+      INFERENCE_WORK_DIR: /data/work
+      INFERENCE_TIMEOUT_IMAGE_SEC: "240"
+      INFERENCE_TIMEOUT_VIDEO_SEC: "1200"
+      INFERENCE_TIMEOUT_DOC_SEC: "300"
+      PROPAINTER_FP16: "true"
+      PROPAINTER_SUBVIDEO_LENGTH: "80"
+      PROPAINTER_NEIGHBOR_LENGTH: "10"
+      PROPAINTER_REF_STRIDE: "10"
+      PROPAINTER_RESIZE_RATIO: "1.0"
+      LAMA_REFINE: "false"
       DEFAULT_PDF_RENDERER: pdfium
+    volumes:
+      - ./.runtime/inference-assets:/data/assets
+      - ./.runtime/inference-results:/data/results
+      - ./.runtime/inference-work:/data/work
+      - ${LAMA_REPO_HOST_PATH:-./.runtime/model-repos/lama}:/opt/repos/lama
+      - ${PROPAINTER_REPO_HOST_PATH:-./.runtime/model-repos/propainter}:/opt/repos/propainter
+      - ${LAMA_MODEL_HOST_PATH:-./.runtime/model-weights/lama}:/models/lama
+      - ${PROPAINTER_MODEL_HOST_PATH:-./.runtime/model-weights/propainter}:/models/propainter
     ports:
       - "8088:8088"
 

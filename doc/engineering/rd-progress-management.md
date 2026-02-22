@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.27 | 2026-02-22 | 新增 inference-gateway 原生模型接入回填（ProPainter/LaMa、mask 生成、mock/native 双模式） |
 | v1.26 | 2026-02-22 | 新增 ProPainter + LaMa 多媒体后端落地回填（`regions` 接口、`task_regions/result_json`、`inference-gateway`、`IMAGE/VIDEO/PDF/PPT` 编排闭环） |
 | v1.25 | 2026-02-22 | 新增用户端自动化全流程体验回填，沉淀操作优化项 `OPT-FE-003/004/005` |
 | v1.24 | 2026-02-22 | 新增 user-frontend H5 空白页修复（补齐 index.html 模板 + 浏览器环境变量兼容）与人工测试交接 |
@@ -3014,3 +3015,50 @@
   - 回滚：关闭 `FEATURE_PDF/FEATURE_PPT/FEATURE_VIDEO` 或回退到仅 `IMAGE/VIDEO` 可用模式；必要时临时回退 `inference-gateway` 调用并恢复模拟推进。
 - 下一步：
   - 在单机 GPU Compose 环境执行 `shared-smoke-media-matrix`，回填性能与失败可解释率证据。
+
+## 75. 本次执行回填（inference-gateway 原生接入 ProPainter/LaMa）
+
+- 任务编号：`DEV-20260222-INFERENCE-NATIVE-INTEGRATION`
+- 需求映射：`FR-003/FR-005/FR-007`、`NFR-001/NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/project-constraints.md`
+- 负责人：后端
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：模型权重与 GPU 环境尚未在 shared/staging 完整挂载
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/inference-gateway/app.py`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/inference-gateway/requirements.txt`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/inference-gateway/Dockerfile`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/inference-gateway/README.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/inference-gateway/scripts/bootstrap-model-repos.sh`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/docker-compose.local-stack.yml`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/.env.example`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+- 实施摘要：
+  - inference-gateway 增加 `mock/native` 双模式，默认 `mock`，生产可切 `native`。
+  - IMAGE 链路接入 LaMa 官方推理入口 `bin/predict.py`，支持 `box_2d/polygon` 区域转 mask。
+  - VIDEO 链路接入 ProPainter 官方推理入口 `inference_propainter.py`，支持关键帧区域插值生成时序 mask。
+  - 文档链路由占位实现升级为真实执行：`LibreOffice` 转换、`Poppler` 渲染、`PyMuPDF` 回退、`PDF+ZIP` 打包。
+  - compose 与 env 模板补齐 repo/model/assets/work/results 挂载与参数配置，并新增仓库拉取脚本。
+- 测试证据：
+  - `python3 -m py_compile apps/inference-gateway/app.py`：通过
+  - `pnpm --filter @apps/worker-orchestrator typecheck`：通过
+  - `pnpm --filter @apps/worker-orchestrator test:integration`：通过（`6/6`）
+- 联调结果：
+  - 推理网关与现有 orchestrator 内网契约兼容，worker 无需变更接口路径即可调用。
+  - 本地可在 `mock` 模式保持原有 smoke 稳定性，在 `native` 模式切换真实模型执行。
+- 遗留问题：
+  - 当前任务侧仅传 `assetId`，依赖 `INFERENCE_ASSET_DIR` 资产落盘约定；与 MinIO 对象键直连仍需后续补齐。
+  - GPU 性能与质量指标需在真实权重环境完成验收回填。
+- 风险与回滚：
+  - 风险：仓库/权重/系统依赖缺失会导致 native 模式执行失败。
+  - 回滚：将 `INFERENCE_MODEL_MODE` 设回 `mock`，保留接口兼容并恢复占位返回。
+- 下一步：
+  - 在 GPU 主机执行 repo+weights 挂载并跑 `image/video/pdf/ppt` 最小样例矩阵。
+  - 补齐 MinIO 对象键到推理网关源文件解析的直连能力，减少资产落盘耦合。

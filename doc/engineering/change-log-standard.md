@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.66 | 2026-02-22 | inference-gateway 接入 ProPainter/LaMa 原生执行链路（mock/native 双模式、区域转 mask、文档链路真实化） |
 | v1.65 | 2026-02-22 | 新增多媒体后端落地记录：`regions` 接口、`task_regions/result_json` 迁移、`inference-gateway` 与本地 compose 栈 |
 | v1.64 | 2026-02-22 | 新增用户端自动化全流程体验回填与优化台账沉淀（`OPT-FE-003/004/005`） |
 | v1.63 | 2026-02-22 | 新增 user-frontend H5 空白页修复（入口模板补齐 + 浏览器环境变量兼容）与人工测试交接 |
@@ -119,6 +120,37 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.61] - 2026-02-22
+
+### Added
+- 新增模型仓准备脚本：`apps/inference-gateway/scripts/bootstrap-model-repos.sh`（自动拉取 ProPainter/LaMa 仓库）。
+- 新增推理网关运行依赖：`opencv-python-headless`、`Pillow`、`PyMuPDF`、`numpy`。
+
+### Changed
+- `apps/inference-gateway/app.py`：
+  - 增加 `INFERENCE_MODEL_MODE=mock|native` 双模式。
+  - `image` 端点接入 LaMa 原生命令 `bin/predict.py`。
+  - `video` 端点接入 ProPainter 原生命令 `inference_propainter.py`。
+  - 支持将 `regions` 转为 `image mask` / `video mask`（关键帧插值）。
+  - 文档链路落地 `ppt->pdf`、`pdf render(poppler->pymupdf fallback)`、`package(pdf+zip)`。
+  - 统一错误结构 `errorCode/errorMessage/retryable`。
+- `docker-compose.local-stack.yml`：
+  - inference-gateway 增加 repo/model/assets/results/work 挂载目录与推理参数环境变量。
+- `.env.example`：
+  - 补充推理模式、仓库路径、目录挂载与 ProPainter/LaMa 参数配置。
+- `apps/inference-gateway/README.md`：
+  - 增加 ProPainter/LaMa 对接说明、native 模式配置与运行示例。
+
+### Fixed
+- 修复推理网关仅占位返回导致“无法真实调用开源模型”问题，改为可配置真实执行链路并保留 mock 回退。
+
+### Security
+- 内网 token 校验保留，且配置缺失类错误在 4xx 显式返回，避免误重试放大风险。
+
+### References
+- 影响范围：`apps/inference-gateway`、`docker-compose.local-stack.yml`、`.env.example`、`doc/tad.md`
+- 验证证据：`python3 -m py_compile apps/inference-gateway/app.py`、`pnpm --filter @apps/worker-orchestrator typecheck`、`pnpm --filter @apps/worker-orchestrator test:integration`
 
 ## [0.5.60] - 2026-02-22
 
