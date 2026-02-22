@@ -1,4 +1,4 @@
-# 变更日志规范（v1.59）
+# 变更日志规范（v1.60）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.60 | 2026-02-22 | 新增本地 smoke 用户数据重置脚本与 INT-006 shared 全量 smoke 复验证据 |
 | v1.59 | 2026-02-22 | 新增 INT-006 本地模拟回调网关闭环（payment-callback 验签、退款回滚、Prisma 证据） |
 | v1.58 | 2026-02-22 | 新增 FE-006 订阅中心真实联调页（套餐/订阅/配额）与双端构建验收记录 |
 | v1.57 | 2026-02-22 | 新增 FE-008 Playwright UI smoke 矩阵脚本与多目标复用门禁 |
@@ -113,6 +114,39 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.55] - 2026-02-22
+
+### Added
+- 新增脚本：`apps/api-gateway/scripts/reset-local-smoke-user.ts`
+  - 用于清理本地固定联调账号（默认 `u_1001`）历史数据，覆盖：
+    - `usage_ledger/subscriptions/tasks/assets`
+    - `idempotency_keys/task_action_idempotency`
+    - `webhook_endpoints/webhook_deliveries`
+    - `task_view_deletions/account_delete_requests/audit_logs/compliance_idempotency`
+  - 内置本地数据库安全门禁（仅允许 `127.0.0.1/localhost`）。
+- `apps/api-gateway/package.json` 新增命令：
+  - `test:shared-smoke:reset-user`
+- `AGENTS.md` 命令基线新增：
+  - `pnpm --filter @apps/api-gateway test:shared-smoke:reset-user`
+
+### Changed
+- `doc/engineering/rd-progress-management.md`
+  - `INT-006` 备注从“需手工清理后复验”更新为“已脚本化清理并复验通过”；
+  - 新增第 69 节执行回填（本地配额脏数据清理脚本化 + shared 全量 smoke 复验）。
+
+### Fixed
+- 修复本地 shared 全量 smoke 对历史账本脏数据敏感、容易触发 `40302` 误阻塞的问题，补齐可重复清理入口。
+
+### Security
+- 清理脚本默认拒绝非本地 `DATABASE_URL`，避免误删 shared/staging/prod 数据。
+
+### Rollback
+- 回退 `reset-local-smoke-user` 脚本与命令，恢复手工 SQL 清理流程。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.54] - 2026-02-22
 

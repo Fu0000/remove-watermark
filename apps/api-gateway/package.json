@@ -18,6 +18,7 @@
     "test:unit": "NODE_ENV=test node --test --import tsx test/tasks.service.spec.ts test/compliance.service.spec.ts",
     "test:contract": "NODE_ENV=test node --test --import tsx test/contract.spec.ts",
     "test:shared-smoke": "tsx scripts/shared-smoke.ts",
+    "test:shared-smoke:reset-user": "tsx scripts/reset-local-smoke-user.ts",
     "test:fe008-admin-smoke": "tsx scripts/fe008-admin-smoke.ts",
     "test:fe008-admin-e2e-lite": "tsx scripts/fe008-admin-e2e-lite.ts",
     "test:fe008-admin-smoke:matrix": "tsx scripts/fe008-admin-smoke-matrix.ts",

@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.21 | 2026-02-22 | 新增 INT-006 本地配额脏数据清理脚本与 Prisma 双进程 shared 全量 smoke 复验证据 |
 | v1.20 | 2026-02-22 | 新增 FE-006 订阅中心真实联调页面（套餐/订阅/配额）与多端构建验收证据 |
 | v1.19 | 2026-02-22 | 新增 FE-008 Playwright UI smoke 矩阵脚本与 `dev/shared/staging` 本地映射验收证据 |
 | v1.18 | 2026-02-22 | 新增 FE-008 分层验收（API 轻量 e2e + Playwright UI smoke）与本地执行证据 |
@@ -150,7 +151,7 @@
 | INT-003 | 上传 -> 创建任务主链路联调 | 前后端+测试 | 2026-03-05 | 2026-03-12 | In Progress | 端到端成功率 >= 95% | 本地 smoke 已通过，待云端 shared 验收 |
 | INT-004 | 任务中心状态刷新与错误路径联调 | 前后端+测试 | 2026-03-10 | 2026-03-18 | In Review | 状态渲染与错误码一致 | 本地 smoke 已覆盖状态推进与错误路径；按阶段例外以本地证据验收，云端认证后置发布前门禁 |
 | INT-005 | 结果下载与过期策略联调 | 前后端+测试 | 2026-03-14 | 2026-03-20 | In Review | 过期前提醒与失效行为一致 | 本地 smoke 已覆盖结果下载与 expireAt 校验；按阶段例外以本地证据验收，云端认证后置发布前门禁 |
-| INT-006 | 订阅/配额扣减联调 | 前后端+测试+支付 | 2026-03-24 | 2026-04-07 | In Review | 扣减一致率 100% | 本地 Prisma 已覆盖 payment-callback(PAID/REFUNDED) + 退款幂等 + 配额回滚；shared 全量 smoke 需清理历史配额数据后复验 |
+| INT-006 | 订阅/配额扣减联调 | 前后端+测试+支付 | 2026-03-24 | 2026-04-07 | In Review | 扣减一致率 100% | 本地 Prisma 已覆盖 payment-callback(PAID/REFUNDED) + 退款幂等 + 配额回滚；新增 `test:shared-smoke:reset-user` 后已完成 shared 全量 smoke 复验 |
 | INT-007 | Webhook 对接联调（验签/重试/幂等） | 后端+外部系统 | 2026-03-28 | 2026-04-12 | In Progress | 签名校验通过，重试可观测 | 本地已完成 test/retry/query + dispatcher outbox 派发 smoke + 外部验签幂等脚本 + dev/shared/staging 本地映射矩阵，待 shared/staging 云端联调 |
 | INT-008 | staging 全链路回归与发布演练 | 全体 | 2026-04-28 | 2026-05-10 | Backlog | 发布准入清单全绿 | 不允许跳过 staging |
 
@@ -186,6 +187,7 @@
 | 去重索引校验（DATA-003，本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway test:data-dedupe-index` | `passed` | `idempotency_keys/outbox_events/usage_ledger` 去重约束存在且二次写入可被稳定拦截 |
 | Prisma 模式 shared smoke（本轮，本地） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma SUBSCRIPTIONS_STORE=prisma pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | `INT-002~INT-006` 在 Prisma 持久化分支可通过 |
 | INT-006 本地模拟回调网关（本轮，本地） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma SUBSCRIPTIONS_STORE=prisma INT006_BASE_URL=http://127.0.0.1:3000 pnpm --filter @apps/api-gateway test:int006-local` | `passed` | 覆盖 `PAID -> REFUNDED`、重复退款幂等（`applied=false`）与配额总量回滚 |
+| Prisma 模式 shared smoke 复验（本轮，本地） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway test:shared-smoke:reset-user` + `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma SUBSCRIPTIONS_STORE=prisma REDIS_URL=redis://127.0.0.1:6379（双进程） pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 清理固定账号历史脏数据后，`INT-002~INT-007` + `FE-007/FE-008` 本地全量 smoke 可稳定通过 |
 | Prisma 持久化重启校验（本轮） | `重启网关后 GET /v1/tasks` + `psql count` | `passed（tasks=2, task_masks=1, idempotency_keys=2, usage_ledger=3, outbox_events=3）` | 本地重启后任务与幂等相关数据不丢失 |
 | Worker 编排类型检查（本轮） | `pnpm --filter @apps/worker-orchestrator typecheck` | `passed` | `worker-orchestrator` 编排循环可编译 |
 | 双进程联调 smoke（API + Worker，本轮） | `启动 api-gateway(TASKS_STORE=prisma) + worker-orchestrator 后执行 pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 状态由 Worker 推进，API 查询路径不再承担推进副作用 |
@@ -2713,3 +2715,45 @@
 - 下一步：
   - 在本地清理历史 `usage_ledger/subscriptions` 数据后复跑 `test:shared-smoke`，补齐全量联调证据。
   - 云端地址就绪后按同命令口径复跑 shared/staging 并推进 `INT-006` 到 `QA`。
+
+## 69. 本次执行回填（INT-006 收尾：本地配额脏数据清理脚本化 + shared 全量 smoke 复验）
+
+- 任务编号：`DEV-20260222-INT006-SMOKE-RERUN`
+- 需求映射：`FR-008`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+- 负责人：后端
+- 截止时间：`2026-04-07`
+- 当前状态：`In Review`
+- 阻塞项：无（云端验收后置）
+- 风险等级：低
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/scripts/reset-local-smoke-user.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/AGENTS.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增本地 smoke 清理脚本：`test:shared-smoke:reset-user`，默认清理 `u_1001` 在本地 DB 的历史任务/账本/订阅/幂等等数据。
+  - 增加本地数据库安全门禁：仅允许 `127.0.0.1/localhost`（非本地需显式 `ALLOW_NON_LOCAL_RESET=true`）。
+  - 基于该脚本复验 Prisma 双进程全量 smoke，验证历史配额污染场景已可快速恢复。
+- 测试证据：
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway test:shared-smoke:reset-user`：通过
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/worker-orchestrator typecheck`：通过
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma SUBSCRIPTIONS_STORE=prisma REDIS_URL=redis://127.0.0.1:6379（双进程） SHARED_BASE_URL=http://127.0.0.1:3000 SHARED_SMOKE_MAX_POLL_ATTEMPTS=80 SHARED_SMOKE_POLL_INTERVAL_MS=300 pnpm --filter @apps/api-gateway test:shared-smoke`：通过
+  - 运行日志：
+    - `/Users/codelei/Documents/ai-project/remove-watermark/.runtime/logs/api-gateway-dev-prisma-rerun.log`
+    - `/Users/codelei/Documents/ai-project/remove-watermark/.runtime/logs/worker-orchestrator-prisma-rerun.log`
+    - `/Users/codelei/Documents/ai-project/remove-watermark/.runtime/logs/shared-smoke-prisma-rerun.log`
+- 联调结果：
+  - 本地地址口径下，INT-006 已从“手工清理后可复验”升级为“脚本化清理 + 一键复验”流程。
+- 遗留问题：
+  - shared/staging 云端地址口径证据仍按发布前最后一步补齐。
+- 风险与回滚：
+  - 风险：误配 `DATABASE_URL` 时清理脚本存在删错环境风险，已通过“仅本地允许”门禁降低风险。
+  - 回滚：回退 `reset-local-smoke-user` 脚本与命令，恢复手工 SQL 清理流程。
+- 下一步：
+  - 云端地址可用后复用同流程（改为云端只跑 smoke，不执行 reset 脚本），推进 `INT-006` 到 `QA`。

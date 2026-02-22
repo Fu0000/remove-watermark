@@ -272,6 +272,7 @@
 ### 14.3 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.10 | 2026-02-22 | 增加本地 smoke 用户数据重置命令 `@apps/api-gateway test:shared-smoke:reset-user`（仅本地 DB） |
 | v1.9 | 2026-02-22 | 增加 INT-006 本地支付回调网关验收命令 `@apps/api-gateway test:int006-local`（PAID/REFUNDED） |
 | v1.8 | 2026-02-22 | 增加 FE-008 Playwright 矩阵命令 `@apps/admin-console test:e2e:fe008:matrix`（多目标 UI smoke） |
 | v1.7 | 2026-02-22 | 增加 FE-008 分层验收基线命令（`test:fe008-admin-e2e-lite` + `@apps/admin-console test:e2e:fe008`） |
@@ -312,6 +313,7 @@ pnpm --filter @apps/api-gateway test:fe008-admin-e2e-lite
 pnpm --filter @apps/api-gateway test:shared-smoke:matrix
 pnpm --filter @apps/api-gateway test:fe008-admin-smoke:matrix
 pnpm --filter @apps/api-gateway test:int006-local
+pnpm --filter @apps/api-gateway test:shared-smoke:reset-user
 pnpm --filter @apps/admin-console test:e2e:fe008
 pnpm --filter @apps/admin-console test:e2e:fe008:matrix
 
