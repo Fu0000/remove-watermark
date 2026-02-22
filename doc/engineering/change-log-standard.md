@@ -1,4 +1,4 @@
-# 变更日志规范（v1.52）
+# 变更日志规范（v1.53）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.53 | 2026-02-22 | 新增 FE-008 管理端 Webhook 独立 smoke（本地）与联调证据 |
 | v1.52 | 2026-02-22 | 新增 BE-008 租户模型落地（`tenantId` 持久化 + 管理端真实租户级过滤）与回归证据 |
 | v1.51 | 2026-02-22 | 新增 FE-008 Webhook 显式上下文驱动（`scopeType/scopeId` 必填）与默认用户移除 |
 | v1.50 | 2026-02-22 | 新增 FE-008 Webhook 运维切换 `/admin/webhooks/*`，补齐 RBAC 与契约回归 |
@@ -106,6 +107,36 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.48] - 2026-02-22
+
+### Added
+- 新增脚本：`apps/api-gateway/scripts/fe008-admin-smoke.ts`
+  - 覆盖 `/admin/webhooks/*` 的 FE-008 独立验收场景：
+    - `scopeType/scopeId` 缺失返回 `40001`
+    - tenant 范围查询隔离
+    - tenant 范围重试成功
+    - 跨租户重试返回 `40401`
+- `apps/api-gateway/package.json` 新增命令：`test:fe008-admin-smoke`。
+
+### Changed
+- `apps/api-gateway/scripts/shared-smoke.ts`：
+  - `request` 增加可选自定义 header 支持；
+  - 补充 FE-008 检查片段（与独立脚本保持一致口径）。
+- `doc/engineering/rd-progress-management.md` 新增第 62 节回填与本地 smoke 证据。
+
+### Fixed
+- 修复 FE-008 验收证据依赖全量 `shared-smoke` 导致被无关链路阻塞的问题（拆分独立 smoke）。
+
+### Security
+- 独立 smoke 强制验证上下文必填与租户边界，降低管理端误操作风险。
+
+### Rollback
+- 回退 `fe008-admin-smoke.ts` 与 `test:fe008-admin-smoke` 命令，恢复仅依赖 contract/全量 smoke 的验收方式。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.47] - 2026-02-22
 

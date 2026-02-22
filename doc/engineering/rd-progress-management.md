@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.15 | 2026-02-22 | 新增 FE-008 管理端 Webhook 独立 smoke（本地）与上下文/租户过滤验收证据 |
 | v1.14 | 2026-02-22 | 新增 BE-008 租户模型落地（`tenantId` 持久化 + 管理端真实租户级过滤）与契约回归证据 |
 | v1.13 | 2026-02-22 | 新增 FE-008 Webhook 运维“显式上下文驱动”改造（`scopeType/scopeId` 必填）与契约回归证据 |
 | v1.12 | 2026-02-22 | 新增 FE-008 Webhook 运维链路切换到 `/admin/webhooks/*`，补齐后台 RBAC 与契约回归证据 |
@@ -119,7 +120,7 @@
 | FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | In Review | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 结果查询、预览/复制下载地址、过期提示已联调 |
 | FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | Backlog | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 未开始 |
 | FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | In Review | FR-010/FR-011 | `/v1/account/delete-request*`, `/v1/account/audit-logs`, `DELETE /v1/assets/{assetId}`, `DELETE /v1/tasks/{taskId}` | e2e | 删除申请创建、list/detail、审计日志查询已联调；编辑/任务页删除入口已补齐并新增二次确认与成功提示 |
-| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Review | FR-012 | `/admin/*` | e2e/smoke | `/admin/tasks`、`/admin/plans`、`/admin/webhooks/deliveries*` 已打通；Webhook 运维已改为显式上下文（用户/租户）驱动且 `tenant` 已切换为真实数据层过滤；待补 e2e 后可进 QA |
+| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Review | FR-012 | `/admin/*` | e2e/smoke | `/admin/tasks`、`/admin/plans`、`/admin/webhooks/deliveries*` 已打通；Webhook 运维已改为显式上下文（用户/租户）驱动且 `tenant` 已切换为真实数据层过滤；新增本地 `fe008-admin-smoke` 证据，待补 e2e 后可进 QA |
 
 ### 7.5 后端研发任务（API + Worker + Billing）
 
@@ -210,6 +211,7 @@
 | BE-008 租户级过滤契约回归（本轮） | `pnpm --filter @apps/api-gateway typecheck` + `pnpm --filter @apps/api-gateway test:contract` | `passed（contract 29/29）` | 新增 `scopeType=tenant` 场景：同租户跨用户可查/可重试，跨租户访问返回 `40401` |
 | `/admin/*` 密钥安全门禁验证（本轮） | `pnpm --filter @apps/api-gateway exec tsx -e \"...assertAdminRbacConfig...\"`（`APP_ENV=staging` 且未设置 `ADMIN_RBAC_SECRET`） | `passed（blocked）` | 已验证受保护环境会拒绝默认/缺失密钥配置，避免 `admin123` 漏入 shared/staging/prod |
 | FE-008 服务端 admin 代理验证（本轮） | `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed` | 已新增 `pages/api/admin/[...path]` 代理并将浏览器侧 `/admin/*` 调用改为服务端注入 `X-Admin-Secret` |
+| FE-008 管理端 Webhook 独立 smoke（本轮，本地） | `pnpm --filter @apps/api-gateway test:fe008-admin-smoke` | `passed` | 已覆盖 `scopeType/scopeId` 缺失拦截（`40001`）、tenant 查询隔离、tenant 重试成功与跨租户重试 `40401` |
 | `.env` 注入脚本验证（本轮） | `scripts/setup-admin-env.sh --dry-run` + `scripts/setup-admin-env.sh` | `passed` | 已生成 `apps/api-gateway` 与 `apps/admin-console` 的 `shared/staging/prod` 本地 `.env` 文件（权限 `600`），且被 `.gitignore` 忽略 |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
@@ -2375,3 +2377,45 @@
   - 回滚：回退迁移与 service scope 逻辑到 `userId` 单维模型（仅用于紧急回退，不建议长期保留）。
 - 下一步：
   - 按计划继续 FE-008 e2e/smoke 与 shared/staging 发布前验收项收尾。
+
+## 62. 本次执行回填（FE-008 管理端 Webhook 独立 smoke：上下文与租户过滤）
+
+- 任务编号：`DEV-20260222-FE008-ADMIN-WEBHOOK-SMOKE`
+- 需求映射：`FR-012`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/admin-framework.md`
+- 负责人：后端 + 前端（后台）
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：无（云端 shared/staging 证据继续按发布前门禁补齐）
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/scripts/fe008-admin-smoke.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/scripts/shared-smoke.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增 `fe008-admin-smoke` 独立脚本，聚焦 `/admin/webhooks/*` 验收，避免被任务状态机链路耦合阻塞。
+  - 覆盖以下关键场景：
+    - 缺少 `scopeType/scopeId` 时查询/重试返回 `40001`；
+    - `scopeType=tenant` 查询仅返回目标租户投递；
+    - 同租户重试成功并生成新 `deliveryId`；
+    - 跨租户重试返回 `40401`。
+  - `shared-smoke` 同步补齐可选自定义 header 能力及 FE-008 检查片段，便于后续统一门禁合并。
+  - `package.json` 新增命令：`test:fe008-admin-smoke`。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`29/29`）
+  - `pnpm --filter @apps/api-gateway test:fe008-admin-smoke`：通过（本地地址 `http://127.0.0.1:3000`）
+- 联调结果：
+  - 本地地址口径下，已形成 FE-008 管理端 Webhook “显式上下文 + 租户隔离 + 重试边界”自动化验收闭环。
+- 遗留问题：
+  - 全量 `shared-smoke` 当前仍受任务状态推进链路影响（停留 `PREPROCESSING`）导致无法作为本轮 FE-008 证据入口，已通过独立脚本规避耦合。
+- 风险与回滚：
+  - 风险：若后续仅维护全量 smoke，可能再次出现跨模块耦合导致误报。
+  - 回滚：回退 `fe008-admin-smoke` 新脚本与命令，继续沿用 contract 证据（不建议）。
+- 下一步：
+  - 将 `test:fe008-admin-smoke` 接入 shared/staging 本地映射矩阵；云端地址就绪后直接复跑补齐发布前证据。

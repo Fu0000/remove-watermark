@@ -37,6 +37,9 @@ const baseUrl = normalizeBaseUrl(process.env.SHARED_BASE_URL || "http://127.0.0.
 const username = process.env.SHARED_USERNAME || "admin";
 const password = process.env.SHARED_PASSWORD || "admin123";
 const authCode = process.env.SHARED_AUTH_CODE || username;
+const adminRole = normalizeAdminRole(process.env.SHARED_ADMIN_ROLE || "admin");
+const adminRetryRole = normalizeAdminRole(process.env.SHARED_ADMIN_RETRY_ROLE || "operator");
+const adminSecret = process.env.SHARED_ADMIN_SECRET || "admin123";
 
 function normalizeBaseUrl(url: string) {
   if (url.startsWith("http://") || url.startsWith("https://")) {
@@ -61,6 +64,7 @@ async function request<T>(
     token?: string;
     withRequestId?: boolean;
     idempotencyKey?: string;
+    headers?: Record<string, string>;
     body?: unknown;
   }
 ): Promise<HttpResult<T>> {
@@ -80,6 +84,11 @@ async function request<T>(
 
   if (options.idempotencyKey) {
     headers["Idempotency-Key"] = options.idempotencyKey;
+  }
+  if (options.headers) {
+    for (const [key, value] of Object.entries(options.headers)) {
+      headers[key] = value;
+    }
   }
 
   const response = await fetch(`${baseUrl}${path}`, {
@@ -131,6 +140,21 @@ async function login() {
   assert(body.data?.accessToken, "登录返回缺少 accessToken");
 
   return body.data.accessToken;
+}
+
+function normalizeAdminRole(value: string): "admin" | "operator" | "auditor" {
+  const role = value.trim().toLowerCase();
+  if (role === "admin" || role === "operator" || role === "auditor") {
+    return role;
+  }
+  throw new Error(`invalid SHARED_ADMIN_ROLE: ${value}`);
+}
+
+function buildAdminHeaders(role: "admin" | "operator" | "auditor") {
+  return {
+    "X-Admin-Role": role,
+    "X-Admin-Secret": adminSecret
+  };
 }
 
 async function main() {
@@ -605,6 +629,175 @@ async function main() {
   );
   assert(successDelivery.signatureValidated === true, "retry 后签名自检未通过");
 
+  const tenantScopeA = `t_fe008_smoke_a_${Date.now()}`;
+  const tenantScopeB = `t_fe008_smoke_b_${Date.now()}`;
+
+  const createTenantEndpointAResp = await request<{
+    endpointId: string;
+    status: "ACTIVE";
+  }>("/v1/webhooks/endpoints", {
+    method: "POST",
+    token,
+    headers: {
+      "X-Tenant-Id": tenantScopeA
+    },
+    body: {
+      name: `fe008-smoke-tenant-a-${Date.now()}`,
+      url: "https://client.example.com/fail",
+      events: ["task.succeeded", "task.failed"],
+      timeoutMs: 5000,
+      maxRetries: 2
+    }
+  });
+  const createTenantEndpointABody = createTenantEndpointAResp.body as ApiEnvelope<{
+    endpointId: string;
+    status: "ACTIVE";
+  }>;
+  assert(createTenantEndpointAResp.status === 200 && createTenantEndpointABody.code === 0, "FE-008 tenantA endpoint 创建失败");
+  const tenantEndpointAId = createTenantEndpointABody.data.endpointId;
+
+  const createTenantEndpointBResp = await request<{
+    endpointId: string;
+    status: "ACTIVE";
+  }>("/v1/webhooks/endpoints", {
+    method: "POST",
+    token,
+    headers: {
+      "X-Tenant-Id": tenantScopeB
+    },
+    body: {
+      name: `fe008-smoke-tenant-b-${Date.now()}`,
+      url: "https://client.example.com/fail",
+      events: ["task.succeeded", "task.failed"],
+      timeoutMs: 5000,
+      maxRetries: 2
+    }
+  });
+  const createTenantEndpointBBody = createTenantEndpointBResp.body as ApiEnvelope<{
+    endpointId: string;
+    status: "ACTIVE";
+  }>;
+  assert(createTenantEndpointBResp.status === 200 && createTenantEndpointBBody.code === 0, "FE-008 tenantB endpoint 创建失败");
+  const tenantEndpointBId = createTenantEndpointBBody.data.endpointId;
+
+  const tenantDeliveryAResp = await request<{ deliveryId: string }>(`/v1/webhooks/endpoints/${tenantEndpointAId}/test`, {
+    method: "POST",
+    token
+  });
+  const tenantDeliveryABody = tenantDeliveryAResp.body as ApiEnvelope<{ deliveryId: string }>;
+  assert(tenantDeliveryAResp.status === 200 && tenantDeliveryABody.code === 0, "FE-008 tenantA test delivery 失败");
+  const tenantDeliveryAId = tenantDeliveryABody.data.deliveryId;
+
+  const tenantDeliveryBResp = await request<{ deliveryId: string }>(`/v1/webhooks/endpoints/${tenantEndpointBId}/test`, {
+    method: "POST",
+    token
+  });
+  const tenantDeliveryBBody = tenantDeliveryBResp.body as ApiEnvelope<{ deliveryId: string }>;
+  assert(tenantDeliveryBResp.status === 200 && tenantDeliveryBBody.code === 0, "FE-008 tenantB test delivery 失败");
+  const tenantDeliveryBId = tenantDeliveryBBody.data.deliveryId;
+
+  const adminListMissingScopeResp = await request("/admin/webhooks/deliveries?page=1&pageSize=10", {
+    method: "GET",
+    token,
+    headers: buildAdminHeaders(adminRole)
+  });
+  const adminListMissingScopeBody = adminListMissingScopeResp.body as ApiEnvelope<Record<string, unknown>>;
+  assert(
+    adminListMissingScopeResp.status === 400 && adminListMissingScopeBody.code === 40001,
+    "FE-008 管理端缺少 scope 参数未返回 40001"
+  );
+
+  const tenantFailedListResp = await request<{
+    items: Array<{ deliveryId: string }>;
+    total: number;
+  }>(`/admin/webhooks/deliveries?scopeType=tenant&scopeId=${encodeURIComponent(tenantScopeA)}&status=FAILED&page=1&pageSize=50`, {
+    method: "GET",
+    token,
+    headers: buildAdminHeaders(adminRole)
+  });
+  const tenantFailedListBody = tenantFailedListResp.body as ApiEnvelope<{
+    items: Array<{ deliveryId: string }>;
+    total: number;
+  }>;
+  assert(tenantFailedListResp.status === 200 && tenantFailedListBody.code === 0, "FE-008 tenant scope 查询失败");
+  assert(
+    tenantFailedListBody.data.items.some((item) => item.deliveryId === tenantDeliveryAId),
+    "FE-008 tenantA 查询结果未包含 tenantA 投递"
+  );
+  assert(
+    !tenantFailedListBody.data.items.some((item) => item.deliveryId === tenantDeliveryBId),
+    "FE-008 tenantA 查询结果错误包含 tenantB 投递"
+  );
+
+  const adminRetryMissingScopeResp = await request(`/admin/webhooks/deliveries/${tenantDeliveryAId}/retry`, {
+    method: "POST",
+    token,
+    headers: buildAdminHeaders(adminRetryRole)
+  });
+  const adminRetryMissingScopeBody = adminRetryMissingScopeResp.body as ApiEnvelope<Record<string, unknown>>;
+  assert(
+    adminRetryMissingScopeResp.status === 400 && adminRetryMissingScopeBody.code === 40001,
+    "FE-008 重试缺少 scope 参数未返回 40001"
+  );
+
+  const patchTenantEndpointAResp = await request<{ endpointId: string; status: "ACTIVE" | "PAUSED" }>(
+    `/v1/webhooks/endpoints/${tenantEndpointAId}`,
+    {
+      method: "PATCH",
+      token,
+      body: {
+        url: "https://client.example.com/callback",
+        status: "ACTIVE"
+      }
+    }
+  );
+  const patchTenantEndpointABody = patchTenantEndpointAResp.body as ApiEnvelope<{ endpointId: string; status: "ACTIVE" | "PAUSED" }>;
+  assert(patchTenantEndpointAResp.status === 200 && patchTenantEndpointABody.code === 0, "FE-008 tenantA endpoint 更新失败");
+
+  const tenantRetryResp = await request<{ deliveryId: string }>(
+    `/admin/webhooks/deliveries/${tenantDeliveryAId}/retry?scopeType=tenant&scopeId=${encodeURIComponent(tenantScopeA)}`,
+    {
+      method: "POST",
+      token,
+      headers: buildAdminHeaders(adminRetryRole)
+    }
+  );
+  const tenantRetryBody = tenantRetryResp.body as ApiEnvelope<{ deliveryId: string }>;
+  assert(tenantRetryResp.status === 200 && tenantRetryBody.code === 0, "FE-008 tenant scope retry 失败");
+  assert(tenantRetryBody.data.deliveryId !== tenantDeliveryAId, "FE-008 tenant scope retry 未生成新 deliveryId");
+
+  const tenantRetryWrongScopeResp = await request<{ deliveryId: string }>(
+    `/admin/webhooks/deliveries/${tenantDeliveryAId}/retry?scopeType=tenant&scopeId=${encodeURIComponent(tenantScopeB)}`,
+    {
+      method: "POST",
+      token,
+      headers: buildAdminHeaders(adminRetryRole)
+    }
+  );
+  const tenantRetryWrongScopeBody = tenantRetryWrongScopeResp.body as ApiEnvelope<Record<string, unknown>>;
+  assert(
+    tenantRetryWrongScopeResp.status === 404 && tenantRetryWrongScopeBody.code === 40401,
+    "FE-008 跨租户重试未返回 40401"
+  );
+
+  const tenantSuccessListResp = await request<{
+    items: Array<{ deliveryId: string }>;
+    total: number;
+  }>(`/admin/webhooks/deliveries?scopeType=tenant&scopeId=${encodeURIComponent(tenantScopeA)}&status=SUCCESS&page=1&pageSize=50`, {
+    method: "GET",
+    token,
+    headers: buildAdminHeaders(adminRole)
+  });
+  const tenantSuccessListBody = tenantSuccessListResp.body as ApiEnvelope<{
+    items: Array<{ deliveryId: string }>;
+    total: number;
+  }>;
+  assert(tenantSuccessListResp.status === 200 && tenantSuccessListBody.code === 0, "FE-008 tenant success 查询失败");
+  assert(
+    tenantSuccessListBody.data.items.some((item) => item.deliveryId === tenantRetryBody.data.deliveryId),
+    "FE-008 tenant success 查询未包含重试后投递"
+  );
+
   const uploadForAssetDeleteResp = await request<{
     assetId: string;
   }>("/v1/assets/upload-policy", {
@@ -804,6 +997,7 @@ async function main() {
   console.log("[shared-smoke] INT-006 checks passed");
   console.log("[shared-smoke] INT-007 prep checks passed");
   console.log("[shared-smoke] FE-007 checks passed");
+  console.log("[shared-smoke] FE-008 checks passed");
   console.log("[shared-smoke] INT-004/INT-005 checks passed");
   console.log("[shared-smoke] INT-002/INT-006 checks passed");
 }
