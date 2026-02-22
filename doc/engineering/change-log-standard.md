@@ -1,4 +1,4 @@
-# 变更日志规范（v1.50）
+# 变更日志规范（v1.51）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.51 | 2026-02-22 | 新增 FE-008 Webhook 显式上下文驱动（`scopeType/scopeId` 必填）与默认用户移除 |
 | v1.50 | 2026-02-22 | 新增 FE-008 Webhook 运维切换 `/admin/webhooks/*`，补齐 RBAC 与契约回归 |
 | v1.49 | 2026-02-22 | 新增 `.env` 注入脚本与忽略规则，落地 shared/staging/prod 本地密钥文件生成流程 |
 | v1.48 | 2026-02-22 | 新增 FE-008 admin 服务端代理（浏览器去密钥化）与 `ADMIN_PROXY_*` 配置模板 |
@@ -104,6 +105,36 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.46] - 2026-02-22
+
+### Added
+- `apps/admin-console/src/pages/webhooks/index.tsx` 新增运营上下文选择器：
+  - `scopeType: user|tenant`
+  - `scopeId` 输入（查询/重试必填）
+- `apps/api-gateway/test/contract.spec.ts` 新增“`/admin/webhooks/*` 缺少上下文参数返回 `40001`”契约用例。
+
+### Changed
+- `apps/api-gateway/src/modules/admin/admin.controller.ts`：
+  - `/admin/webhooks/deliveries*` 改为显式上下文驱动，不再默认 `u_1001`
+  - 支持推荐参数 `scopeType + scopeId`，兼容参数 `userId/tenantId`
+- `apps/admin-console/src/services/webhooks.ts`：
+  - 查询与重试接口改为强制携带上下文参数
+- `doc/api-spec.md` 更新管理端 Webhook 契约：`scopeType/scopeId` 必填。
+- `doc/engineering/rd-progress-management.md` 新增第 60 节回填并更新测试看板（contract `28/28`）。
+
+### Fixed
+- 修复管理端 Webhook 运维默认落到固定用户 `u_1001` 的误操作风险。
+
+### Security
+- 去除默认用户上下文，避免在未明确操作对象时进行跨用户运维动作。
+
+### Rollback
+- 回退 `admin.controller` scope 解析、`admin-console` Webhook 上下文选择器与服务参数改造，恢复到 0.5.45 的默认用户模式（不建议）。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console`、`/Users/codelei/Documents/ai-project/remove-watermark/doc`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.45] - 2026-02-22
 

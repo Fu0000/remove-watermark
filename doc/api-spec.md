@@ -693,18 +693,24 @@ Query：
 
 ### `GET /admin/webhooks/deliveries`
 - 查询参数：
-  - `userId`（可选，默认 `u_1001`）
+  - `scopeType`（必填，`user|tenant`）
+  - `scopeId`（必填，上下文 ID）
   - `endpointId`、`eventType`、`status`
   - `page`、`pageSize`
 - 返回：`items[] + page + pageSize + total`
 - 语义：管理端读取投递观测与失败记录，支持按筛选条件分页。
+- 兼容参数：`userId`、`tenantId`（过渡期保留，不建议新增依赖）
+- MVP 说明：当前数据模型以 `userId` 为主，`tenant` 维度在租户模型落地前走等价过滤口径。
 
 ### `POST /admin/webhooks/deliveries/{deliveryId}/retry`
-- 查询参数：`userId`（可选，默认 `u_1001`）
+- 查询参数：
+  - `scopeType`（必填，`user|tenant`）
+  - `scopeId`（必填，上下文 ID）
 - 语义：对失败投递执行后台重试，并写入审计动作 `admin.webhook.retry`。
 - 错误码：
   - `40401`：delivery 或 endpoint 不存在
   - `42201`：delivery 状态不允许重试（非 `FAILED`）
+  - `40001`：缺少上下文参数（`scopeType/scopeId`）
 
 ## 12. 实时进度协议（推荐）
 
@@ -972,6 +978,7 @@ Query：
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.9 | 2026-02-22 | `/admin/webhooks/*` 改为显式上下文驱动（`scopeType/scopeId` 必填），不再允许默认用户 |
 | v1.8 | 2026-02-22 | 新增 `/admin/webhooks/deliveries*` 契约与 RBAC 权限矩阵（`admin:webhook:*`） |
 | v1.7 | 2026-02-22 | 补充管理端密钥“服务端代理注入”要求，禁止浏览器侧暴露 `X-Admin-Secret` |
 | v1.6 | 2026-02-22 | 补充 `/admin/*` 密钥安全门禁（shared/staging/prod 禁止默认口令） |

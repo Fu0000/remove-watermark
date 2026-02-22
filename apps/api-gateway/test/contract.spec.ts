@@ -1318,7 +1318,7 @@ test("GET /admin/webhooks/deliveries should enforce RBAC and support query", asy
 
   const list = await server.inject({
     method: "GET",
-    url: `/admin/webhooks/deliveries?endpointId=${endpointId}&status=FAILED&page=1&pageSize=10`,
+    url: `/admin/webhooks/deliveries?scopeType=user&scopeId=u_1001&endpointId=${endpointId}&status=FAILED&page=1&pageSize=10`,
     headers: adminHeaders("auditor")
   });
   assert.equal(list.statusCode, 200);
@@ -1366,7 +1366,7 @@ test("POST /admin/webhooks/deliveries/{deliveryId}/retry should enforce RBAC", a
 
   const auditorRetry = await server.inject({
     method: "POST",
-    url: `/admin/webhooks/deliveries/${deliveryId}/retry`,
+    url: `/admin/webhooks/deliveries/${deliveryId}/retry?scopeType=user&scopeId=u_1001`,
     headers: adminHeaders("auditor")
   });
   assert.equal(auditorRetry.statusCode, 403);
@@ -1374,13 +1374,64 @@ test("POST /admin/webhooks/deliveries/{deliveryId}/retry should enforce RBAC", a
 
   const operatorRetry = await server.inject({
     method: "POST",
-    url: `/admin/webhooks/deliveries/${deliveryId}/retry`,
+    url: `/admin/webhooks/deliveries/${deliveryId}/retry?scopeType=user&scopeId=u_1001`,
     headers: adminHeaders("operator")
   });
   assert.equal(operatorRetry.statusCode, 200);
   assert.equal(operatorRetry.json().code, 0);
   assert.equal(typeof operatorRetry.json().data.deliveryId, "string");
   assert.notEqual(operatorRetry.json().data.deliveryId, deliveryId);
+
+  await app.close();
+});
+
+test("admin webhook operations should require explicit scope context", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const create = await server.inject({
+    method: "POST",
+    url: "/v1/webhooks/endpoints",
+    headers: {
+      authorization: "Bearer test-token",
+      "content-type": "application/json"
+    },
+    payload: {
+      name: "admin-scope-required-endpoint",
+      url: "https://client.example.com/fail",
+      events: ["task.failed"],
+      timeoutMs: 5000,
+      maxRetries: 2
+    }
+  });
+  assert.equal(create.statusCode, 200);
+  const endpointId = create.json().data.endpointId as string;
+
+  const testDelivery = await server.inject({
+    method: "POST",
+    url: `/v1/webhooks/endpoints/${endpointId}/test`,
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(testDelivery.statusCode, 200);
+  const deliveryId = testDelivery.json().data.deliveryId as string;
+
+  const listWithoutScope = await server.inject({
+    method: "GET",
+    url: `/admin/webhooks/deliveries?endpointId=${endpointId}&status=FAILED&page=1&pageSize=10`,
+    headers: adminHeaders("admin")
+  });
+  assert.equal(listWithoutScope.statusCode, 400);
+  assert.equal(listWithoutScope.json().code, 40001);
+
+  const retryWithoutScope = await server.inject({
+    method: "POST",
+    url: `/admin/webhooks/deliveries/${deliveryId}/retry`,
+    headers: adminHeaders("operator")
+  });
+  assert.equal(retryWithoutScope.statusCode, 400);
+  assert.equal(retryWithoutScope.json().code, 40001);
 
   await app.close();
 });

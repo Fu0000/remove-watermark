@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.13 | 2026-02-22 | 新增 FE-008 Webhook 运维“显式上下文驱动”改造（`scopeType/scopeId` 必填）与契约回归证据 |
 | v1.12 | 2026-02-22 | 新增 FE-008 Webhook 运维链路切换到 `/admin/webhooks/*`，补齐后台 RBAC 与契约回归证据 |
 | v1.11 | 2026-02-22 | 新增 `.env` 注入落地脚本（shared/staging/prod）并完成本地文件生成 |
 | v1.10 | 2026-02-22 | 新增 FE-008 服务端 admin 代理（浏览器去密钥化）与环境变量收敛 |
@@ -117,7 +118,7 @@
 | FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | In Review | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 结果查询、预览/复制下载地址、过期提示已联调 |
 | FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | Backlog | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 未开始 |
 | FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | In Review | FR-010/FR-011 | `/v1/account/delete-request*`, `/v1/account/audit-logs`, `DELETE /v1/assets/{assetId}`, `DELETE /v1/tasks/{taskId}` | e2e | 删除申请创建、list/detail、审计日志查询已联调；编辑/任务页删除入口已补齐并新增二次确认与成功提示 |
-| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Review | FR-012 | `/admin/*` | e2e/smoke | `/admin/tasks`、`/admin/plans`、`/admin/webhooks/deliveries*` 已打通，后台具备任务检索/重放、套餐写入、Webhook 投递检索/重试；待补 e2e 后可进 QA |
+| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Review | FR-012 | `/admin/*` | e2e/smoke | `/admin/tasks`、`/admin/plans`、`/admin/webhooks/deliveries*` 已打通；Webhook 运维已改为显式上下文（用户/租户）驱动并去除默认用户；待补 e2e 后可进 QA |
 
 ### 7.5 后端研发任务（API + Worker + Billing）
 
@@ -203,7 +204,7 @@
 | FE-007 本地 smoke（本轮） | `SHARED_BASE_URL=http://127.0.0.1:3000 SHARED_USERNAME=admin SHARED_PASSWORD=admin123 SHARED_SMOKE_MAX_POLL_ATTEMPTS=80 SHARED_SMOKE_POLL_INTERVAL_MS=300 pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | `shared-smoke` 已覆盖 FE-007 删除与审计链路（素材删除、任务删除、删除申请 list/detail、审计日志查询） |
 | FE-007 本地 smoke 矩阵（dev-local，本轮） | `SMOKE_MATRIX_TARGETS=dev=http://127.0.0.1:3000 SHARED_SMOKE_MAX_POLL_ATTEMPTS=80 SHARED_SMOKE_POLL_INTERVAL_MS=300 pnpm --filter @apps/api-gateway test:shared-smoke:matrix` | `passed（dev=passed）` | 报告文件：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/.runtime/reports/shared-smoke-matrix-2026-02-21T19-59-34-171Z.md` |
 | FE-008 管理端真实数据流验证（本轮） | `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed` | 已验证管理端任务检索/异常重放、套餐查询、Webhook 投递查询/重试页面可构建并通过类型检查 |
-| FE-008 `/admin/*` 契约与后台写入验证（本轮） | `pnpm --filter @apps/api-gateway typecheck` + `pnpm --filter @apps/api-gateway test:contract` + `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed（contract 27/27）` | 已验证 `/admin/tasks`（检索+重放）、`/admin/plans`（检索+新增+编辑）与 `/admin/webhooks/deliveries*`（查询+重试）RBAC、错误码与页面接入闭环 |
+| FE-008 `/admin/*` 契约与后台写入验证（本轮） | `pnpm --filter @apps/api-gateway typecheck` + `pnpm --filter @apps/api-gateway test:contract` + `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed（contract 28/28）` | 已验证 `/admin/tasks`（检索+重放）、`/admin/plans`（检索+新增+编辑）与 `/admin/webhooks/deliveries*`（查询+重试）RBAC、错误码、显式上下文（`scopeType/scopeId`）与页面接入闭环 |
 | `/admin/*` 密钥安全门禁验证（本轮） | `pnpm --filter @apps/api-gateway exec tsx -e \"...assertAdminRbacConfig...\"`（`APP_ENV=staging` 且未设置 `ADMIN_RBAC_SECRET`） | `passed（blocked）` | 已验证受保护环境会拒绝默认/缺失密钥配置，避免 `admin123` 漏入 shared/staging/prod |
 | FE-008 服务端 admin 代理验证（本轮） | `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed` | 已新增 `pages/api/admin/[...path]` 代理并将浏览器侧 `/admin/*` 调用改为服务端注入 `X-Admin-Secret` |
 | `.env` 注入脚本验证（本轮） | `scripts/setup-admin-env.sh --dry-run` + `scripts/setup-admin-env.sh` | `passed` | 已生成 `apps/api-gateway` 与 `apps/admin-console` 的 `shared/staging/prod` 本地 `.env` 文件（权限 `600`），且被 `.gitignore` 忽略 |
@@ -2279,3 +2280,46 @@
   - 回滚：回退 `admin.controller` 与 `admin-console` webhooks 服务层路径，恢复到 `/v1/webhooks/*` 读写路径。
 - 下一步：
   - 继续补 FE-008 smoke（本地地址）并准备 shared/staging 最终验收切换。
+
+## 60. 本次执行回填（FE-008 Webhook 运维改为上下文驱动）
+
+- 任务编号：`DEV-20260222-FE008-ADMIN-SCOPE-CONTEXT`
+- 需求映射：`FR-012`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/admin-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 负责人：后端 + 前端（后台）
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：租户模型尚未在数据库落地（当前先按单维度过滤）
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/admin/admin.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/contract.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/services/webhooks.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/pages/webhooks/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 后端 `/admin/webhooks/deliveries*` 去除默认 `u_1001`，改为显式上下文必填。
+  - 支持上下文参数：
+    - 推荐：`scopeType=user|tenant` + `scopeId`
+    - 兼容：`userId`/`tenantId`（过渡期）
+  - 管理端 Webhook 页面新增上下文选择（用户/租户）与上下文 ID 输入，查询与重试均强制透传。
+  - 缺少上下文参数时返回 `40001`，阻断“默认用户误操作”。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`28/28`，含 scope 必填用例）
+  - `pnpm --filter @apps/admin-console typecheck`：通过
+  - `pnpm --filter @apps/admin-console build`：通过
+- 联调结果：
+  - 本地地址口径下，Webhook 运维已完成“管理端选择上下文 -> `/admin/webhooks/*` 查询/重试”的闭环。
+- 遗留问题：
+  - 当前 `tenant` 口径在租户模型未落地前仍走单维过滤语义，后续需在数据层补齐真实租户归属字段。
+- 风险与回滚：
+  - 风险：若运营未填写上下文，页面会直接拦截并提示，不再自动回落默认用户。
+  - 回滚：回退 scope 必填改造，恢复 `u_1001` 默认（不建议）。
+- 下一步：
+  - 在 FE-008 smoke 中补“上下文为空阻断 + 上下文切换查询/重试”证据后推进 QA。

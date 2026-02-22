@@ -25,6 +25,8 @@ interface DeliveryListData {
 }
 
 interface ListDeliveriesInput {
+  scopeType: "user" | "tenant";
+  scopeId: string;
   endpointId?: string;
   eventType?: string;
   status?: DeliveryStatus;
@@ -39,6 +41,8 @@ interface RetryDeliveryData {
 export async function listDeliveries(input: ListDeliveriesInput) {
   return request<DeliveryListData>("/admin/webhooks/deliveries", {
     query: {
+      scopeType: input.scopeType,
+      scopeId: input.scopeId,
       endpointId: input.endpointId,
       eventType: input.eventType,
       status: input.status,
@@ -48,8 +52,12 @@ export async function listDeliveries(input: ListDeliveriesInput) {
   });
 }
 
-export async function retryDelivery(deliveryId: string) {
+export async function retryDelivery(deliveryId: string, input: Pick<ListDeliveriesInput, "scopeType" | "scopeId">) {
   return request<RetryDeliveryData>(`/admin/webhooks/deliveries/${encodeURIComponent(deliveryId)}/retry`, {
-    method: "POST"
+    method: "POST",
+    query: {
+      scopeType: input.scopeType,
+      scopeId: input.scopeId
+    }
   });
 }

@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Button, Card, Input, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
-import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
+import type { ColumnsType } from "antd/es/table";
 import { AppLayout } from "@/components/layout";
 import type { DeliveryItem } from "@/services/webhooks";
 import { listDeliveries, retryDelivery } from "@/services/webhooks";
 import { ApiError } from "@/services/http";
 
 type DeliveryStatus = "SUCCESS" | "FAILED";
+type ScopeType = "user" | "tenant";
 
 export default function WebhooksPage() {
   const [items, setItems] = useState<DeliveryItem[]>([]);
+  const [scopeType, setScopeType] = useState<ScopeType>("user");
+  const [scopeId, setScopeId] = useState("");
   const [endpointId, setEndpointId] = useState("");
   const [eventType, setEventType] = useState("");
   const [status, setStatus] = useState<DeliveryStatus | undefined>();
@@ -22,10 +25,22 @@ export default function WebhooksPage() {
 
   const loadData = useCallback(
     async (nextPage = page, nextPageSize = pageSize) => {
+      const normalizedScopeId = scopeId.trim();
+      if (!normalizedScopeId) {
+        setItems([]);
+        setTotal(0);
+        setPage(nextPage);
+        setPageSize(nextPageSize);
+        setError("请先选择运营上下文（用户或租户）并填写上下文 ID。");
+        return;
+      }
+
       setLoading(true);
       setError(undefined);
       try {
         const data = await listDeliveries({
+          scopeType,
+          scopeId: normalizedScopeId,
           endpointId: endpointId.trim() || undefined,
           eventType: eventType.trim() || undefined,
           status,
@@ -42,7 +57,7 @@ export default function WebhooksPage() {
         setLoading(false);
       }
     },
-    [endpointId, eventType, page, pageSize, status]
+    [endpointId, eventType, page, pageSize, scopeId, scopeType, status]
   );
 
   useEffect(() => {
@@ -58,8 +73,16 @@ export default function WebhooksPage() {
         okButtonProps: { danger: true },
         cancelText: "取消",
         onOk: async () => {
+          const normalizedScopeId = scopeId.trim();
+          if (!normalizedScopeId) {
+            apiMessage.error("请先选择运营上下文并填写上下文 ID。");
+            return;
+          }
           try {
-            const result = await retryDelivery(delivery.deliveryId);
+            const result = await retryDelivery(delivery.deliveryId, {
+              scopeType,
+              scopeId: normalizedScopeId
+            });
             apiMessage.success(`已触发重试：${result.deliveryId}`);
             await loadData(page, pageSize);
           } catch (requestError) {
@@ -68,7 +91,7 @@ export default function WebhooksPage() {
         }
       });
     },
-    [apiMessage, loadData, page, pageSize]
+    [apiMessage, loadData, page, pageSize, scopeId, scopeType]
   );
 
   const columns: ColumnsType<DeliveryItem> = useMemo(
@@ -125,6 +148,21 @@ export default function WebhooksPage() {
       {contextHolder}
       <Card title="Webhook 运维（投递查询 + 重试）">
         <Space style={{ marginBottom: 16, width: "100%" }} wrap>
+          <Select<ScopeType>
+            style={{ width: 160 }}
+            value={scopeType}
+            onChange={(value) => setScopeType(value)}
+            options={[
+              { label: "用户上下文", value: "user" },
+              { label: "租户上下文", value: "tenant" }
+            ]}
+          />
+          <Input
+            placeholder={scopeType === "tenant" ? "tenantId" : "userId"}
+            style={{ width: 220 }}
+            value={scopeId}
+            onChange={(event) => setScopeId(event.target.value)}
+          />
           <Input
             placeholder="endpointId"
             style={{ width: 220 }}
@@ -156,7 +194,7 @@ export default function WebhooksPage() {
           </Button>
         </Space>
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          重试仅对失败投递开放，成功记录默认禁止重复触发。
+          已切换为显式上下文驱动：查询和重试都依赖“用户/租户上下文 + ID”，不再使用默认用户。
         </Typography.Paragraph>
         {error ? (
           <Alert type="error" showIcon style={{ marginBottom: 16 }} message="Webhook 数据加载失败" description={error} />

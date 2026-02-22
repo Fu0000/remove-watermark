@@ -183,7 +183,10 @@ export class AdminController {
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Headers("x-admin-role") adminRole: string | undefined,
     @Headers("x-admin-secret") adminSecret: string | undefined,
+    @Query("scopeType") scopeTypeRaw: string | undefined,
+    @Query("scopeId") scopeIdRaw: string | undefined,
     @Query("userId") userIdRaw: string | undefined,
+    @Query("tenantId") tenantIdRaw: string | undefined,
     @Query("endpointId") endpointId: string | undefined,
     @Query("eventType") eventType: string | undefined,
     @Query("status") status: string | undefined,
@@ -198,7 +201,17 @@ export class AdminController {
       requestId: requestIdHeader
     });
 
-    const result = await this.webhooksService.listDeliveries(parseAdminUserId(userIdRaw, requestIdHeader), {
+    const scope = resolveWebhookScope(
+      {
+        scopeTypeRaw,
+        scopeIdRaw,
+        userIdRaw,
+        tenantIdRaw
+      },
+      requestIdHeader
+    );
+
+    const result = await this.webhooksService.listDeliveries(scope.userId, {
       endpointId: endpointId || undefined,
       eventType: eventType || undefined,
       status: parseDeliveryStatus(status, requestIdHeader),
@@ -219,7 +232,10 @@ export class AdminController {
     @Headers("x-forwarded-for") forwardedFor: string | undefined,
     @Headers("user-agent") userAgent: string | undefined,
     @Param("deliveryId") deliveryId: string,
-    @Query("userId") userIdRaw: string | undefined
+    @Query("scopeType") scopeTypeRaw: string | undefined,
+    @Query("scopeId") scopeIdRaw: string | undefined,
+    @Query("userId") userIdRaw: string | undefined,
+    @Query("tenantId") tenantIdRaw: string | undefined
   ) {
     const role = ensureAdminPermission({
       authorization,
@@ -233,8 +249,16 @@ export class AdminController {
       badRequest(40001, "参数非法：deliveryId", requestIdHeader);
     }
 
-    const userId = parseAdminUserId(userIdRaw, requestIdHeader);
-    const retried = await this.webhooksService.retryDelivery(userId, deliveryId);
+    const scope = resolveWebhookScope(
+      {
+        scopeTypeRaw,
+        scopeIdRaw,
+        userIdRaw,
+        tenantIdRaw
+      },
+      requestIdHeader
+    );
+    const retried = await this.webhooksService.retryDelivery(scope.userId, deliveryId);
 
     if (retried.kind === "NOT_FOUND") {
       notFound(40401, "资源不存在：delivery", requestIdHeader);
@@ -246,7 +270,7 @@ export class AdminController {
       unprocessableEntity(42201, `状态机非法迁移：当前状态=${retried.status}`, requestIdHeader);
     }
 
-    await this.complianceService.appendAdminAuditLog(userId, {
+    await this.complianceService.appendAdminAuditLog(scope.userId, {
       action: "admin.webhook.retry",
       resourceType: "webhook_delivery",
       resourceId: deliveryId,
@@ -256,6 +280,8 @@ export class AdminController {
       ip: parseForwardedIp(forwardedFor),
       userAgent,
       meta: {
+        scopeType: scope.scopeType,
+        scopeId: scope.scopeId,
         retriedDeliveryId: retried.deliveryId
       }
     });
@@ -409,13 +435,61 @@ function parseDeliveryStatus(raw: string | undefined, requestIdHeader?: string):
   badRequest(40001, "参数非法：status", requestIdHeader);
 }
 
-function parseAdminUserId(raw: string | undefined, requestIdHeader?: string): string {
-  if (!raw) {
-    return "u_1001";
+function resolveWebhookScope(
+  input: {
+    scopeTypeRaw: string | undefined;
+    scopeIdRaw: string | undefined;
+    userIdRaw: string | undefined;
+    tenantIdRaw: string | undefined;
+  },
+  requestIdHeader?: string
+): { scopeType: "USER" | "TENANT"; scopeId: string; userId: string } {
+  if (input.scopeTypeRaw || input.scopeIdRaw) {
+    const scopeType = normalizeScopeType(input.scopeTypeRaw, requestIdHeader);
+    const scopeId = parseScopeId(input.scopeIdRaw, requestIdHeader);
+    return {
+      scopeType,
+      scopeId,
+      userId: scopeId
+    };
   }
-  const value = raw.trim();
+
+  if (input.userIdRaw) {
+    const userId = parseScopeId(input.userIdRaw, requestIdHeader);
+    return {
+      scopeType: "USER",
+      scopeId: userId,
+      userId
+    };
+  }
+
+  if (input.tenantIdRaw) {
+    const tenantId = parseScopeId(input.tenantIdRaw, requestIdHeader);
+    return {
+      scopeType: "TENANT",
+      scopeId: tenantId,
+      userId: tenantId
+    };
+  }
+
+  badRequest(40001, "参数非法：scopeId", requestIdHeader);
+}
+
+function normalizeScopeType(raw: string | undefined, requestIdHeader?: string): "USER" | "TENANT" {
+  const normalized = (raw || "").trim().toLowerCase();
+  if (normalized === "user") {
+    return "USER";
+  }
+  if (normalized === "tenant") {
+    return "TENANT";
+  }
+  badRequest(40001, "参数非法：scopeType", requestIdHeader);
+}
+
+function parseScopeId(raw: string | undefined, requestIdHeader?: string): string {
+  const value = (raw || "").trim();
   if (!value) {
-    badRequest(40001, "参数非法：userId", requestIdHeader);
+    badRequest(40001, "参数非法：scopeId", requestIdHeader);
   }
   return value;
 }
