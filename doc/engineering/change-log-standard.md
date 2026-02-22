@@ -1,4 +1,4 @@
-# 变更日志规范（v1.53）
+# 变更日志规范（v1.54）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.54 | 2026-02-22 | 修复 shared-smoke `PREPROCESSING` 卡点：补齐 `task.masked` 事件触发与 Worker `WAIT_MASK` 跟进队列去重 |
 | v1.53 | 2026-02-22 | 新增 FE-008 管理端 Webhook 独立 smoke（本地）与联调证据 |
 | v1.52 | 2026-02-22 | 新增 BE-008 租户模型落地（`tenantId` 持久化 + 管理端真实租户级过滤）与回归证据 |
 | v1.51 | 2026-02-22 | 新增 FE-008 Webhook 显式上下文驱动（`scopeType/scopeId` 必填）与默认用户移除 |
@@ -107,6 +108,28 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.49] - 2026-02-22
+
+### Changed
+- `apps/api-gateway/src/modules/tasks/tasks.service.ts`
+  - `upsertMask`（内存态/Prisma）在蒙版写入并更新任务进度后补齐 outbox 事件 `task.masked`，确保 Worker 可持续推进状态机。
+- `apps/worker-orchestrator/src/main.ts`
+  - outbox 触发事件集合新增 `task.masked`；
+  - `WAIT_MASK` 路径改为固定 followup 任务（`job_followup_${taskId}`）+ 延时重试，移除随机 `jobId` 叠加补单导致的队列抖动。
+
+### Fixed
+- 修复本地双进程 `shared-smoke` 偶发停留 `PREPROCESSING` 导致 `INT-004/INT-005` 误报失败的问题。
+
+### Security
+- 保持 `Authorization`、`Idempotency-Key`、`X-Request-Id` 关键头门禁不变，状态推进修复未放宽鉴权与幂等约束。
+
+### Rollback
+- 回退 `tasks.service` 的 `task.masked` outbox 追加与 `worker-orchestrator` 的固定 followup 策略，恢复到 0.5.48 队列行为（不建议）。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.48] - 2026-02-22
 

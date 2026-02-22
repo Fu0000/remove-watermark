@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.16 | 2026-02-22 | 修复 shared-smoke `PREPROCESSING` 卡点：补齐 `task.masked` 事件触发并收敛 Worker `WAIT_MASK` 跟进队列策略 |
 | v1.15 | 2026-02-22 | 新增 FE-008 管理端 Webhook 独立 smoke（本地）与上下文/租户过滤验收证据 |
 | v1.14 | 2026-02-22 | 新增 BE-008 租户模型落地（`tenantId` 持久化 + 管理端真实租户级过滤）与契约回归证据 |
 | v1.13 | 2026-02-22 | 新增 FE-008 Webhook 运维“显式上下文驱动”改造（`scopeType/scopeId` 必填）与契约回归证据 |
@@ -2419,3 +2420,43 @@
   - 回滚：回退 `fe008-admin-smoke` 新脚本与命令，继续沿用 contract 证据（不建议）。
 - 下一步：
   - 将 `test:fe008-admin-smoke` 接入 shared/staging 本地映射矩阵；云端地址就绪后直接复跑补齐发布前证据。
+
+## 63. 本次执行回填（OPT-ARCH-002 收尾：shared-smoke `PREPROCESSING` 卡点修复）
+
+- 任务编号：`DEV-20260222-OPTARCH002-SMOKE-UNBLOCK`
+- 需求映射：`FR-005`、`FR-006`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 负责人：后端
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：无（本地双进程 smoke 已恢复）
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/tasks/tasks.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/worker-orchestrator/src/main.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - `tasks.service` 在蒙版写入成功后（内存态/Prisma 分支）补齐 `task.masked` outbox 事件写入，确保 Worker 可感知 `WAIT_MASK` 后续推进触发点。
+  - `worker-orchestrator` 将 `task.masked` 纳入 outbox 触发事件集合，避免仅依赖 `task.created/task.retried` 导致蒙版后无新任务推进。
+  - `WAIT_MASK` 路径改为“单次延时 + 固定 `jobId=job_followup_${taskId}`”跟进，替代随机 `jobId` 的重复补单策略，降低队列抖动与堆积风险。
+- 测试证据：
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma`：通过（`No pending migrations`）
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/worker-orchestrator typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`29/29`）
+  - 本地双进程（`api-gateway + worker-orchestrator`）下执行：
+    - `SHARED_BASE_URL=http://127.0.0.1:3000 SHARED_USERNAME=admin SHARED_PASSWORD=admin123 SHARED_SMOKE_MAX_POLL_ATTEMPTS=80 SHARED_SMOKE_POLL_INTERVAL_MS=300 pnpm --filter @apps/api-gateway test:shared-smoke`：通过
+    - `SHARED_BASE_URL=http://127.0.0.1:3000 SHARED_USERNAME=admin SHARED_PASSWORD=admin123 pnpm --filter @apps/api-gateway test:fe008-admin-smoke`：通过
+- 联调结果：
+  - 本地地址口径下，`shared-smoke` 已恢复通过，`INT-004/INT-005` 与 `FE-008` 不再被 `PREPROCESSING` 卡点阻塞。
+- 遗留问题：
+  - `shared/staging` 云端地址切换后，仍需复用同一命令补齐最终发布前门禁证据。
+- 风险与回滚：
+  - 风险：若后续修改 `WAIT_MASK` 延时参数不当，可能出现任务推进延迟抖动。
+  - 回滚：回退 `task.masked` 事件触发与固定 followup `jobId` 逻辑，恢复到前一版队列策略（不建议）。
+- 下一步：
+  - 继续按计划推进 FE-008 e2e 验收，并在云端地址就绪后补齐 shared/staging smoke 证据。

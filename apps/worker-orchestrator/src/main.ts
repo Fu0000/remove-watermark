@@ -8,7 +8,7 @@ const logger = createLogger(appName);
 const prisma = new PrismaClient();
 
 const TERMINAL_STATUS = new Set<TaskStatus>(["SUCCEEDED", "FAILED", "CANCELED"]);
-const OUTBOX_TRIGGER_EVENTS = ["task.created", "task.retried"] as const;
+const OUTBOX_TRIGGER_EVENTS = ["task.created", "task.retried", "task.masked"] as const;
 
 interface OrchestratorJobData {
   taskId: string;
@@ -405,6 +405,8 @@ async function processQueueJob(
   options: WorkerRuntimeOptions,
   retryPolicy: RetryPolicyOptions
 ) {
+  const followupJobId = `job_followup_${taskId}`;
+
   for (let index = 0; index < options.maxStepIterations; index += 1) {
     const result = await processTaskStep(taskId);
     if (result.kind === "NOT_FOUND") {
@@ -425,8 +427,18 @@ async function processQueueJob(
     }
 
     if (result.kind === "WAIT_MASK") {
-      await sleep(options.waitMaskDelayMs);
-      continue;
+      await queue.add(
+        "task.progress",
+        {
+          taskId,
+          reason: "followup"
+        },
+        buildJobOptions(retryPolicy, {
+          delayMs: options.waitMaskDelayMs,
+          jobId: followupJobId
+        })
+      );
+      return;
     }
 
     if (result.kind === "ADVANCED") {
@@ -445,7 +457,7 @@ async function processQueueJob(
     },
     buildJobOptions(retryPolicy, {
       delayMs: options.followupDelayMs,
-      jobId: buildId("job")
+      jobId: followupJobId
     })
   );
 }

@@ -422,6 +422,8 @@ export class TasksService {
             return { conflict: true, version: latestTask.version };
           }
         }
+
+        this.appendOutboxEventUnsafe(taskId, "task.masked");
       }
 
       return {
@@ -939,6 +941,8 @@ export class TasksService {
             };
           }
         }
+
+        await this.appendOutboxEventWithPrisma(tx, taskId, "task.masked");
       }
 
       return {
