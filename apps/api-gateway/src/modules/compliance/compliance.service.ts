@@ -1,4 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Prisma } from "@prisma/client";
 import type { TaskRecord } from "../tasks/tasks.service";
 import { TasksService } from "../tasks/tasks.service";
@@ -174,6 +176,15 @@ export class ComplianceService {
   private readonly deleteRequests = new Map<string, DeleteRequestRecord>();
   private readonly idempotency = new Map<string, IdempotencyRecord>();
   private readonly auditLogs: AuditLogRecord[] = [];
+  private readonly minioEndpoint = process.env.MINIO_ENDPOINT || "http://127.0.0.1:9000";
+  private readonly minioPublicEndpoint = process.env.MINIO_PUBLIC_ENDPOINT || this.minioEndpoint;
+  private readonly minioRegion = process.env.MINIO_REGION || "us-east-1";
+  private readonly minioBucketAssets = process.env.MINIO_BUCKET_ASSETS || "assets";
+  private readonly minioAccessKey = process.env.MINIO_ACCESS_KEY || process.env.MINIO_ROOT_USER || "minio";
+  private readonly minioSecretKey = process.env.MINIO_SECRET_KEY || process.env.MINIO_ROOT_PASSWORD || "miniopassword";
+  private readonly minioPresignExpireSec = this.parsePositiveInt(process.env.MINIO_PRESIGN_EXPIRE_SEC, 600);
+  private readonly minioPresignEnabled = parseBoolEnv(process.env.MINIO_PRESIGN_ENABLED, true);
+  private s3Client: S3Client | undefined;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -197,7 +208,8 @@ export class ComplianceService {
     }
 
     const assetId = this.buildId("ast");
-    const uploadUrl = "https://minio.local/signed-upload-url";
+    const uploadUrl = await this.createAssetUploadUrl(assetId, userId, input);
+    const uploadHeaders = this.buildUploadHeaders(uploadUrl, userId, input);
     const now = new Date();
     const mediaType = input.mediaType.toUpperCase() as "IMAGE" | "VIDEO" | "PDF" | "PPT";
 
@@ -257,21 +269,15 @@ export class ComplianceService {
       meta: {
         fileName: input.fileName,
         fileSize: input.fileSize,
-        mediaType
+        mediaType,
+        objectKey: this.buildAssetObjectKey(assetId)
       }
     });
 
     return {
       assetId,
       uploadUrl,
-      headers: {
-        "x-amz-meta-user-id": userId,
-        "x-amz-meta-file-name": input.fileName,
-        "x-amz-meta-media-type": input.mediaType,
-        "x-amz-meta-mime-type": input.mimeType,
-        "x-amz-meta-file-size": String(input.fileSize),
-        "x-amz-meta-sha256": input.sha256 || ""
-      },
+      headers: uploadHeaders,
       expireAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
     };
   }
@@ -1249,4 +1255,123 @@ export class ComplianceService {
   private buildId(prefix: string): string {
     return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
   }
+
+  private buildAssetObjectKey(assetId: string): string {
+    return assetId;
+  }
+
+  private parsePositiveInt(raw: string | undefined, fallback: number): number {
+    if (!raw) {
+      return fallback;
+    }
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return fallback;
+    }
+    return parsed;
+  }
+
+  private getS3Client(): S3Client {
+    if (this.s3Client) {
+      return this.s3Client;
+    }
+
+    this.s3Client = new S3Client({
+      endpoint: this.minioPublicEndpoint,
+      region: this.minioRegion,
+      forcePathStyle: true,
+      credentials: {
+        accessKeyId: this.minioAccessKey,
+        secretAccessKey: this.minioSecretKey
+      }
+    });
+    return this.s3Client;
+  }
+
+  private async createAssetUploadUrl(assetId: string, userId: string, input: UploadPolicyInput): Promise<string> {
+    if (!this.minioPresignEnabled) {
+      return `${this.minioPublicEndpoint.replace(/\/$/, "")}/${this.minioBucketAssets}/${this.buildAssetObjectKey(assetId)}`;
+    }
+
+    const metadata: Record<string, string> = {
+      "user-id": userId,
+      "file-name": input.fileName,
+      "media-type": input.mediaType,
+      "mime-type": input.mimeType,
+      "file-size": String(input.fileSize)
+    };
+    if (input.sha256) {
+      metadata.sha256 = input.sha256;
+    }
+
+    const command = new PutObjectCommand({
+      Bucket: this.minioBucketAssets,
+      Key: this.buildAssetObjectKey(assetId),
+      ContentType: input.mimeType,
+      Metadata: metadata
+    });
+
+    return getSignedUrl(this.getS3Client(), command, {
+      expiresIn: this.minioPresignExpireSec
+    });
+  }
+
+  private buildUploadHeaders(
+    uploadUrl: string,
+    userId: string,
+    input: UploadPolicyInput
+  ): Record<string, string> {
+    const candidates: Record<string, string> = {
+      "content-type": input.mimeType,
+      "x-amz-meta-user-id": userId,
+      "x-amz-meta-file-name": input.fileName,
+      "x-amz-meta-media-type": input.mediaType,
+      "x-amz-meta-mime-type": input.mimeType,
+      "x-amz-meta-file-size": String(input.fileSize)
+    };
+    if (input.sha256) {
+      candidates["x-amz-meta-sha256"] = input.sha256;
+    }
+
+    if (!this.minioPresignEnabled) {
+      return candidates;
+    }
+
+    let signedHeadersRaw = "";
+    try {
+      signedHeadersRaw = new URL(uploadUrl).searchParams.get("X-Amz-SignedHeaders") || "";
+    } catch {
+      return {};
+    }
+    const signedHeaders = signedHeadersRaw
+      .split(";")
+      .map((item) => item.trim().toLowerCase())
+      .filter((item) => item.length > 0 && item !== "host");
+    if (!signedHeaders.length) {
+      return {};
+    }
+
+    const result: Record<string, string> = {};
+    for (const headerName of signedHeaders) {
+      const headerValue = candidates[headerName];
+      if (typeof headerValue === "string") {
+        result[headerName] = headerValue;
+      }
+    }
+    return result;
+  }
+}
+
+function parseBoolEnv(value: string | undefined, fallback: boolean): boolean {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return fallback;
 }

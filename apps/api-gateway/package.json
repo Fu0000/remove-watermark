@@ -21,6 +21,7 @@
     "test:shared-smoke:reset-user": "tsx scripts/reset-local-smoke-user.ts",
     "test:shared-smoke:local-stack": "tsx scripts/shared-smoke-local-stack.ts",
     "test:shared-smoke:media-matrix": "tsx scripts/shared-smoke-media-matrix.ts",
+    "test:shared-smoke:doc-native": "bash scripts/shared-smoke-doc-native.sh",
     "test:fe008-admin-smoke": "tsx scripts/fe008-admin-smoke.ts",
     "test:fe008-admin-e2e-lite": "tsx scripts/fe008-admin-e2e-lite.ts",
     "test:fe008-admin-smoke:matrix": "tsx scripts/fe008-admin-smoke-matrix.ts",
@@ -28,6 +29,8 @@
     "test:shared-smoke:matrix": "tsx scripts/shared-smoke-matrix.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.891.0",
+    "@aws-sdk/s3-request-presigner": "^3.891.0",
     "@nestjs/common": "^11.0.7",
     "@nestjs/core": "^11.0.7",
     "@nestjs/platform-fastify": "^11.0.7",

@@ -18,6 +18,7 @@ The gateway supports two modes:
 - `POST /internal/inpaint/video` (ProPainter)
 - `POST /internal/doc/ppt-to-pdf` (LibreOffice)
 - `POST /internal/doc/render-pdf` (Poppler -> PyMuPDF fallback)
+- `POST /internal/doc/inpaint-pages` (LaMa page-wise inpainting for PDF/PPT)
 - `POST /internal/doc/package` (PDF + page ZIP)
 
 ## Required Env (native mode)
@@ -30,6 +31,7 @@ The gateway supports two modes:
 - `INFERENCE_ASSET_DIR` (input files, named with `assetId` prefix)
 - `INFERENCE_RESULT_DIR` (generated outputs)
 - `INFERENCE_WORK_DIR` (tmp/intermediate files)
+- `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET_ASSETS` (for `minio://bucket/key` sourcePath)
 
 Optional tuning:
 

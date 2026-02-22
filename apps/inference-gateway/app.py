@@ -1,18 +1,23 @@
 from __future__ import annotations
 
 import glob
+import hashlib
 import os
 import shutil
 import subprocess
 import zipfile
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 import cv2
 import fitz
 import numpy as np
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse
+from minio import Minio
+from minio.error import S3Error
 from PIL import Image, ImageDraw
 from pydantic import BaseModel, Field
 
@@ -46,6 +51,11 @@ class GatewayConfig(BaseModel):
     propainter_ref_stride: int = Field(default_factory=lambda: int(os.getenv("PROPAINTER_REF_STRIDE", "10")))
     propainter_resize_ratio: float = Field(default_factory=lambda: float(os.getenv("PROPAINTER_RESIZE_RATIO", "1.0")))
     lama_refine: bool = Field(default_factory=lambda: read_bool("LAMA_REFINE", False))
+    minio_endpoint: str = Field(default_factory=lambda: os.getenv("MINIO_ENDPOINT", "http://127.0.0.1:9000"))
+    minio_region: str = Field(default_factory=lambda: os.getenv("MINIO_REGION", "us-east-1"))
+    minio_access_key: str = Field(default_factory=lambda: os.getenv("MINIO_ACCESS_KEY", os.getenv("MINIO_ROOT_USER", "minio")))
+    minio_secret_key: str = Field(default_factory=lambda: os.getenv("MINIO_SECRET_KEY", os.getenv("MINIO_ROOT_PASSWORD", "miniopassword")))
+    minio_secure: bool = Field(default_factory=lambda: read_bool("MINIO_SECURE", False))
 
 
 CONFIG = GatewayConfig()
@@ -156,9 +166,116 @@ def candidate_exts(media_type: str) -> Tuple[str, ...]:
     return ()
 
 
-def resolve_asset_path(asset_id: str, media_type: str, source_path: Optional[str] = None) -> Path:
+def default_ext(media_type: str) -> str:
+    exts = candidate_exts(media_type)
+    if exts:
+        return exts[0]
+    return ".bin"
+
+
+def ext_from_source(source_path: str, media_type: str) -> str:
+    parsed = urlparse(source_path)
+    suffix = Path(parsed.path).suffix
+    if suffix:
+        return suffix
+    return default_ext(media_type)
+
+
+def source_cache_file(task_id: str, source_path: str, media_type: str) -> Path:
+    token = hashlib.sha1(source_path.encode("utf-8")).hexdigest()[:16]
+    target_dir = task_work_dir(task_id) / "sources"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    return target_dir / f"{token}{ext_from_source(source_path, media_type)}"
+
+
+def parse_minio_endpoint() -> Tuple[str, bool]:
+    parsed = urlparse(CONFIG.minio_endpoint)
+    if parsed.scheme and parsed.netloc:
+        secure = parsed.scheme.lower() == "https"
+        endpoint = parsed.netloc
+    else:
+        endpoint = CONFIG.minio_endpoint.replace("http://", "").replace("https://", "").strip("/")
+        secure = False
+    return endpoint, (CONFIG.minio_secure or secure)
+
+
+def download_minio_source(task_id: str, source_path: str, media_type: str) -> Path:
+    parsed = urlparse(source_path)
+    bucket = parsed.netloc
+    key = parsed.path.lstrip("/")
+    if not bucket or not key:
+        raise InferenceError(
+            status_code=422,
+            error_code="ASSET_NOT_FOUND",
+            message=f"invalid minio source path: {source_path}"
+        )
+
+    endpoint, secure = parse_minio_endpoint()
+    target = source_cache_file(task_id, source_path, media_type)
+    client = Minio(
+        endpoint,
+        access_key=CONFIG.minio_access_key,
+        secret_key=CONFIG.minio_secret_key,
+        secure=secure,
+        region=CONFIG.minio_region
+    )
+    try:
+        response = client.get_object(bucket, key)
+        with target.open("wb") as handle:
+            shutil.copyfileobj(response, handle)
+        response.close()
+        response.release_conn()
+    except S3Error as exc:
+        raise InferenceError(
+            status_code=422,
+            error_code="ASSET_NOT_FOUND",
+            message=f"cannot download source from minio://{bucket}/{key}: {exc}"
+        ) from exc
+
+    return ensure_path(target, kind="source asset", code="ASSET_NOT_FOUND")
+
+
+def download_http_source(task_id: str, source_path: str, media_type: str) -> Path:
+    target = source_cache_file(task_id, source_path, media_type)
+    try:
+        with urlopen(source_path, timeout=30) as response:  # nosec B310
+            if response.status and response.status >= 400:
+                raise InferenceError(
+                    status_code=422,
+                    error_code="ASSET_NOT_FOUND",
+                    message=f"cannot download source: {source_path} ({response.status})"
+                )
+            with target.open("wb") as handle:
+                shutil.copyfileobj(response, handle)
+    except InferenceError:
+        raise
+    except Exception as exc:
+        raise InferenceError(
+            status_code=422,
+            error_code="ASSET_NOT_FOUND",
+            message=f"cannot download source: {source_path}"
+        ) from exc
+
+    return ensure_path(target, kind="source asset", code="ASSET_NOT_FOUND")
+
+
+def resolve_source_path(task_id: str, source_path: str, media_type: str) -> Path:
+    local_path = Path(source_path)
+    if local_path.exists():
+        return ensure_path(local_path, kind="source asset", code="ASSET_NOT_FOUND")
+
+    if source_path.startswith("minio://") or source_path.startswith("s3://"):
+        return download_minio_source(task_id, source_path, media_type)
+
+    if source_path.startswith("http://") or source_path.startswith("https://"):
+        return download_http_source(task_id, source_path, media_type)
+
+    raise InferenceError(status_code=422, error_code="ASSET_NOT_FOUND", message=f"source asset not found: {source_path}")
+
+
+def resolve_asset_path(task_id: str, asset_id: str, media_type: str, source_path: Optional[str] = None) -> Path:
     if source_path:
-        return ensure_path(Path(source_path), kind="source asset", code="ASSET_NOT_FOUND")
+        return resolve_source_path(task_id, source_path, media_type)
 
     exts = candidate_exts(media_type)
     asset_root = Path(CONFIG.asset_dir)
@@ -277,14 +394,23 @@ def resolve_lama_output(output_dir: Path) -> Path:
     return candidates[0]
 
 
-def run_lama(task_id: str, image_path: Path, region_payload: Dict[str, Any] | List[Dict[str, Any]] | None) -> Path:
+def run_lama_once(
+    task_id: str,
+    image_path: Path,
+    region_payload: Dict[str, Any] | List[Dict[str, Any]] | None,
+    run_suffix: str
+) -> Path:
     repo = ensure_path(Path(CONFIG.lama_repo_dir), kind="LaMa repo", code="LAMA_REPO_NOT_FOUND")
     ensure_path(repo / "bin" / "predict.py", kind="LaMa predict script", code="LAMA_SCRIPT_NOT_FOUND")
     ensure_path(Path(CONFIG.model_lama_path), kind="LaMa model", code="LAMA_MODEL_NOT_FOUND")
 
     task_dir = task_work_dir(task_id)
-    input_dir = task_dir / "lama-input"
-    output_dir = task_dir / "lama-output"
+    input_dir = task_dir / f"lama-input-{run_suffix}"
+    output_dir = task_dir / f"lama-output-{run_suffix}"
+    if input_dir.exists():
+        shutil.rmtree(input_dir)
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
     input_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -308,8 +434,11 @@ def run_lama(task_id: str, image_path: Path, region_payload: Dict[str, Any] | Li
         command.append("refine=True")
 
     run_command(command, cwd=repo, timeout_sec=CONFIG.image_timeout_sec)
+    return resolve_lama_output(output_dir)
 
-    output = resolve_lama_output(output_dir)
+
+def run_lama(task_id: str, image_path: Path, region_payload: Dict[str, Any] | List[Dict[str, Any]] | None) -> Path:
+    output = run_lama_once(task_id, image_path, region_payload, "image")
     final_output = Path(CONFIG.result_dir) / f"{normalize_task_id(task_id)}.png"
     shutil.copyfile(output, final_output)
     return final_output
@@ -535,6 +664,78 @@ def run_render_pdf(task_id: str, pdf_path: Path) -> Tuple[str, Path]:
     return renderer, page_prefix
 
 
+def split_doc_regions(regions: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[int, List[Dict[str, Any]]]]:
+    global_regions: List[Dict[str, Any]] = []
+    keyed_regions: Dict[int, List[Dict[str, Any]]] = {}
+
+    for region in regions:
+        raw_index = region.get("pageIndex")
+        if raw_index is None:
+            global_regions.append(region)
+            continue
+        try:
+            page_index = int(raw_index)
+        except (TypeError, ValueError):
+            continue
+        keyed_regions.setdefault(max(0, page_index), []).append(region)
+
+    return global_regions, keyed_regions
+
+
+def run_opencv_inpaint(page: Path, active_regions: List[Dict[str, Any]]) -> None:
+    image = cv2.imread(str(page), cv2.IMREAD_COLOR)
+    if image is None:
+        raise InferenceError(status_code=422, error_code="DOC_INPAINT_FAILED", message=f"cannot read page image: {page}")
+    height, width = image.shape[:2]
+    mask = np.array(draw_region_mask(width, height, active_regions))
+    inpainted = cv2.inpaint(image, mask, 3, cv2.INPAINT_TELEA)
+    ok = cv2.imwrite(str(page), inpainted)
+    if not ok:
+        raise InferenceError(status_code=500, error_code="DOC_INPAINT_FAILED", message=f"cannot write page image: {page}")
+
+
+def run_doc_inpaint_pages(task_id: str, region_payload: Dict[str, Any] | List[Dict[str, Any]] | None) -> int:
+    task_dir = task_work_dir(task_id) / "doc"
+    pages = sorted(task_dir.glob("page-*.png"))
+    if not pages:
+        raise InferenceError(status_code=422, error_code="DOC_RENDER_FAILED", message=f"no page images generated for {task_id}")
+
+    global_regions, keyed_regions = split_doc_regions(regions_list(region_payload))
+    if not global_regions and not keyed_regions:
+        raise InferenceError(status_code=422, error_code="REGION_INVALID", message="document regions are empty")
+
+    processed = 0
+    for index, page in enumerate(pages):
+        active_regions = list(global_regions) + keyed_regions.get(index, [])
+        if not active_regions:
+            continue
+        try:
+            inpainted = run_lama_once(task_id, page, active_regions, f"doc-page-{index}")
+            shutil.copyfile(inpainted, page)
+        except InferenceError:
+            run_opencv_inpaint(page, active_regions)
+        processed += 1
+
+    if processed == 0:
+        raise InferenceError(
+            status_code=422,
+            error_code="REGION_INVALID",
+            message="document regions did not match any rendered page"
+        )
+    return processed
+
+
+def build_pdf_from_pages(page_images: List[Path], output_pdf: Path) -> None:
+    document = fitz.open()
+    for image_path in page_images:
+        with Image.open(image_path) as image:
+            width, height = image.size
+        page = document.new_page(width=float(width), height=float(height))
+        page.insert_image(page.rect, filename=str(image_path))
+    document.save(str(output_pdf))
+    document.close()
+
+
 def package_doc_files(task_id: str, pdf_path: Path) -> Tuple[Path, Path]:
     task_dir = task_work_dir(task_id) / "doc"
     pages = sorted(task_dir.glob("page-*.png"))
@@ -543,7 +744,7 @@ def package_doc_files(task_id: str, pdf_path: Path) -> Tuple[Path, Path]:
 
     result_pdf = Path(CONFIG.result_dir) / f"{normalize_task_id(task_id)}.pdf"
     result_zip = Path(CONFIG.result_dir) / f"{normalize_task_id(task_id)}.zip"
-    shutil.copyfile(pdf_path, result_pdf)
+    build_pdf_from_pages(pages, result_pdf)
 
     with zipfile.ZipFile(result_zip, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for page in pages:
@@ -580,6 +781,14 @@ class RenderPdfRequest(BaseModel):
     sourcePath: Optional[str] = None
 
 
+class DocInpaintPagesRequest(BaseModel):
+    taskId: str
+    assetId: str
+    mediaType: str
+    regions: Dict[str, Any] | List[Dict[str, Any]] | None = None
+    sourcePath: Optional[str] = None
+
+
 class DocPackageRequest(BaseModel):
     taskId: str
     assetId: str
@@ -604,7 +813,7 @@ def inpaint_image(payload: InpaintImageRequest, x_inference_token: Optional[str]
     if CONFIG.model_mode == "mock":
         return {"outputUrl": build_result_url(payload.taskId, "png"), "backend": "mock"}
 
-    source_image = resolve_asset_path(payload.assetId, "IMAGE", payload.sourcePath)
+    source_image = resolve_asset_path(payload.taskId, payload.assetId, "IMAGE", payload.sourcePath)
     output = run_lama(payload.taskId, source_image, payload.regions)
     return {
         "outputUrl": build_result_url(payload.taskId, "png"),
@@ -619,7 +828,7 @@ def inpaint_video(payload: InpaintVideoRequest, x_inference_token: Optional[str]
     if CONFIG.model_mode == "mock":
         return {"outputUrl": build_result_url(payload.taskId, "mp4"), "backend": "mock"}
 
-    source_video = resolve_asset_path(payload.assetId, "VIDEO", payload.sourcePath)
+    source_video = resolve_asset_path(payload.taskId, payload.assetId, "VIDEO", payload.sourcePath)
     mask_video = create_video_mask(source_video, payload.taskId, payload.regions)
     output = run_propainter(payload.taskId, source_video, mask_video)
     return {
@@ -635,7 +844,7 @@ def ppt_to_pdf(payload: PptToPdfRequest, x_inference_token: Optional[str] = Head
     if CONFIG.model_mode == "mock":
         return {"pdfUrl": build_result_url(payload.taskId, "pdf"), "backend": "mock"}
 
-    ppt_file = resolve_asset_path(payload.assetId, "PPT", payload.sourcePath)
+    ppt_file = resolve_asset_path(payload.taskId, payload.assetId, "PPT", payload.sourcePath)
     pdf_path = run_ppt_to_pdf(payload.taskId, ppt_file)
     return {
         "pdfUrl": build_result_url(payload.taskId, "pdf"),
@@ -659,13 +868,30 @@ def render_pdf(payload: RenderPdfRequest, x_inference_token: Optional[str] = Hea
         ppt_pdf = task_work_dir(payload.taskId) / "doc" / "converted.pdf"
         pdf_file = ensure_path(ppt_pdf, kind="ppt converted pdf", code="DOC_CONVERT_FAILED")
     else:
-        pdf_file = resolve_asset_path(payload.assetId, "PDF", payload.sourcePath)
+        pdf_file = resolve_asset_path(payload.taskId, payload.assetId, "PDF", payload.sourcePath)
 
     renderer, prefix = run_render_pdf(payload.taskId, pdf_file)
     return {
         "renderer": renderer,
         "pageImagePrefix": str(prefix),
         "backend": "doc-render"
+    }
+
+
+@app.post("/internal/doc/inpaint-pages")
+def inpaint_doc_pages(payload: DocInpaintPagesRequest, x_inference_token: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+    require_token(x_inference_token)
+    if CONFIG.model_mode == "mock":
+        return {
+            "outputUrl": build_result_url(payload.taskId, "pdf"),
+            "backend": "mock"
+        }
+
+    processed = run_doc_inpaint_pages(payload.taskId, payload.regions)
+    return {
+        "outputUrl": build_result_url(payload.taskId, "pdf"),
+        "processedPages": processed,
+        "backend": "doc-lama"
     }
 
 
@@ -685,7 +911,7 @@ def package_doc(payload: DocPackageRequest, x_inference_token: Optional[str] = H
         ppt_pdf = task_work_dir(payload.taskId) / "doc" / "converted.pdf"
         pdf_file = ensure_path(ppt_pdf, kind="ppt converted pdf", code="DOC_CONVERT_FAILED")
     else:
-        pdf_file = resolve_asset_path(payload.assetId, "PDF", payload.sourcePath)
+        pdf_file = resolve_asset_path(payload.taskId, payload.assetId, "PDF", payload.sourcePath)
 
     result_pdf, result_zip = package_doc_files(payload.taskId, pdf_file)
     return {

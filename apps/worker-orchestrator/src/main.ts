@@ -84,6 +84,8 @@ export interface WorkerRuntimeOptions {
   inferenceGatewayUrl: string;
   inferenceSharedToken: string;
   resultExpireDays: number;
+  assetSourceMode: "minio" | "local";
+  minioAssetBucket: string;
 }
 
 interface TaskArtifact {
@@ -321,6 +323,18 @@ function buildExpireAt(days: number) {
   return new Date(Date.now() + days * 24 * 3600 * 1000).toISOString();
 }
 
+function buildAssetSourcePath(
+  runtime: WorkerRuntimeOptions,
+  task: {
+    assetId: string;
+  }
+) {
+  if (runtime.assetSourceMode !== "minio") {
+    return undefined;
+  }
+  return `minio://${runtime.minioAssetBucket}/${task.assetId}`;
+}
+
 function toRecord(value: Prisma.JsonValue | null | undefined): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
@@ -333,6 +347,8 @@ export async function callInferenceGateway<T>(
   path: string,
   payload: Record<string, unknown>
 ): Promise<T> {
+  const taskId = typeof payload.taskId === "string" ? payload.taskId : undefined;
+  logger.debug({ taskId, path }, "inference request");
   const response = await fetch(`${runtime.inferenceGatewayUrl}${path}`, {
     method: "POST",
     headers: {
@@ -470,10 +486,13 @@ async function executePreprocessing(
   },
   runtime: WorkerRuntimeOptions
 ) {
+  logger.debug({ taskId: task.taskId, mediaType: task.mediaType }, "execute preprocessing");
+  const sourcePath = buildAssetSourcePath(runtime, task);
   if (task.mediaType === "PPT") {
     await callInferenceGateway(runtime, "/internal/doc/ppt-to-pdf", {
       taskId: task.taskId,
-      assetId: task.assetId
+      assetId: task.assetId,
+      sourcePath
     });
   }
 
@@ -481,7 +500,8 @@ async function executePreprocessing(
     await callInferenceGateway(runtime, "/internal/doc/render-pdf", {
       taskId: task.taskId,
       assetId: task.assetId,
-      mediaType: task.mediaType
+      mediaType: task.mediaType,
+      sourcePath
     });
   }
 }
@@ -494,6 +514,7 @@ async function executeInpainting(
   },
   runtime: WorkerRuntimeOptions
 ) {
+  logger.debug({ taskId: task.taskId, mediaType: task.mediaType }, "execute inpainting");
   const region = await prisma.taskRegion.findUnique({
     where: { taskId: task.taskId }
   });
@@ -501,6 +522,7 @@ async function executeInpainting(
     where: { taskId: task.taskId }
   });
 
+  const sourcePath = buildAssetSourcePath(runtime, task);
   const regionsPayload =
     (region?.regionsJson as Prisma.JsonValue | undefined) ||
     ({
@@ -512,6 +534,16 @@ async function executeInpainting(
     return callInferenceGateway<{ outputUrl?: string }>(runtime, "/internal/inpaint/video", {
       taskId: task.taskId,
       assetId: task.assetId,
+      regions: regionsPayload,
+      sourcePath
+    });
+  }
+
+  if (task.mediaType === "PDF" || task.mediaType === "PPT") {
+    return callInferenceGateway<{ outputUrl?: string }>(runtime, "/internal/doc/inpaint-pages", {
+      taskId: task.taskId,
+      assetId: task.assetId,
+      mediaType: task.mediaType,
       regions: regionsPayload
     });
   }
@@ -520,7 +552,8 @@ async function executeInpainting(
     taskId: task.taskId,
     assetId: task.assetId,
     mediaType: task.mediaType,
-    regions: regionsPayload
+    regions: regionsPayload,
+    sourcePath
   });
 }
 
@@ -533,11 +566,13 @@ async function executePackaging(
   },
   runtime: WorkerRuntimeOptions
 ): Promise<PackagingResult> {
+  logger.debug({ taskId: task.taskId, mediaType: task.mediaType }, "execute packaging");
   const staged = toRecord(task.resultJson)?.staging as Record<string, unknown> | undefined;
   const defaultUrl = buildDefaultResultUrl(task.taskId, task.mediaType as TaskMediaType);
   const expireAt = buildExpireAt(runtime.resultExpireDays);
 
   if (task.mediaType === "PDF" || task.mediaType === "PPT") {
+    const sourcePath = buildAssetSourcePath(runtime, task);
     const packaged = await callInferenceGateway<{ resultUrl?: string; pdfUrl?: string; zipUrl?: string }>(
       runtime,
       "/internal/doc/package",
@@ -545,7 +580,8 @@ async function executePackaging(
         taskId: task.taskId,
         assetId: task.assetId,
         mediaType: task.mediaType,
-        staged
+        staged,
+        sourcePath
       }
     );
 
@@ -911,7 +947,11 @@ async function bootstrap() {
     followupDelayMs: parsePositiveInt(readEnv("ORCHESTRATOR_FOLLOWUP_DELAY_MS", "1000"), 1000),
     inferenceGatewayUrl: readEnv("INFERENCE_GATEWAY_URL", "http://127.0.0.1:8088"),
     inferenceSharedToken: readEnv("INFERENCE_SHARED_TOKEN", "inference-local-token"),
-    resultExpireDays: parsePositiveInt(readEnv("RESULT_EXPIRE_DAYS", "30"), 30)
+    resultExpireDays: parsePositiveInt(readEnv("RESULT_EXPIRE_DAYS", "30"), 30),
+    assetSourceMode: (readEnv("ASSET_SOURCE_MODE", "minio").toLowerCase() === "local" ? "local" : "minio") as
+      | "minio"
+      | "local",
+    minioAssetBucket: readEnv("MINIO_BUCKET_ASSETS", "assets")
   };
   const workerConcurrency = parsePositiveInt(readEnv("ORCHESTRATOR_WORKER_CONCURRENCY", "4"), 4);
   const redisConnection = parseRedisConnection(redisUrl);

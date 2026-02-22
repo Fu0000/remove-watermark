@@ -48,7 +48,9 @@ const runtime: WorkerRuntimeOptions = {
   followupDelayMs: 1,
   inferenceGatewayUrl: "http://inference.local",
   inferenceSharedToken: "test-token",
-  resultExpireDays: 7
+  resultExpireDays: 7,
+  assetSourceMode: "minio",
+  minioAssetBucket: "assets"
 };
 
 const retryPolicy: RetryPolicyOptions = {
@@ -303,7 +305,7 @@ describe("worker orchestrator integration (mock inference)", () => {
   it("completes PDF pipeline and packages PDF+ZIP artifacts", async () => {
     store.task = seedTask({ mediaType: "PDF", status: "QUEUED" });
     installFetchMock(async (call) => {
-      if (call.path === "/internal/inpaint/image") {
+      if (call.path === "/internal/doc/inpaint-pages") {
         return createFetchResponse(200, { outputUrl: "https://minio.local/result/pdf-page.png" });
       }
       if (call.path === "/internal/doc/package") {

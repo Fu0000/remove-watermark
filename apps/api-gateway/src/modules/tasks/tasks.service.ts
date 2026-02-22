@@ -202,6 +202,20 @@ function canTransit(from: TaskStatus, to: TaskStatus) {
   return STATUS_TRANSITION_MAP[from].includes(to);
 }
 
+function parseBoolEnv(value: string | undefined, fallback: boolean): boolean {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+}
+
 @Injectable()
 export class TasksService {
   private readonly tasks = new Map<string, TaskRecord>();
@@ -216,6 +230,7 @@ export class TasksService {
   private readonly persistenceFilePath: string;
   private readonly prismaService?: PrismaService;
   private readonly usePrismaStore: boolean;
+  private readonly simulationEnabled: boolean;
 
   constructor(options: TasksServiceOptions = {}, prismaService?: PrismaService) {
     this.prismaService = prismaService;
@@ -229,6 +244,7 @@ export class TasksService {
       process.env.NODE_ENV !== "test" &&
       preferPrismaStore &&
       Boolean(this.prismaService);
+    this.simulationEnabled = parseBoolEnv(process.env.TASKS_SIMULATION_ENABLED, !this.usePrismaStore);
 
     this.persistenceEnabled = options.disablePersistence !== true && process.env.NODE_ENV !== "test" && !this.usePrismaStore;
 
@@ -301,7 +317,9 @@ export class TasksService {
       .filter((task) => task.userId === userId)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 
-    tasks.forEach((task) => this.maybeAdvanceForSimulation(task.taskId));
+    if (this.simulationEnabled) {
+      tasks.forEach((task) => this.maybeAdvanceForSimulation(task.taskId));
+    }
 
     return [...this.tasks.values()]
       .filter((task) => task.userId === userId)
@@ -318,8 +336,8 @@ export class TasksService {
       return undefined;
     }
 
-    if (options.advance !== false) {
-      await this.maybeAdvanceForSimulationWithPrisma(taskId);
+    if (this.simulationEnabled && options.advance !== false) {
+      this.maybeAdvanceForSimulation(taskId);
     }
 
     return this.tasks.get(taskId);
@@ -370,7 +388,7 @@ export class TasksService {
       return undefined;
     }
 
-    if (options.advance !== false) {
+    if (this.simulationEnabled && options.advance !== false) {
       this.maybeAdvanceForSimulation(taskId);
     }
 
@@ -436,24 +454,25 @@ export class TasksService {
       });
 
       if (!TERMINAL_STATUS.has(latestTask.status)) {
-        if (latestTask.status === "QUEUED") {
-          const transitionResult = this.transitionTaskUnsafe(taskId, "PREPROCESSING", latestTask.version, {
-            progress: 15
-          });
+        if (this.simulationEnabled) {
+          if (latestTask.status === "QUEUED") {
+            const transitionResult = this.transitionTaskUnsafe(taskId, "PREPROCESSING", latestTask.version, {
+              progress: 15
+            });
 
-          if (!transitionResult.ok) {
-            return { conflict: true, version: latestTask.version };
-          }
-        } else {
-          const updateResult = this.updateTaskUnsafe(taskId, latestTask.version, (currentTask) => {
-            currentTask.progress = Math.max(currentTask.progress, 15);
-          });
+            if (!transitionResult.ok) {
+              return { conflict: true, version: latestTask.version };
+            }
+          } else {
+            const updateResult = this.updateTaskUnsafe(taskId, latestTask.version, (currentTask) => {
+              currentTask.progress = Math.max(currentTask.progress, 15);
+            });
 
-          if (!updateResult.ok) {
-            return { conflict: true, version: latestTask.version };
+            if (!updateResult.ok) {
+              return { conflict: true, version: latestTask.version };
+            }
           }
         }
-
         this.appendOutboxEventUnsafe(taskId, "task.masked");
       }
 
@@ -515,24 +534,25 @@ export class TasksService {
       });
 
       if (!TERMINAL_STATUS.has(latestTask.status)) {
-        if (latestTask.status === "QUEUED") {
-          const transitionResult = this.transitionTaskUnsafe(taskId, "PREPROCESSING", latestTask.version, {
-            progress: 15
-          });
+        if (this.simulationEnabled) {
+          if (latestTask.status === "QUEUED") {
+            const transitionResult = this.transitionTaskUnsafe(taskId, "PREPROCESSING", latestTask.version, {
+              progress: 15
+            });
 
-          if (!transitionResult.ok) {
-            return { conflict: true, version: latestTask.version };
-          }
-        } else {
-          const updateResult = this.updateTaskUnsafe(taskId, latestTask.version, (currentTask) => {
-            currentTask.progress = Math.max(currentTask.progress, 35);
-          });
+            if (!transitionResult.ok) {
+              return { conflict: true, version: latestTask.version };
+            }
+          } else {
+            const updateResult = this.updateTaskUnsafe(taskId, latestTask.version, (currentTask) => {
+              currentTask.progress = Math.max(currentTask.progress, 35);
+            });
 
-          if (!updateResult.ok) {
-            return { conflict: true, version: latestTask.version };
+            if (!updateResult.ok) {
+              return { conflict: true, version: latestTask.version };
+            }
           }
         }
-
         this.appendOutboxEventUnsafe(taskId, "task.masked");
       }
 
@@ -825,8 +845,8 @@ export class TasksService {
       return undefined;
     }
 
-    if (options.advance !== false) {
-      this.maybeAdvanceForSimulation(taskId);
+    if (this.simulationEnabled && options.advance !== false) {
+      await this.maybeAdvanceForSimulationWithPrisma(taskId);
     }
 
     return this.mapDbTask(task);
@@ -889,7 +909,7 @@ export class TasksService {
       return undefined;
     }
 
-    if (options.advance !== false) {
+    if (this.simulationEnabled && options.advance !== false) {
       await this.maybeAdvanceForSimulationWithPrisma(taskId);
       task = await prisma.task.findUnique({
         where: { taskId }
@@ -1060,27 +1080,28 @@ export class TasksService {
       });
 
       if (!TERMINAL_STATUS.has(latestTask.status as TaskStatus)) {
-        if (latestTask.status === "QUEUED") {
-          const transitionResult = await this.transitionTaskWithPrisma(tx, taskId, "PREPROCESSING", latestTask.version, {
-            progress: 15
-          });
+        if (this.simulationEnabled) {
+          if (latestTask.status === "QUEUED") {
+            const transitionResult = await this.transitionTaskWithPrisma(tx, taskId, "PREPROCESSING", latestTask.version, {
+              progress: 15
+            });
 
-          if (!transitionResult.ok) {
-            return {
-              conflict: true,
-              version: latestTask.version
-            };
-          }
-        } else {
-          const updateResult = await this.bumpTaskProgressWithPrisma(tx, taskId, latestTask.version, 15);
-          if (!updateResult.ok) {
-            return {
-              conflict: true,
-              version: latestTask.version
-            };
+            if (!transitionResult.ok) {
+              return {
+                conflict: true,
+                version: latestTask.version
+              };
+            }
+          } else {
+            const updateResult = await this.bumpTaskProgressWithPrisma(tx, taskId, latestTask.version, 15);
+            if (!updateResult.ok) {
+              return {
+                conflict: true,
+                version: latestTask.version
+              };
+            }
           }
         }
-
         await this.appendOutboxEventWithPrisma(tx, taskId, "task.masked");
       }
 
@@ -1158,26 +1179,27 @@ export class TasksService {
       });
 
       if (!TERMINAL_STATUS.has(latestTask.status as TaskStatus)) {
-        if (latestTask.status === "QUEUED") {
-          const transitionResult = await this.transitionTaskWithPrisma(tx, taskId, "PREPROCESSING", latestTask.version, {
-            progress: 15
-          });
-          if (!transitionResult.ok) {
-            return {
-              conflict: true,
-              version: latestTask.version
-            };
-          }
-        } else {
-          const updateResult = await this.bumpTaskProgressWithPrisma(tx, taskId, latestTask.version, 35);
-          if (!updateResult.ok) {
-            return {
-              conflict: true,
-              version: latestTask.version
-            };
+        if (this.simulationEnabled) {
+          if (latestTask.status === "QUEUED") {
+            const transitionResult = await this.transitionTaskWithPrisma(tx, taskId, "PREPROCESSING", latestTask.version, {
+              progress: 15
+            });
+            if (!transitionResult.ok) {
+              return {
+                conflict: true,
+                version: latestTask.version
+              };
+            }
+          } else {
+            const updateResult = await this.bumpTaskProgressWithPrisma(tx, taskId, latestTask.version, 35);
+            if (!updateResult.ok) {
+              return {
+                conflict: true,
+                version: latestTask.version
+              };
+            }
           }
         }
-
         await this.appendOutboxEventWithPrisma(tx, taskId, "task.masked");
       }
 
