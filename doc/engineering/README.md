@@ -42,6 +42,15 @@
 8. `rd-progress-management.md`
 9. `change-log-standard.md`
 
+### 4.3 环境注入（admin 密钥）
+- 推荐使用仓库脚本一键生成本地 `.env`：
+  - `scripts/setup-admin-env.sh --dry-run`
+  - `scripts/setup-admin-env.sh`
+- 生成文件（默认本地地址）：
+  - `apps/api-gateway/.env.shared|.env.staging|.env.prod`
+  - `apps/admin-console/.env.shared|.env.staging|.env.prod`
+- `.env*` 默认被 `.gitignore` 忽略，避免密钥误提交。
+
 ## 5. 验收
 - 文档集可直接用于迭代计划拆分与代码评审。
 - 各文档术语、接口路径、状态机字面量完全一致。

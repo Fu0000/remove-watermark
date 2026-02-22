@@ -1,4 +1,4 @@
-# 变更日志规范（v1.48）
+# 变更日志规范（v1.49）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.49 | 2026-02-22 | 新增 `.env` 注入脚本与忽略规则，落地 shared/staging/prod 本地密钥文件生成流程 |
 | v1.48 | 2026-02-22 | 新增 FE-008 admin 服务端代理（浏览器去密钥化）与 `ADMIN_PROXY_*` 配置模板 |
 | v1.47 | 2026-02-22 | 新增 `/admin/*` 密钥安全门禁（受保护环境禁用默认口令）与环境模板 |
 | v1.46 | 2026-02-22 | 新增 `/admin/*` 最小契约与 FE-008 后台写入能力（任务检索/重放、套餐新增/编辑） |
@@ -102,6 +103,34 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.44] - 2026-02-22
+
+### Added
+- 新增脚本：`scripts/setup-admin-env.sh`
+  - 支持 `--dry-run` / `--force`
+  - 一次生成 `shared/staging/prod` 三套 `.env`
+  - 同步生成：
+    - `apps/api-gateway/.env.{shared,staging,prod}`
+    - `apps/admin-console/.env.{shared,staging,prod}`
+- `doc/engineering/README.md` 增加脚本化环境注入入口。
+
+### Changed
+- `.gitignore` 增加 `.env*` 忽略规则并保留 `.env.example` 白名单，避免密钥误提交。
+- `doc/engineering/rd-progress-management.md` 新增第 58 节回填与执行证据。
+
+### Fixed
+- 修复“仅口头约定用 `.env`，缺少可复用落地脚本与防误提交流程”的执行断点。
+
+### Security
+- 生成的 `.env` 文件默认权限为 `600`，并通过忽略规则防止进入 Git 历史。
+
+### Rollback
+- 回退 `scripts/setup-admin-env.sh` 与 `.gitignore` 增量，恢复手工环境配置方式。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/scripts`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`、`/Users/codelei/Documents/ai-project/remove-watermark/.gitignore`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.43] - 2026-02-22
 

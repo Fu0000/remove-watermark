@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.11 | 2026-02-22 | 新增 `.env` 注入落地脚本（shared/staging/prod）并完成本地文件生成 |
 | v1.10 | 2026-02-22 | 新增 FE-008 服务端 admin 代理（浏览器去密钥化）与环境变量收敛 |
 | v1.9 | 2026-02-22 | 新增 `/admin/*` 密钥安全门禁（受保护环境禁用默认口令）与环境模板 |
 | v1.8 | 2026-02-22 | 新增 `/admin/*` 最小契约落地与 FE-008 后台写入能力（任务检索/重放、套餐新增/编辑） |
@@ -204,6 +205,7 @@
 | FE-008 `/admin/*` 契约与后台写入验证（本轮） | `pnpm --filter @apps/api-gateway typecheck` + `pnpm --filter @apps/api-gateway test:contract` + `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed（contract 25/25）` | 已验证 `/admin/tasks`（检索+重放）与 `/admin/plans`（检索+新增+编辑）RBAC、错误码与页面接入闭环 |
 | `/admin/*` 密钥安全门禁验证（本轮） | `pnpm --filter @apps/api-gateway exec tsx -e \"...assertAdminRbacConfig...\"`（`APP_ENV=staging` 且未设置 `ADMIN_RBAC_SECRET`） | `passed（blocked）` | 已验证受保护环境会拒绝默认/缺失密钥配置，避免 `admin123` 漏入 shared/staging/prod |
 | FE-008 服务端 admin 代理验证（本轮） | `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed` | 已新增 `pages/api/admin/[...path]` 代理并将浏览器侧 `/admin/*` 调用改为服务端注入 `X-Admin-Secret` |
+| `.env` 注入脚本验证（本轮） | `scripts/setup-admin-env.sh --dry-run` + `scripts/setup-admin-env.sh` | `passed` | 已生成 `apps/api-gateway` 与 `apps/admin-console` 的 `shared/staging/prod` 本地 `.env` 文件（权限 `600`），且被 `.gitignore` 忽略 |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
 | Webhook Dispatcher 本地 smoke（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:smoke` | `passed` | 已验证 outbox `PENDING -> PUBLISHED`、签名头生成与 `webhook_deliveries(SUCCESS)` 持久化闭环 |
@@ -2193,3 +2195,43 @@
   - 回滚：回退 `admin` 代理路由与 `services/http.ts`，恢复浏览器直连模式（不建议）。
 - 下一步：
   - shared/staging 配置 `ADMIN_PROXY_SECRET` 后执行 FE-008 smoke，推进 `QA`。
+
+## 58. 本次执行回填（shared/staging/prod `.env` 注入落地）
+
+- 任务编号：`DEV-20260222-ENV-ADMIN-SECRET`
+- 需求映射：`FR-012`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/README.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 负责人：后端 + 运维
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：无（本地文件已生成）
+- 风险等级：低
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/.gitignore`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/scripts/setup-admin-env.sh`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/README.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增一键脚本 `scripts/setup-admin-env.sh`，用于生成 `shared/staging/prod` 三套 `.env`：
+    - `apps/api-gateway/.env.{shared,staging,prod}`
+    - `apps/admin-console/.env.{shared,staging,prod}`
+  - 脚本默认生成高强度随机密钥并写入 `ADMIN_RBAC_SECRET/ADMIN_PROXY_SECRET`，支持 `--dry-run` 与 `--force`。
+  - `.gitignore` 增加 `.env*` 忽略规则并保留 `.env.example` 白名单，防止密钥误提交。
+  - `doc/engineering/README.md` 增补脚本使用入口，降低环境准备成本。
+- 测试证据：
+  - `scripts/setup-admin-env.sh --dry-run`：通过
+  - `scripts/setup-admin-env.sh`：通过（已写入 6 个目标文件）
+  - `ls -l apps/api-gateway/.env.* apps/admin-console/.env.*`：通过（权限 `-rw-------`）
+- 联调结果：
+  - 本地已具备 shared/staging/prod 的 `.env` 注入能力，可直接用于下一步 smoke/联调。
+- 遗留问题：
+  - 生成的本地 `.env` 当前默认 `NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:3000`，切换云端时需按实际地址更新。
+- 风险与回滚：
+  - 风险：若误用旧文件，可能导致环境串用。
+  - 回滚：删除已生成 `.env.*` 并重新执行脚本（可加 `--force` 覆盖）。
+- 下一步：
+  - 提供 shared/staging/prod 云端地址后，更新对应 `.env` 并执行 FE-008 smoke 门禁验证。
