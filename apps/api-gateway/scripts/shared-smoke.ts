@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 type ApiEnvelope<T> = {
   code: number;
   message: string;
@@ -40,6 +42,7 @@ const authCode = process.env.SHARED_AUTH_CODE || username;
 const adminRole = normalizeAdminRole(process.env.SHARED_ADMIN_ROLE || "admin");
 const adminRetryRole = normalizeAdminRole(process.env.SHARED_ADMIN_RETRY_ROLE || "operator");
 const adminSecret = process.env.SHARED_ADMIN_SECRET || "admin123";
+const paymentCallbackSecret = process.env.SHARED_PAYMENT_CALLBACK_SECRET || "payment-local-secret";
 
 function normalizeBaseUrl(url: string) {
   if (url.startsWith("http://") || url.startsWith("https://")) {
@@ -53,8 +56,51 @@ function buildRequestId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function signPaymentCallback(input: { timestamp: string; eventId: string; orderId: string; paymentStatus: "PAID" | "REFUNDED" }) {
+  const payload = `${input.timestamp}.${input.eventId}.${input.orderId}.${input.paymentStatus}`;
+  const digest = createHmac("sha256", paymentCallbackSecret).update(payload).digest("hex");
+  return `v1=${digest}`;
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForUsage(
+  token: string,
+  predicate: (usage: { quotaTotal: number; quotaLeft: number; ledgerItems: Array<{ status: string; source: string }> }) => boolean,
+  options: { timeoutMs: number; intervalMs: number; reason: string }
+) {
+  const startedAt = Date.now();
+  let lastUsage: { quotaTotal: number; quotaLeft: number; ledgerItems: Array<{ status: string; source: string }> } | undefined;
+
+  while (Date.now() - startedAt <= options.timeoutMs) {
+    const usageResp = await request<{
+      quotaTotal: number;
+      quotaLeft: number;
+      ledgerItems: Array<{ status: string; source: string }>;
+    }>("/v1/usage/me", {
+      method: "GET",
+      token
+    });
+    const usageBody = usageResp.body as ApiEnvelope<{
+      quotaTotal: number;
+      quotaLeft: number;
+      ledgerItems: Array<{ status: string; source: string }>;
+    }>;
+    assert(usageResp.status === 200 && usageBody.code === 0, `usage 查询失败(${options.reason})`);
+
+    lastUsage = usageBody.data;
+    if (predicate(usageBody.data)) {
+      return usageBody.data;
+    }
+
+    await sleep(options.intervalMs);
+  }
+
+  throw new Error(
+    `usage 条件未命中(${options.reason})，quotaTotal=${lastUsage?.quotaTotal} quotaLeft=${lastUsage?.quotaLeft}`
+  );
 }
 
 async function request<T>(
@@ -422,26 +468,47 @@ async function main() {
   assert(checkoutResp.status === 200 && checkoutBody.code === 0, "subscriptions checkout 失败");
   assert(typeof checkoutBody.data?.orderId === "string" && checkoutBody.data.orderId.length > 0, "checkout 缺少 orderId");
 
+  const paidTimestamp = String(Math.floor(Date.now() / 1000));
+  const paidEventId = buildRequestId("pay_evt_paid");
   const confirmResp = await request<{
     status: string;
     planId: string;
     effectiveAt: string | null;
     expireAt: string | null;
     autoRenew: boolean;
-  }>("/v1/subscriptions/mock-confirm", {
+    paymentStatus: "PAID" | "REFUNDED";
+    orderId: string;
+    applied: boolean;
+  }>("/v1/subscriptions/payment-callback", {
     method: "POST",
-    token,
+    headers: {
+      "X-Payment-Timestamp": paidTimestamp,
+      "X-Payment-Signature": signPaymentCallback({
+        timestamp: paidTimestamp,
+        eventId: paidEventId,
+        orderId: checkoutBody.data.orderId,
+        paymentStatus: "PAID"
+      })
+    },
     body: {
-      orderId: checkoutBody.data.orderId
+      eventId: paidEventId,
+      orderId: checkoutBody.data.orderId,
+      paymentStatus: "PAID",
+      paidAt: new Date().toISOString()
     }
   });
   const confirmBody = confirmResp.body as ApiEnvelope<{
     status: string;
     planId: string;
     effectiveAt: string | null;
+    paymentStatus: "PAID" | "REFUNDED";
+    orderId: string;
+    applied: boolean;
   }>;
-  assert(confirmResp.status === 200 && confirmBody.code === 0, "subscriptions mock-confirm 失败");
+  assert(confirmResp.status === 200 && confirmBody.code === 0, "subscriptions payment-callback(PAID) 失败");
   assert(confirmBody.data.status === "ACTIVE", `订阅未生效，status=${confirmBody.data.status}`);
+  assert(confirmBody.data.paymentStatus === "PAID", `回调状态错误，paymentStatus=${confirmBody.data.paymentStatus}`);
+  assert(confirmBody.data.applied === true, "首次 PAID 回调应触发状态变更");
 
   const usageBeforeResp = await request<{
     quotaTotal: number;
@@ -473,22 +540,14 @@ async function main() {
   assert(quotaTaskResp.status === 200 && quotaTaskBody.code === 0, "订阅生效后创建任务失败");
   const quotaTaskId = quotaTaskBody.data.taskId;
 
-  const usageAfterHoldResp = await request<{
-    quotaTotal: number;
-    quotaLeft: number;
-    ledgerItems: Array<{ status: string; source: string }>;
-  }>("/v1/usage/me", {
-    method: "GET",
-    token
-  });
-  const usageAfterHoldBody = usageAfterHoldResp.body as ApiEnvelope<{
-    quotaLeft: number;
-    ledgerItems: Array<{ status: string; source: string }>;
-  }>;
-  assert(usageAfterHoldResp.status === 200 && usageAfterHoldBody.code === 0, "预扣后 usage 查询失败");
-  assert(
-    usageAfterHoldBody.data.quotaLeft <= usageBeforeBody.data.quotaLeft - 1,
-    `预扣后 quotaLeft 未下降，before=${usageBeforeBody.data.quotaLeft} after=${usageAfterHoldBody.data.quotaLeft}`
+  const usageAfterHold = await waitForUsage(
+    token,
+    (usage) => usage.quotaLeft <= usageBeforeBody.data.quotaLeft - 1,
+    {
+      timeoutMs: 6000,
+      intervalMs: 300,
+      reason: "预扣后 quotaLeft 下降"
+    }
   );
 
   const quotaCancelResp = await request<{ taskId: string; status: TaskStatus }>(`/v1/tasks/${quotaTaskId}/cancel`, {
@@ -499,22 +558,75 @@ async function main() {
   const quotaCancelBody = quotaCancelResp.body as ApiEnvelope<{ status: TaskStatus }>;
   assert(quotaCancelResp.status === 200 && quotaCancelBody.code === 0, "预扣任务取消失败");
 
-  const usageAfterCancelResp = await request<{
+  const usageAfterCancel = await waitForUsage(
+    token,
+    (usage) => usage.quotaLeft >= usageAfterHold.quotaLeft,
+    {
+      timeoutMs: 6000,
+      intervalMs: 300,
+      reason: "取消后 quotaLeft 回升"
+    }
+  );
+  assert(
+    usageAfterCancel.quotaLeft >= usageAfterHold.quotaLeft,
+    `取消后 quotaLeft 未回升，hold=${usageAfterHold.quotaLeft} cancel=${usageAfterCancel.quotaLeft}`
+  );
+
+  const refundTimestamp = String(Math.floor(Date.now() / 1000));
+  const refundEventId = buildRequestId("pay_evt_refund");
+  const refundResp = await request<{
+    status: string;
+    planId: string;
+    effectiveAt: string | null;
+    expireAt: string | null;
+    autoRenew: boolean;
+    paymentStatus: "PAID" | "REFUNDED";
+    orderId: string;
+    applied: boolean;
+  }>("/v1/subscriptions/payment-callback", {
+    method: "POST",
+    headers: {
+      "X-Payment-Timestamp": refundTimestamp,
+      "X-Payment-Signature": signPaymentCallback({
+        timestamp: refundTimestamp,
+        eventId: refundEventId,
+        orderId: checkoutBody.data.orderId,
+        paymentStatus: "REFUNDED"
+      })
+    },
+    body: {
+      eventId: refundEventId,
+      orderId: checkoutBody.data.orderId,
+      paymentStatus: "REFUNDED",
+      refundedAt: new Date().toISOString(),
+      refundReason: "shared smoke rollback"
+    }
+  });
+  const refundBody = refundResp.body as ApiEnvelope<{
+    status: string;
+    planId: string;
+    paymentStatus: "PAID" | "REFUNDED";
+    applied: boolean;
+  }>;
+  assert(refundResp.status === 200 && refundBody.code === 0, "subscriptions payment-callback(REFUNDED) 失败");
+  assert(refundBody.data.status === "REFUNDED", `退款后订阅状态错误，status=${refundBody.data.status}`);
+  assert(refundBody.data.paymentStatus === "REFUNDED", `退款回调状态错误，paymentStatus=${refundBody.data.paymentStatus}`);
+
+  const usageAfterRefundResp = await request<{
     quotaTotal: number;
     quotaLeft: number;
-    ledgerItems: Array<{ status: string; source: string }>;
   }>("/v1/usage/me", {
     method: "GET",
     token
   });
-  const usageAfterCancelBody = usageAfterCancelResp.body as ApiEnvelope<{
+  const usageAfterRefundBody = usageAfterRefundResp.body as ApiEnvelope<{
+    quotaTotal: number;
     quotaLeft: number;
-    ledgerItems: Array<{ status: string; source: string }>;
   }>;
-  assert(usageAfterCancelResp.status === 200 && usageAfterCancelBody.code === 0, "取消后 usage 查询失败");
+  assert(usageAfterRefundResp.status === 200 && usageAfterRefundBody.code === 0, "退款后 usage 查询失败");
   assert(
-    usageAfterCancelBody.data.quotaLeft >= usageAfterHoldBody.data.quotaLeft,
-    `取消后 quotaLeft 未回升，hold=${usageAfterHoldBody.data.quotaLeft} cancel=${usageAfterCancelBody.data.quotaLeft}`
+    usageAfterRefundBody.data.quotaTotal < usageBeforeBody.data.quotaTotal,
+    `退款回滚后 quotaTotal 未下降，before=${usageBeforeBody.data.quotaTotal} after=${usageAfterRefundBody.data.quotaTotal}`
   );
 
   const createEndpointResp = await request<{

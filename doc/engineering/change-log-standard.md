@@ -1,4 +1,4 @@
-# 变更日志规范（v1.58）
+# 变更日志规范（v1.59）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.59 | 2026-02-22 | 新增 INT-006 本地模拟回调网关闭环（payment-callback 验签、退款回滚、Prisma 证据） |
 | v1.58 | 2026-02-22 | 新增 FE-006 订阅中心真实联调页（套餐/订阅/配额）与双端构建验收记录 |
 | v1.57 | 2026-02-22 | 新增 FE-008 Playwright UI smoke 矩阵脚本与多目标复用门禁 |
 | v1.56 | 2026-02-22 | 新增 FE-008 分层验收（API 轻量 e2e + Playwright UI smoke）并固化命令基线 |
@@ -112,6 +113,52 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.54] - 2026-02-22
+
+### Added
+- 新增支付回调签名模块：`apps/api-gateway/src/modules/subscriptions/payment-callback-signature.ts`
+  - 统一 `HMAC-SHA256` 签名串构造、签名与 timing-safe 校验。
+- 新增本地回调网关脚本：`apps/api-gateway/scripts/int006-payment-callback-local.ts`
+  - 覆盖 `checkout -> payment-callback(PAID) -> payment-callback(REFUNDED) -> duplicate REFUNDED` 闭环。
+- `apps/api-gateway/package.json` 新增命令：`test:int006-local`。
+- `apps/api-gateway/.env.example` 新增：
+  - `PAYMENT_CALLBACK_SECRET`
+  - `PAYMENT_CALLBACK_REPLAY_WINDOW_SECONDS`
+
+### Changed
+- `apps/api-gateway/src/modules/subscriptions/subscriptions.controller.ts`
+  - 新增 `POST /v1/subscriptions/payment-callback`；
+  - 增加 `X-Payment-Timestamp` 与 `X-Payment-Signature` 验签、重放窗口校验与参数校验。
+- `apps/api-gateway/src/modules/subscriptions/subscriptions.service.ts`
+  - 新增真实支付回调处理（`PAID/REFUNDED`）与退款事务回滚；
+  - 新增 `subscription.refunded` outbox 事件写入；
+  - 修正 Prisma 分支 `/v1/subscriptions/me` 最新态选取（增加未来时间戳保护）。
+- `apps/api-gateway/scripts/shared-smoke.ts`
+  - 订阅确认由 `mock-confirm` 切换为 `payment-callback(PAID)`；
+  - 补 `payment-callback(REFUNDED)` 与配额回滚校验；
+  - 对配额变更引入轮询等待，降低异步抖动误报。
+- `apps/api-gateway/test/contract.spec.ts`
+  - 新增 `payment-callback` 契约测试：激活、退款回滚、重复退款幂等、非法签名拒绝。
+- `doc/api-spec.md`
+  - 新增 `POST /v1/subscriptions/payment-callback` 契约说明与示例。
+- `doc/engineering/rd-progress-management.md`
+  - `BE-007/INT-006` 完成状态更新；
+  - 新增第 68 节执行回填（INT-006 本地模拟回调网关）。
+
+### Fixed
+- 修复 INT-006 仅依赖 `mock-confirm` 的联调缺口，补齐真实支付回调验签与退款回滚链路。
+- 修复 `int006-local` 登录脚本对状态码过严（仅接受 `200`）导致的误报。
+
+### Security
+- 支付回调统一采用 `HMAC-SHA256` + 重放窗口校验，错误签名返回 `40101`，避免未鉴权网关回调伪造。
+
+### Rollback
+- 回退 `payment-callback` 接口、签名模块、INT-006 本地脚本与相关契约测试，恢复到 0.5.53 的 `mock-confirm` 联调路径。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.53] - 2026-02-22
 

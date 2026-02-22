@@ -232,6 +232,7 @@ flowchart LR
 | GET | `/v1/tasks/{taskId}/result` | 是 | 否 | 获取结果 |
 | GET | `/v1/plans` | 是 | 否 | 套餐列表 |
 | POST | `/v1/subscriptions/checkout` | 是 | 是 | 发起订阅 |
+| POST | `/v1/subscriptions/payment-callback` | 否（支付网关） | 是 | 支付回调（PAID/REFUNDED） |
 | POST | `/v1/subscriptions/mock-confirm` | 是 | 是 | 本地联调：模拟支付回调并激活订阅 |
 | GET | `/v1/subscriptions/me` | 是 | 否 | 当前订阅 |
 | GET | `/v1/usage/me` | 是 | 否 | 配额与流水 |
@@ -522,6 +523,43 @@ Query：
 
 响应：
 - 返回：`status`, `planId`, `effectiveAt`, `expireAt`, `autoRenew`。
+
+### `POST /v1/subscriptions/payment-callback`
+- 由支付网关回调触发（不走用户 `Authorization`）。
+- 验签要求：
+  - `X-Payment-Timestamp`：Unix 秒级时间戳；
+  - `X-Payment-Signature`：`v1=<hex>`；
+  - 签名串：`${timestamp}.${eventId}.${orderId}.${paymentStatus}`；
+  - 算法：`HMAC-SHA256`；
+  - 默认重放窗口：`300s`。
+
+请求：
+
+```json
+{
+  "eventId": "pay_evt_20260222_001",
+  "orderId": "ord_9001",
+  "paymentStatus": "PAID",
+  "providerTradeNo": "wx_trade_001",
+  "paidAt": "2026-02-22T11:00:00Z"
+}
+```
+
+退款回滚示例：
+
+```json
+{
+  "eventId": "pay_evt_20260222_002",
+  "orderId": "ord_9001",
+  "paymentStatus": "REFUNDED",
+  "providerTradeNo": "wx_trade_001",
+  "refundedAt": "2026-02-22T11:15:00Z",
+  "refundReason": "user_cancel"
+}
+```
+
+响应：
+- 返回：`status`, `planId`, `effectiveAt`, `expireAt`, `autoRenew`, `orderId`, `paymentStatus`, `applied`。
 
 ### `GET /v1/subscriptions/me`
 - 返回：`status`, `planId`, `effectiveAt`, `expireAt`, `autoRenew`。
@@ -985,6 +1023,7 @@ Query：
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.11 | 2026-02-22 | 新增 `POST /v1/subscriptions/payment-callback`（HMAC-SHA256 验签）并补充退款回滚语义 |
 | v1.10 | 2026-02-22 | Webhook 持久化模型新增 `tenantId`，管理端 `scopeType=tenant` 升级为真实租户级过滤 |
 | v1.9 | 2026-02-22 | `/admin/webhooks/*` 改为显式上下文驱动（`scopeType/scopeId` 必填），不再允许默认用户 |
 | v1.8 | 2026-02-22 | 新增 `/admin/webhooks/deliveries*` 契约与 RBAC 权限矩阵（`admin:webhook:*`） |

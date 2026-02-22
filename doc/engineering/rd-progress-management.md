@@ -137,7 +137,7 @@
 | BE-004 | 状态推进 | Orchestrator 状态机推进与乐观锁版本控制 | 后端 | 2026-03-03 | 2026-03-12 | In Review | FR-005/FR-006 | unit/integration | 乐观锁与状态迁移校验已覆盖 Prisma 分支 | 非法迁移拦截 100% |
 | BE-005 | 结果交付 | `GET /v1/tasks/{taskId}/result` + 结果 TTL | 后端 | 2026-03-09 | 2026-03-15 | In Review | FR-007 | integration | 契约测试已通过（含结果可用路径） | 结果链接按策略失效 |
 | BE-006 | 失败恢复 | retry/cancel 语义与并发互斥 | 后端 | 2026-03-09 | 2026-03-16 | In Review | FR-005/FR-006 | unit/contract | 动作幂等与冲突路径契约测试已通过 | 重试与取消冲突可控 |
-| BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | In Review | FR-008 | integration/contract | 已补齐本地订阅确认（mock-confirm）+ 任务创建配额门禁（40302）+ 净额扣减口径；真实支付回调/退款回滚待补齐 | 订阅、配额与对账基线可联调 |
+| BE-007 | 商业化 | plans/subscriptions/usage 接口与账务对账任务 | 后端 | 2026-03-20 | 2026-04-05 | In Review | FR-008 | integration/contract | 已补齐真实支付回调（HMAC-SHA256）+ 退款回滚（REFUNDED 幂等）+ `/v1/subscriptions/me` 持久化分支最新态选取修正 | 订阅、配额与对账基线可联调 |
 | BE-008 | 通知回调 | webhook endpoint 管理/投递/重试/手动重放 | 后端 | 2026-03-24 | 2026-04-10 | In Progress | FR-009 | integration/contract | 已落地 endpoint 管理 + test/retry + HMAC-SHA256 签名头，并接入 dispatcher（outbox 轮询、签名出站、delivery 持久化、指标告警）；新增 `tenantId` 持久化与管理端租户级过滤，待 shared/staging 云端验收 | DEAD 信队列可运维回放 |
 | BE-009 | 合规治理 | 素材/任务/账户删除与审计日志链路 | 后端 | 2026-03-30 | 2026-04-12 | In Review | FR-010/FR-011 | integration/e2e | 已补齐删除申请状态查询（list/detail）、执行态流转（PENDING->PROCESSING->DONE/FAILED）、审计查询与 180 天保留清理脚本；本地 Prisma 证据完成，待 shared/staging 云端验收 | 删除 SLA <= 24h（`eta + finishedAt` 可追踪） |
 
@@ -150,7 +150,7 @@
 | INT-003 | 上传 -> 创建任务主链路联调 | 前后端+测试 | 2026-03-05 | 2026-03-12 | In Progress | 端到端成功率 >= 95% | 本地 smoke 已通过，待云端 shared 验收 |
 | INT-004 | 任务中心状态刷新与错误路径联调 | 前后端+测试 | 2026-03-10 | 2026-03-18 | In Review | 状态渲染与错误码一致 | 本地 smoke 已覆盖状态推进与错误路径；按阶段例外以本地证据验收，云端认证后置发布前门禁 |
 | INT-005 | 结果下载与过期策略联调 | 前后端+测试 | 2026-03-14 | 2026-03-20 | In Review | 过期前提醒与失效行为一致 | 本地 smoke 已覆盖结果下载与 expireAt 校验；按阶段例外以本地证据验收，云端认证后置发布前门禁 |
-| INT-006 | 订阅/配额扣减联调 | 前后端+测试+支付 | 2026-03-24 | 2026-04-07 | In Progress | 扣减一致率 100% | 本地已覆盖 mock-confirm + 预扣下降 + 取消回升；待真实支付回调与退款回滚 |
+| INT-006 | 订阅/配额扣减联调 | 前后端+测试+支付 | 2026-03-24 | 2026-04-07 | In Review | 扣减一致率 100% | 本地 Prisma 已覆盖 payment-callback(PAID/REFUNDED) + 退款幂等 + 配额回滚；shared 全量 smoke 需清理历史配额数据后复验 |
 | INT-007 | Webhook 对接联调（验签/重试/幂等） | 后端+外部系统 | 2026-03-28 | 2026-04-12 | In Progress | 签名校验通过，重试可观测 | 本地已完成 test/retry/query + dispatcher outbox 派发 smoke + 外部验签幂等脚本 + dev/shared/staging 本地映射矩阵，待 shared/staging 云端联调 |
 | INT-008 | staging 全链路回归与发布演练 | 全体 | 2026-04-28 | 2026-05-10 | Backlog | 发布准入清单全绿 | 不允许跳过 staging |
 
@@ -176,7 +176,7 @@
 | 用户前端目录规范检查 | `for dir in pages components modules stores services utils; do find apps/user-frontend/src/$dir -type f \\| wc -l; done` | `目录均存在且有文件` | 已对齐 `frontend-framework.md` 目录约束 |
 | 管理端构建验证 | `pnpm --filter @apps/admin-console build` | `Next build passed` | 管理端框架可完成生产构建 |
 | API 网关构建验证 | `pnpm --filter @apps/api-gateway build` | `tsc passed` | 后端网关骨架可完成编译 |
-| API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `18 passed / 0 failed` | 关键契约（含 `/v1/plans`、`/v1/subscriptions/*`、`/v1/usage/me`、`/v1/webhooks/*`、`cancel/retry` 幂等与冲突路径、`mock-confirm`、`40302` 配额门禁）可联调 |
+| API 网关契约测试 | `pnpm --filter @apps/api-gateway test:contract` | `32 passed / 0 failed` | 关键契约（含 `/v1/subscriptions/payment-callback` 验签、退款回滚幂等、`/admin/*` RBAC 与租户隔离）可联调 |
 | API 网关单元测试 | `pnpm --filter @apps/api-gateway test:unit` | `2 passed / 0 failed` | `BE-003/BE-004`（事务创建与乐观锁）核心规则可回归 |
 | Prisma 客户端生成校验（本轮） | `pnpm --filter @apps/api-gateway prisma:generate` | `passed` | Prisma schema 与客户端代码生成可用，支持后续 shared DB 联调 |
 | 本地 PostgreSQL 迁移部署验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma` | `passed（应用 20260222030000_add_webhook_tables）` | webhook 持久化表（`webhook_endpoints/webhook_deliveries`）已在本地 PostgreSQL 生效 |
@@ -185,6 +185,7 @@
 | 套餐种子数据初始化验证（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway prisma:seed:plans` | `passed（seeded plans=3）` | Free/Pro 月付/年付种子可幂等写入 |
 | 去重索引校验（DATA-003，本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway test:data-dedupe-index` | `passed` | `idempotency_keys/outbox_events/usage_ledger` 去重约束存在且二次写入可被稳定拦截 |
 | Prisma 模式 shared smoke（本轮，本地） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma SUBSCRIPTIONS_STORE=prisma pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | `INT-002~INT-006` 在 Prisma 持久化分支可通过 |
+| INT-006 本地模拟回调网关（本轮，本地） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma SUBSCRIPTIONS_STORE=prisma INT006_BASE_URL=http://127.0.0.1:3000 pnpm --filter @apps/api-gateway test:int006-local` | `passed` | 覆盖 `PAID -> REFUNDED`、重复退款幂等（`applied=false`）与配额总量回滚 |
 | Prisma 持久化重启校验（本轮） | `重启网关后 GET /v1/tasks` + `psql count` | `passed（tasks=2, task_masks=1, idempotency_keys=2, usage_ledger=3, outbox_events=3）` | 本地重启后任务与幂等相关数据不丢失 |
 | Worker 编排类型检查（本轮） | `pnpm --filter @apps/worker-orchestrator typecheck` | `passed` | `worker-orchestrator` 编排循环可编译 |
 | 双进程联调 smoke（API + Worker，本轮） | `启动 api-gateway(TASKS_STORE=prisma) + worker-orchestrator 后执行 pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | 状态由 Worker 推进，API 查询路径不再承担推进副作用 |
@@ -2659,3 +2660,56 @@
 - 下一步：
   - 对接真实支付回调后，补 FE-006 的 e2e/smoke 用例并更新联调证据。
   - 在 shared/staging 云端地址就绪后，按同口径复跑 FE-006 页面联调并推进到 `QA`。
+
+## 68. 本次执行回填（INT-006 本地模拟回调网关：真实支付回调 + 退款回滚）
+
+- 任务编号：`DEV-20260222-INT006-CALLBACK-LOCAL`
+- 需求映射：`FR-008`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/tad.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 负责人：后端
+- 截止时间：`2026-04-07`
+- 当前状态：`In Review`
+- 阻塞项：无（云端验收后置）；本地 shared 全量 smoke 存在历史配额污染需清理后复验
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/subscriptions/payment-callback-signature.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/subscriptions/subscriptions.controller.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/src/modules/subscriptions/subscriptions.service.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/scripts/int006-payment-callback-local.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/scripts/shared-smoke.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/test/contract.spec.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/package.json`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway/.env.example`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/AGENTS.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增 `POST /v1/subscriptions/payment-callback`：支持 `PAID/REFUNDED`，接入 `HMAC-SHA256` 验签、重放窗口校验与幂等返回 `applied`。
+  - `subscriptions.service` 增加真实支付回调处理：
+    - `PAID` 复用确认激活链路；
+    - `REFUNDED` 事务化回滚订阅状态（`REFUNDED`）并写入 `subscription.refunded` outbox 事件；
+    - `/v1/subscriptions/me` 在 Prisma 分支新增“未来时间戳保护”选取逻辑，避免历史异常时间戳干扰当前态展示。
+  - 新增 `test:int006-local` 本地模拟回调网关脚本，覆盖 `checkout -> PAID -> REFUNDED -> duplicate REFUNDED` 全链路。
+  - `shared-smoke` 切换到真实 `payment-callback`，并对配额变化增加轮询等待，降低异步可见性抖动误报。
+- 测试证据：
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`32/32`）
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/api-gateway prisma:push`：通过
+  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark TASKS_STORE=prisma SUBSCRIPTIONS_STORE=prisma INT006_BASE_URL=http://127.0.0.1:3000 pnpm --filter @apps/api-gateway test:int006-local`：通过
+  - 运行日志：
+    - `/Users/codelei/Documents/ai-project/remove-watermark/.runtime/logs/int006-local-prisma.log`
+    - `/Users/codelei/Documents/ai-project/remove-watermark/.runtime/logs/api-gateway-dev-prisma.log`
+- 联调结果：
+  - 本地 Prisma 口径下，INT-006 已完成真实支付回调与退款回滚闭环，关键幂等行为可复现。
+- 遗留问题：
+  - `shared-smoke` 在历史脏数据场景（固定账号累积配额消耗）会触发 `40302`；需在清理历史账本数据后复验全量 smoke。
+- 风险与回滚：
+  - 风险：若回调时间戳或密钥配置不一致，可能出现验签失败（`40101`）。
+  - 回滚：回退 `payment-callback` 路径与 `int006-local` 脚本，临时恢复 `mock-confirm` 联调（仅应急，不建议长期保留）。
+- 下一步：
+  - 在本地清理历史 `usage_ledger/subscriptions` 数据后复跑 `test:shared-smoke`，补齐全量联调证据。
+  - 云端地址就绪后按同命令口径复跑 shared/staging 并推进 `INT-006` 到 `QA`。

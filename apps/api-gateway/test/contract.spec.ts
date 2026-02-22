@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter } from "@nestjs/platform-fastify";
 import type { INestApplication } from "@nestjs/common";
@@ -23,6 +24,17 @@ function adminHeaders(role: "admin" | "operator" | "auditor" = "admin") {
     "x-admin-role": role,
     "x-admin-secret": "admin123"
   };
+}
+
+function signPaymentCallback(input: {
+  timestamp: string;
+  eventId: string;
+  orderId: string;
+  paymentStatus: "PAID" | "REFUNDED";
+}) {
+  const payload = `${input.timestamp}.${input.eventId}.${input.orderId}.${input.paymentStatus}`;
+  const digest = createHmac("sha256", "payment-local-secret").update(payload).digest("hex");
+  return `v1=${digest}`;
 }
 
 test("GET /v1/system/capabilities should return defaults", async () => {
@@ -180,6 +192,218 @@ test("POST /v1/subscriptions/mock-confirm should activate pending subscription",
   });
   assert.equal(mine.statusCode, 200);
   assert.equal(mine.json().data.status, "ACTIVE");
+
+  await app.close();
+});
+
+test("POST /v1/subscriptions/payment-callback should activate pending subscription", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const checkout = await server.inject({
+    method: "POST",
+    url: "/v1/subscriptions/checkout",
+    headers: {
+      authorization: "Bearer test-token",
+      "x-request-id": "req_contract_sub_callback_checkout_1",
+      "content-type": "application/json"
+    },
+    payload: {
+      planId: "pro_month",
+      channel: "wechat_pay",
+      clientReturnUrl: "https://app.example.com/pay/result"
+    }
+  });
+  assert.equal(checkout.statusCode, 200);
+  const orderId = checkout.json().data.orderId as string;
+
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const eventId = "evt_contract_paid_1";
+  const callback = await server.inject({
+    method: "POST",
+    url: "/v1/subscriptions/payment-callback",
+    headers: {
+      "x-request-id": "req_contract_sub_callback_paid_1",
+      "x-payment-timestamp": timestamp,
+      "x-payment-signature": signPaymentCallback({
+        timestamp,
+        eventId,
+        orderId,
+        paymentStatus: "PAID"
+      }),
+      "content-type": "application/json"
+    },
+    payload: {
+      eventId,
+      orderId,
+      paymentStatus: "PAID",
+      paidAt: new Date().toISOString()
+    }
+  });
+
+  assert.equal(callback.statusCode, 200);
+  const callbackBody = callback.json();
+  assert.equal(callbackBody.code, 0);
+  assert.equal(callbackBody.data.status, "ACTIVE");
+  assert.equal(callbackBody.data.paymentStatus, "PAID");
+  assert.equal(callbackBody.data.applied, true);
+
+  await app.close();
+});
+
+test("POST /v1/subscriptions/payment-callback should support refund rollback and duplicate idempotency", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const checkout = await server.inject({
+    method: "POST",
+    url: "/v1/subscriptions/checkout",
+    headers: {
+      authorization: "Bearer test-token",
+      "x-request-id": "req_contract_sub_callback_checkout_2",
+      "content-type": "application/json"
+    },
+    payload: {
+      planId: "pro_month",
+      channel: "wechat_pay",
+      clientReturnUrl: "https://app.example.com/pay/result"
+    }
+  });
+  assert.equal(checkout.statusCode, 200);
+  const orderId = checkout.json().data.orderId as string;
+
+  const paidTimestamp = String(Math.floor(Date.now() / 1000));
+  const paidEventId = "evt_contract_paid_2";
+  const paid = await server.inject({
+    method: "POST",
+    url: "/v1/subscriptions/payment-callback",
+    headers: {
+      "x-payment-timestamp": paidTimestamp,
+      "x-payment-signature": signPaymentCallback({
+        timestamp: paidTimestamp,
+        eventId: paidEventId,
+        orderId,
+        paymentStatus: "PAID"
+      }),
+      "content-type": "application/json"
+    },
+    payload: {
+      eventId: paidEventId,
+      orderId,
+      paymentStatus: "PAID"
+    }
+  });
+  assert.equal(paid.statusCode, 200);
+  assert.equal(paid.json().data.status, "ACTIVE");
+
+  const refundTimestamp = String(Math.floor(Date.now() / 1000));
+  const refundEventId = "evt_contract_refunded_2";
+  const refund = await server.inject({
+    method: "POST",
+    url: "/v1/subscriptions/payment-callback",
+    headers: {
+      "x-request-id": "req_contract_sub_callback_refund_2",
+      "x-payment-timestamp": refundTimestamp,
+      "x-payment-signature": signPaymentCallback({
+        timestamp: refundTimestamp,
+        eventId: refundEventId,
+        orderId,
+        paymentStatus: "REFUNDED"
+      }),
+      "content-type": "application/json"
+    },
+    payload: {
+      eventId: refundEventId,
+      orderId,
+      paymentStatus: "REFUNDED",
+      refundReason: "contract refund"
+    }
+  });
+  assert.equal(refund.statusCode, 200);
+  const refundBody = refund.json();
+  assert.equal(refundBody.data.status, "REFUNDED");
+  assert.equal(refundBody.data.paymentStatus, "REFUNDED");
+  assert.equal(refundBody.data.applied, true);
+
+  const duplicateTimestamp = String(Math.floor(Date.now() / 1000));
+  const duplicateEventId = "evt_contract_refunded_duplicate_2";
+  const duplicateRefund = await server.inject({
+    method: "POST",
+    url: "/v1/subscriptions/payment-callback",
+    headers: {
+      "x-payment-timestamp": duplicateTimestamp,
+      "x-payment-signature": signPaymentCallback({
+        timestamp: duplicateTimestamp,
+        eventId: duplicateEventId,
+        orderId,
+        paymentStatus: "REFUNDED"
+      }),
+      "content-type": "application/json"
+    },
+    payload: {
+      eventId: duplicateEventId,
+      orderId,
+      paymentStatus: "REFUNDED"
+    }
+  });
+  assert.equal(duplicateRefund.statusCode, 200);
+  assert.equal(duplicateRefund.json().data.applied, false);
+
+  const usage = await server.inject({
+    method: "GET",
+    url: "/v1/usage/me",
+    headers: {
+      authorization: "Bearer test-token",
+      "x-request-id": "req_contract_sub_callback_usage_2"
+    }
+  });
+  assert.equal(usage.statusCode, 200);
+  assert.equal(usage.json().code, 0);
+  assert.equal(usage.json().data.quotaTotal < 300, true);
+
+  await app.close();
+});
+
+test("POST /v1/subscriptions/payment-callback should reject invalid signature", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const checkout = await server.inject({
+    method: "POST",
+    url: "/v1/subscriptions/checkout",
+    headers: {
+      authorization: "Bearer test-token",
+      "x-request-id": "req_contract_sub_callback_checkout_3",
+      "content-type": "application/json"
+    },
+    payload: {
+      planId: "pro_month",
+      channel: "wechat_pay",
+      clientReturnUrl: "https://app.example.com/pay/result"
+    }
+  });
+  assert.equal(checkout.statusCode, 200);
+  const orderId = checkout.json().data.orderId as string;
+
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const callback = await server.inject({
+    method: "POST",
+    url: "/v1/subscriptions/payment-callback",
+    headers: {
+      "x-request-id": "req_contract_sub_callback_invalid_sig_3",
+      "x-payment-timestamp": timestamp,
+      "x-payment-signature": "v1=invalid",
+      "content-type": "application/json"
+    },
+    payload: {
+      eventId: "evt_contract_invalid_sig_3",
+      orderId,
+      paymentStatus: "PAID"
+    }
+  });
+
+  assert.equal(callback.statusCode, 401);
+  assert.equal(callback.json().code, 40101);
 
   await app.close();
 });

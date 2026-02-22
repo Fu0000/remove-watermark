@@ -20,6 +20,24 @@ export interface CheckoutPayload {
   };
 }
 
+export type PaymentCallbackStatus = "PAID" | "REFUNDED";
+
+export interface PaymentCallbackInput {
+  eventId: string;
+  orderId: string;
+  paymentStatus: PaymentCallbackStatus;
+  providerTradeNo?: string;
+  paidAt?: Date;
+  refundedAt?: Date;
+  refundReason?: string;
+}
+
+export interface PaymentCallbackResult extends SubscriptionView {
+  orderId: string;
+  paymentStatus: PaymentCallbackStatus;
+  applied: boolean;
+}
+
 interface SubscriptionSnapshot {
   status: SubscriptionStatus;
   planId: string;
@@ -142,6 +160,17 @@ export class SubscriptionsService {
     return this.confirmCheckoutInMemory(userId, orderId);
   }
 
+  async processPaymentCallback(input: PaymentCallbackInput): Promise<PaymentCallbackResult | undefined> {
+    if (this.preferPrismaStore) {
+      const result = await this.processPaymentCallbackWithPrisma(input);
+      if (result) {
+        return result;
+      }
+    }
+
+    return this.processPaymentCallbackInMemory(input);
+  }
+
   async getMySubscription(userId: string): Promise<SubscriptionView> {
     const snapshot = await this.getLatestSubscription(userId);
 
@@ -218,18 +247,31 @@ export class SubscriptionsService {
   private async getLatestSubscription(userId: string): Promise<SubscriptionSnapshot> {
     if (this.preferPrismaStore) {
       try {
-        const subscription = await this.prisma.subscription.findFirst({
-          where: { userId },
-          orderBy: { createdAt: "desc" }
+        const maxFutureUpdatedAt = new Date(Date.now() + 10 * 60 * 1000);
+        let pick = await this.prisma.subscription.findFirst({
+          where: {
+            userId,
+            updatedAt: {
+              lte: maxFutureUpdatedAt
+            }
+          },
+          orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }]
         });
 
-        if (subscription) {
+        if (!pick) {
+          pick = await this.prisma.subscription.findFirst({
+            where: { userId },
+            orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }]
+          });
+        }
+
+        if (pick) {
           return {
-            status: subscription.status as SubscriptionStatus,
-            planId: subscription.planId,
-            effectiveAt: subscription.effectiveAt,
-            expireAt: subscription.expireAt,
-            autoRenew: subscription.autoRenew
+            status: pick.status as SubscriptionStatus,
+            planId: pick.planId,
+            effectiveAt: pick.effectiveAt,
+            expireAt: pick.expireAt,
+            autoRenew: pick.autoRenew
           };
         }
       } catch {
@@ -385,6 +427,48 @@ export class SubscriptionsService {
     }
   }
 
+  private async processPaymentCallbackWithPrisma(input: PaymentCallbackInput): Promise<PaymentCallbackResult | undefined> {
+    try {
+      const target = await this.prisma.subscription.findFirst({
+        where: {
+          externalOrderId: input.orderId
+        },
+        orderBy: { createdAt: "desc" }
+      });
+
+      if (!target) {
+        return undefined;
+      }
+
+      if (input.paymentStatus === "PAID") {
+        const view = await this.confirmCheckoutWithPrisma(target.userId, input.orderId);
+        if (!view) {
+          return undefined;
+        }
+
+        return {
+          ...view,
+          orderId: input.orderId,
+          paymentStatus: input.paymentStatus,
+          applied: target.status === "PENDING" && view.status === "ACTIVE"
+        };
+      }
+
+      const refunded = await this.refundCheckoutWithPrisma(target.subscriptionId, input);
+      if (!refunded) {
+        return undefined;
+      }
+
+      return {
+        ...refunded,
+        orderId: input.orderId,
+        paymentStatus: input.paymentStatus
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
   private confirmCheckoutInMemory(userId: string, orderId: string): SubscriptionView | undefined {
     const records = this.memorySubscriptions.get(userId) || [];
     const target = [...records]
@@ -419,10 +503,141 @@ export class SubscriptionsService {
     };
   }
 
+  private processPaymentCallbackInMemory(input: PaymentCallbackInput): PaymentCallbackResult | undefined {
+    const found = this.findMemorySubscriptionByOrderId(input.orderId);
+    if (!found) {
+      return undefined;
+    }
+
+    if (input.paymentStatus === "PAID") {
+      const before = found.target.status;
+      const updated = this.confirmCheckoutInMemory(found.userId, input.orderId);
+      if (!updated) {
+        return undefined;
+      }
+
+      return {
+        ...updated,
+        orderId: input.orderId,
+        paymentStatus: input.paymentStatus,
+        applied: before === "PENDING" && updated.status === "ACTIVE"
+      };
+    }
+
+    const now = input.refundedAt || new Date();
+    const applied = found.target.status !== "REFUNDED";
+
+    if (applied) {
+      found.target.status = "REFUNDED";
+      found.target.expireAt = now;
+    }
+
+    this.memorySubscriptions.set(found.userId, found.records);
+    return {
+      status: found.target.status,
+      planId: found.target.planId,
+      effectiveAt: found.target.effectiveAt ? found.target.effectiveAt.toISOString() : null,
+      expireAt: found.target.expireAt ? found.target.expireAt.toISOString() : null,
+      autoRenew: found.target.autoRenew,
+      orderId: input.orderId,
+      paymentStatus: input.paymentStatus,
+      applied
+    };
+  }
+
+  private async refundCheckoutWithPrisma(
+    subscriptionId: string,
+    input: PaymentCallbackInput
+  ): Promise<(SubscriptionView & { applied: boolean }) | undefined> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const target = await tx.subscription.findUnique({
+          where: { subscriptionId }
+        });
+
+        if (!target) {
+          return undefined;
+        }
+
+        if (target.status === "REFUNDED") {
+          return {
+            status: target.status as SubscriptionStatus,
+            planId: target.planId,
+            effectiveAt: target.effectiveAt ? target.effectiveAt.toISOString() : null,
+            expireAt: target.expireAt ? target.expireAt.toISOString() : null,
+            autoRenew: target.autoRenew,
+            applied: false
+          };
+        }
+
+        const now = input.refundedAt || new Date();
+        const meta = normalizeMetaJson(target.metaJson);
+        meta.lastPaymentCallback = {
+          eventId: input.eventId,
+          paymentStatus: input.paymentStatus,
+          providerTradeNo: input.providerTradeNo || null,
+          refundReason: input.refundReason || null,
+          processedAt: now.toISOString()
+        };
+
+        const updated = await tx.subscription.update({
+          where: { subscriptionId: target.subscriptionId },
+          data: {
+            status: "REFUNDED",
+            canceledAt: now,
+            expireAt: now,
+            updatedAt: now,
+            metaJson: meta as Prisma.InputJsonValue
+          }
+        });
+
+        await tx.outboxEvent.create({
+          data: {
+            eventId: this.buildId("evt"),
+            eventType: "subscription.refunded",
+            aggregateType: "subscription",
+            aggregateId: updated.subscriptionId,
+            status: "PENDING",
+            retryCount: 0,
+            createdAt: now
+          }
+        });
+
+        return {
+          status: updated.status as SubscriptionStatus,
+          planId: updated.planId,
+          effectiveAt: updated.effectiveAt ? updated.effectiveAt.toISOString() : null,
+          expireAt: updated.expireAt ? updated.expireAt.toISOString() : null,
+          autoRenew: updated.autoRenew,
+          applied: true
+        };
+      });
+    } catch {
+      return undefined;
+    }
+  }
+
   private appendMemorySubscription(userId: string, item: StoredSubscriptionRecord) {
     const current = this.memorySubscriptions.get(userId) || [];
     current.push(item);
     this.memorySubscriptions.set(userId, current);
+  }
+
+  private findMemorySubscriptionByOrderId(orderId: string) {
+    for (const [userId, records] of this.memorySubscriptions.entries()) {
+      const target = [...records]
+        .filter((item) => item.orderId === orderId)
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0];
+      if (target) {
+        return {
+          userId,
+          records,
+          target
+        };
+      }
+    }
+
+    return undefined;
   }
 
   private async countReservedUnitsWithPrisma(userId: string, periodStart: Date, periodEnd: Date) {
@@ -456,6 +671,14 @@ export class SubscriptionsService {
   private buildId(prefix: string) {
     return `${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;
   }
+}
+
+function normalizeMetaJson(meta: Prisma.JsonValue | null | undefined): Record<string, unknown> {
+  if (meta && typeof meta === "object" && !Array.isArray(meta)) {
+    return { ...(meta as Record<string, unknown>) };
+  }
+
+  return {};
 }
 
 function calculateExpireAt(planId: string, effectiveAt: Date) {

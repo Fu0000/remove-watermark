@@ -272,6 +272,7 @@
 ### 14.3 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.9 | 2026-02-22 | 增加 INT-006 本地支付回调网关验收命令 `@apps/api-gateway test:int006-local`（PAID/REFUNDED） |
 | v1.8 | 2026-02-22 | 增加 FE-008 Playwright 矩阵命令 `@apps/admin-console test:e2e:fe008:matrix`（多目标 UI smoke） |
 | v1.7 | 2026-02-22 | 增加 FE-008 分层验收基线命令（`test:fe008-admin-e2e-lite` + `@apps/admin-console test:e2e:fe008`） |
 | v1.6 | 2026-02-22 | 增加 FE-008 管理端独立矩阵命令 `test:fe008-admin-smoke:matrix`，用于多环境本地映射验收 |
@@ -310,6 +311,7 @@ pnpm --filter @apps/api-gateway prisma:generate
 pnpm --filter @apps/api-gateway test:fe008-admin-e2e-lite
 pnpm --filter @apps/api-gateway test:shared-smoke:matrix
 pnpm --filter @apps/api-gateway test:fe008-admin-smoke:matrix
+pnpm --filter @apps/api-gateway test:int006-local
 pnpm --filter @apps/admin-console test:e2e:fe008
 pnpm --filter @apps/admin-console test:e2e:fe008:matrix
 
