@@ -38,6 +38,10 @@ export default function HomePage() {
     }
   };
 
+  const handleGoSubscription = () => {
+    void Taro.navigateTo({ url: "/pages/subscription/index" });
+  };
+
   return (
     <PageShell title="去水印工作台" subtitle="上传 -> 处理 -> 下载">
       <View>
@@ -53,6 +57,9 @@ export default function HomePage() {
         <Button loading={loading} onClick={handleStart}>
           {user ? "进入上传编辑" : "登录并开始"}
         </Button>
+      </View>
+      <View>
+        <Button onClick={handleGoSubscription}>套餐与订阅</Button>
       </View>
       {errorText ? (
         <View>

@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.20 | 2026-02-22 | 新增 FE-006 订阅中心真实联调页面（套餐/订阅/配额）与多端构建验收证据 |
 | v1.19 | 2026-02-22 | 新增 FE-008 Playwright UI smoke 矩阵脚本与 `dev/shared/staging` 本地映射验收证据 |
 | v1.18 | 2026-02-22 | 新增 FE-008 分层验收（API 轻量 e2e + Playwright UI smoke）与本地执行证据 |
 | v1.17 | 2026-02-22 | 新增 FE-008 管理端独立 smoke 矩阵脚本与本地 `dev/shared/staging` 映射验收能力 |
@@ -122,7 +123,7 @@
 | FE-003 | 用户端主链路 | 编辑页（自动检测+手动蒙版） | 前端 | 2026-03-05 | 2026-03-14 | In Review | FR-003/FR-004 | `/v1/tasks`, `/v1/tasks/{taskId}/mask` | e2e/regression | 真实绘制交互与版本冲突处理已联调 |
 | FE-004 | 用户端主链路 | 任务中心（轮询/SSE 回退、重试/取消） | 前端 | 2026-03-09 | 2026-03-18 | In Review | FR-005/FR-006 | `/v1/tasks*` | contract/e2e | 刷新/取消/重试联调动作与 H5 构建验证已通过 |
 | FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | In Review | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 结果查询、预览/复制下载地址、过期提示已联调 |
-| FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | Backlog | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 未开始 |
+| FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | In Review | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 订阅中心已接入套餐查询、当前订阅、配额账单流水、`checkout + mock-confirm` 本地联调闭环，并补齐 H5/微信小程序双端构建验证 |
 | FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | In Review | FR-010/FR-011 | `/v1/account/delete-request*`, `/v1/account/audit-logs`, `DELETE /v1/assets/{assetId}`, `DELETE /v1/tasks/{taskId}` | e2e | 删除申请创建、list/detail、审计日志查询已联调；编辑/任务页删除入口已补齐并新增二次确认与成功提示 |
 | FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Review | FR-012 | `/admin/*` | e2e/smoke | `/admin/tasks`、`/admin/plans`、`/admin/webhooks/deliveries*` 已打通；Webhook 运维已改为显式上下文（用户/租户）驱动且 `tenant` 已切换为真实数据层过滤；已补齐本地 `fe008-admin-e2e-lite` 与 Playwright UI smoke 证据，云端地址切换后复跑即可推进 QA |
 
@@ -206,6 +207,7 @@
 | BE-009 第二阶段 Prisma 隔离 schema 契约回归（本轮） | `DATABASE_URL=postgresql://.../remove_watermark?schema=contract_phase2_<ts> pnpm --filter @apps/api-gateway exec prisma migrate deploy --schema prisma/schema.prisma && DATABASE_URL=... TASKS/SUBSCRIPTIONS/WEBHOOKS/COMPLIANCE_STORE=prisma pnpm --filter @apps/api-gateway test:contract` | `passed（22/22）` | 使用临时 schema 隔离历史幂等键，获得稳定 Prisma 合约证据（避免固定库历史数据噪音） |
 | BE-009 运维脚本校验（本轮） | `COMPLIANCE_STORE=prisma pnpm --filter @apps/api-gateway ops:account-delete:reconcile` + `COMPLIANCE_STORE=prisma AUDIT_LOG_RETENTION_DAYS=180 pnpm --filter @apps/api-gateway ops:audit:retention` | `passed` | 已具备删除申请批处理与审计日志保留清理执行入口 |
 | FE-007 账户隐私页前端验证（本轮） | `pnpm --filter @apps/user-frontend typecheck` + `pnpm --filter @apps/user-frontend build:h5` | `passed（build 含 2 条包体告警）` | 删除申请创建、删除申请查询与审计日志查询页面通过多端构建与类型校验 |
+| FE-006 订阅中心前端验证（本轮） | `pnpm --filter @apps/user-frontend typecheck` + `pnpm --filter @apps/user-frontend build:h5` + `pnpm --filter @apps/user-frontend build:weapp` + `pnpm --filter @apps/api-gateway test:contract` | `passed（H5 build 含 2 条包体告警；weapp build 通过；contract 29/29）` | 已验证 `/v1/plans`、`/v1/subscriptions/checkout`、`/v1/subscriptions/mock-confirm`、`/v1/subscriptions/me`、`/v1/usage/me` 页面联调路径与双端可构建性 |
 | FE-007 第二阶段（本轮）删除入口验证 | `pnpm --filter @apps/user-frontend typecheck` + `pnpm --filter @apps/user-frontend build:h5` | `passed（build 含 2 条包体告警）` | 编辑页已接入 `DELETE /v1/assets/{assetId}`，任务中心已接入 `DELETE /v1/tasks/{taskId}`，并统一透传 `Idempotency-Key` |
 | FE-007 第三阶段（本轮）删除确认交互验证 | `pnpm --filter @apps/user-frontend typecheck` + `pnpm --filter @apps/user-frontend build:h5` | `passed（build 含 2 条包体告警）` | 删除动作新增二次确认弹窗与成功提示，降低误触风险 |
 | FE-007 本地 smoke（本轮） | `SHARED_BASE_URL=http://127.0.0.1:3000 SHARED_USERNAME=admin SHARED_PASSWORD=admin123 SHARED_SMOKE_MAX_POLL_ATTEMPTS=80 SHARED_SMOKE_POLL_INTERVAL_MS=300 pnpm --filter @apps/api-gateway test:shared-smoke` | `passed` | `shared-smoke` 已覆盖 FE-007 删除与审计链路（素材删除、任务删除、删除申请 list/detail、审计日志查询） |
@@ -247,8 +249,8 @@
 | Done | 1 | 2.3% |
 | In Progress | 10 | 23.3% |
 | Ready | 7 | 16.3% |
-| Backlog | 6 | 14.0% |
-| In Review | 19 | 44.2% |
+| Backlog | 5 | 11.6% |
+| In Review | 20 | 46.5% |
 | QA | 0 | 0.0% |
 
 ## 10. 关键结果（KR）跟踪（v1.0）
@@ -2604,3 +2606,56 @@
   - 回滚：回退 `fe008-e2e-matrix.ts` 与 `test:e2e:fe008:matrix`，恢复单目标 `test:e2e:fe008` 执行。
 - 下一步：
   - 你提供 shared/staging 云端地址后，直接替换 `FE008_E2E_MATRIX_TARGETS` 并复跑，补齐发布前门禁证据。
+
+## 67. 本次执行回填（FE-006 订阅中心真实联调页落地）
+
+- 任务编号：`DEV-20260222-FE006-SUBSCRIPTION`
+- 需求映射：`FR-008`、`MET-005`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/frontend-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 负责人：前端
+- 截止时间：`2026-04-03`
+- 当前状态：`In Review`
+- 阻塞项：无（真实支付回调按 `INT-006` 后半程推进）
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/services/subscription.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/pages/subscription/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/pages/subscription/index.scss`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/pages/home/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/src/config/runtime.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend/.env.example`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增订阅服务层 `subscription.ts`，封装：
+    - `GET /v1/plans`
+    - `POST /v1/subscriptions/checkout`
+    - `POST /v1/subscriptions/mock-confirm`
+    - `GET /v1/subscriptions/me`
+    - `GET /v1/usage/me`
+  - 订阅页从占位升级为真实联调页：
+    - 套餐列表展示与选择；
+    - 当前订阅状态展示（`status/planId/effectiveAt/expireAt/autoRenew`）；
+    - 配额账单展示（`quotaTotal/quotaLeft/ledgerItems`）；
+    - 本地联调动作：`checkout + mock-confirm`。
+  - 首页新增“套餐与订阅”入口按钮，降低联调路径跳转成本。
+  - 新增 `TARO_APP_SUBSCRIPTION_RETURN_URL` 运行时配置，避免硬编码回调地址。
+  - 页面样式补齐 `rpx + h5 px` 双轨适配，保证小程序/H5 信息结构一致。
+- 测试证据：
+  - `pnpm --filter @apps/user-frontend typecheck`：通过
+  - `pnpm --filter @apps/user-frontend build:h5`：通过（含既有包体告警 `2` 条）
+  - `pnpm --filter @apps/user-frontend build:weapp`：通过
+  - `pnpm --filter @apps/api-gateway test:contract`：通过（`29/29`）
+- 联调结果：
+  - 本地地址 `http://127.0.0.1:3000` 下，FE-006 已形成“套餐查询 -> 创建订阅订单 -> mock-confirm 激活 -> 配额账单刷新”的页面闭环。
+- 遗留问题：
+  - 真实支付回调与退款回滚路径仍待 `INT-006` 后半程接入（当前以 `mock-confirm` 覆盖本地联调）。
+- 风险与回滚：
+  - 风险：若后续支付回调字段扩展与页面模型不一致，可能需要补字段映射。
+  - 回滚：回退 `subscription` 页面与服务层改造，恢复占位页版本。
+- 下一步：
+  - 对接真实支付回调后，补 FE-006 的 e2e/smoke 用例并更新联调证据。
+  - 在 shared/staging 云端地址就绪后，按同口径复跑 FE-006 页面联调并推进到 `QA`。

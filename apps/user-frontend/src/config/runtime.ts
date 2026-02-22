@@ -6,6 +6,19 @@ function normalizeBaseUrl(url: string) {
   return `https://${url}`;
 }
 
+function normalizeReturnUrl(url: string | undefined) {
+  if (!url) {
+    return "https://app.remove-watermark.local/subscription/result";
+  }
+
+  try {
+    new URL(url);
+    return url;
+  } catch {
+    return "https://app.remove-watermark.local/subscription/result";
+  }
+}
+
 export const API_BASE_URL = normalizeBaseUrl(
   process.env.TARO_APP_API_BASE_URL || "http://127.0.0.1:3000"
 );
@@ -13,3 +26,4 @@ export const API_BASE_URL = normalizeBaseUrl(
 export const SHARED_AUTH_CODE = process.env.TARO_APP_SHARED_AUTH_CODE || "admin";
 export const SHARED_USERNAME = process.env.TARO_APP_SHARED_USERNAME || "admin";
 export const SHARED_PASSWORD = process.env.TARO_APP_SHARED_PASSWORD || "admin123";
+export const SUBSCRIPTION_RETURN_URL = normalizeReturnUrl(process.env.TARO_APP_SUBSCRIPTION_RETURN_URL);

@@ -1,4 +1,4 @@
-# 变更日志规范（v1.57）
+# 变更日志规范（v1.58）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.58 | 2026-02-22 | 新增 FE-006 订阅中心真实联调页（套餐/订阅/配额）与双端构建验收记录 |
 | v1.57 | 2026-02-22 | 新增 FE-008 Playwright UI smoke 矩阵脚本与多目标复用门禁 |
 | v1.56 | 2026-02-22 | 新增 FE-008 分层验收（API 轻量 e2e + Playwright UI smoke）并固化命令基线 |
 | v1.55 | 2026-02-22 | 新增 FE-008 管理端独立 smoke 矩阵脚本与多目标本地映射验收能力 |
@@ -111,6 +112,45 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.53] - 2026-02-22
+
+### Added
+- 新增前端订阅服务层：`apps/user-frontend/src/services/subscription.ts`
+  - 封装 `plans/subscriptions/usage` 相关接口：
+    - `GET /v1/plans`
+    - `POST /v1/subscriptions/checkout`
+    - `POST /v1/subscriptions/mock-confirm`
+    - `GET /v1/subscriptions/me`
+    - `GET /v1/usage/me`
+- 新增订阅页样式文件：`apps/user-frontend/src/pages/subscription/index.scss`，补齐 `rpx + h5 px` 双端适配样式。
+- `apps/user-frontend/.env.example` 新增 `TARO_APP_SUBSCRIPTION_RETURN_URL` 配置项。
+
+### Changed
+- `apps/user-frontend/src/pages/subscription/index.tsx` 从占位页升级为真实联调页：
+  - 套餐列表查询与选择；
+  - 当前订阅状态展示（`status/planId/effectiveAt/expireAt/autoRenew`）；
+  - 配额账单展示（`quotaTotal/quotaLeft/ledgerItems`）；
+  - 本地订阅动作（`checkout + mock-confirm`）与错误码透传。
+- `apps/user-frontend/src/pages/home/index.tsx` 新增“套餐与订阅”入口按钮。
+- `apps/user-frontend/src/config/runtime.ts` 新增 `SUBSCRIPTION_RETURN_URL` 运行时解析。
+- `doc/engineering/rd-progress-management.md`
+  - `FE-006` 状态由 `Backlog` 更新为 `In Review`；
+  - 新增 FE-006 前端验证证据（`typecheck + build:h5 + build:weapp + contract`）；
+  - 新增第 67 节执行回填。
+
+### Fixed
+- 修复 FE-006 长期停留占位页面、无法验证 `FR-008` 前端链路的问题，补齐“套餐 -> 订阅 -> 配额”最小可联调闭环。
+
+### Security
+- 保持 `Authorization`、`X-Request-Id`、`Idempotency-Key` 约束不变，页面改造未新增鉴权绕过路径。
+
+### Rollback
+- 回退 `subscription` 服务层、订阅页与首页入口改造，恢复到 0.5.52 的订阅占位页面版本。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/user-frontend`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.52] - 2026-02-22
 

@@ -1,0 +1,145 @@
+.subscription-section {
+  margin-top: 16rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.subscription-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.subscription-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.subscription-kv {
+  font-size: 24rpx;
+  color: #52606d;
+  word-break: break-all;
+}
+
+.subscription-plan-card {
+  border: 1px solid #e5ecf4;
+  border-radius: 12rpx;
+  background: #ffffff;
+  padding: 14rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.subscription-plan-card-active {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2rpx rgba(26, 115, 232, 0.15);
+}
+
+.subscription-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.subscription-plan-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.subscription-plan-price {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #1a73e8;
+}
+
+.subscription-plan-meta {
+  font-size: 22rpx;
+  color: #52606d;
+  word-break: break-all;
+}
+
+.subscription-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 68rpx;
+  border: 2rpx solid #d9e1ec;
+  border-radius: 12rpx;
+  padding: 0 16rpx;
+  background: #ffffff;
+}
+
+.subscription-hint {
+  margin-top: 8rpx;
+  color: #1a73e8;
+  font-size: 24rpx;
+}
+
+.subscription-error {
+  margin-top: 8rpx;
+  color: #d93025;
+  font-size: 24rpx;
+}
+
+.subscription-empty {
+  margin-top: 8rpx;
+  color: #7a8796;
+  font-size: 24rpx;
+}
+
+.subscription-ledger-scroll {
+  max-height: 360rpx;
+  padding-right: 4rpx;
+}
+
+.subscription-ledger-item {
+  margin-top: 10rpx;
+  border: 1px solid #e5ecf4;
+  border-radius: 12rpx;
+  background: #ffffff;
+  padding: 12rpx;
+}
+
+.subscription-ledger-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.subscription-ledger-id {
+  font-size: 22rpx;
+  color: #2b3a4b;
+  word-break: break-all;
+}
+
+.platform-h5 .subscription-title {
+  font-size: 18px;
+}
+
+.platform-h5 .subscription-kv,
+.platform-h5 .subscription-plan-meta,
+.platform-h5 .subscription-empty,
+.platform-h5 .subscription-hint,
+.platform-h5 .subscription-error {
+  font-size: 14px;
+}
+
+.platform-h5 .subscription-plan-name {
+  font-size: 16px;
+}
+
+.platform-h5 .subscription-plan-price {
+  font-size: 15px;
+}
+
+.platform-h5 .subscription-input {
+  height: 40px;
+}
+
+.platform-h5 .subscription-ledger-scroll {
+  max-height: 220px;
+}
