@@ -3,6 +3,7 @@ import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Ta
 import type { ColumnsType } from "antd/es/table";
 import { AppLayout } from "@/components/layout";
 import { Guard } from "@/components/guard";
+import { PageHeader } from "@/components/page-header";
 import type { PlanItem } from "@/services/plans";
 import { createPlan, listPlans, updatePlan } from "@/services/plans";
 import { ApiError } from "@/services/http";
@@ -182,7 +183,8 @@ export default function PlansPage() {
     <AppLayout>
       {contextHolder}
       <Guard role="admin" permission="plan:write">
-        <Card title="套餐管理（查询 + 写入）">
+        <PageHeader title="套餐管理" description="统一维护 plan 基础信息、配额规则与启停状态，并保留审计记录。" />
+        <Card className="admin-section-card" title="套餐查询与写入">
           <Space style={{ marginBottom: 16, width: "100%" }} wrap>
             <Input
               placeholder="planId / name"

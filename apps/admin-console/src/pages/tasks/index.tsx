@@ -3,6 +3,7 @@ import { Alert, Button, Card, DatePicker, Input, Modal, Select, Space, Table, Ta
 import type { ColumnsType } from "antd/es/table";
 import { AppLayout } from "@/components/layout";
 import { Guard } from "@/components/guard";
+import { PageHeader } from "@/components/page-header";
 import type { TaskItem } from "@/services/tasks";
 import { listTasks, replayTask } from "@/services/tasks";
 import { ApiError } from "@/services/http";
@@ -139,7 +140,8 @@ export default function TasksPage() {
     <AppLayout>
       {contextHolder}
       <Guard role="operator" permission="task:read">
-        <Card title="任务管理（检索 + 异常重放）">
+        <PageHeader title="任务管理" description="支持 taskId/userId/状态/时间筛选，并对失败任务执行受控重放。" />
+        <Card className="admin-section-card" title="任务检索与重放">
           <Space style={{ marginBottom: 16, width: "100%" }} wrap>
             <Input
               placeholder="taskId"

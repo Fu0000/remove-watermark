@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/layout";
+import { PageHeader } from "@/components/page-header";
 import { Card, Table } from "antd";
 
 const rows = [
@@ -9,7 +10,8 @@ const rows = [
 export default function RisksPage() {
   return (
     <AppLayout>
-      <Card title="风险台账">
+      <PageHeader title="风险台账" description="持续跟踪高风险事项，明确优先级、状态和负责人。" />
+      <Card className="admin-section-card" title="风险清单">
         <Table
           rowKey="riskId"
           dataSource={rows}

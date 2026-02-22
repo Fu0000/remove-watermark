@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Button, Card, Input, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { AppLayout } from "@/components/layout";
+import { PageHeader } from "@/components/page-header";
 import type { DeliveryItem } from "@/services/webhooks";
 import { listDeliveries, retryDelivery } from "@/services/webhooks";
 import { ApiError } from "@/services/http";
@@ -146,7 +147,8 @@ export default function WebhooksPage() {
   return (
     <AppLayout>
       {contextHolder}
-      <Card title="Webhook 运维（投递查询 + 重试）">
+      <PageHeader title="Webhook 运维" description="基于用户/租户上下文查询投递记录，并对失败投递执行受控重试。" />
+      <Card className="admin-section-card" title="投递查询与重试">
         <Space style={{ marginBottom: 16, width: "100%" }} wrap>
           <Select<ScopeType>
             style={{ width: 160 }}
