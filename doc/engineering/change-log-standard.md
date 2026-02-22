@@ -1,4 +1,4 @@
-# 变更日志规范（v1.60）
+# 变更日志规范（v1.61）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.61 | 2026-02-22 | 新增 shared 本地双进程一键验收脚本（local-stack）与 INT-006 收尾证据 |
 | v1.60 | 2026-02-22 | 新增本地 smoke 用户数据重置脚本与 INT-006 shared 全量 smoke 复验证据 |
 | v1.59 | 2026-02-22 | 新增 INT-006 本地模拟回调网关闭环（payment-callback 验签、退款回滚、Prisma 证据） |
 | v1.58 | 2026-02-22 | 新增 FE-006 订阅中心真实联调页（套餐/订阅/配额）与双端构建验收记录 |
@@ -114,6 +115,40 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.56] - 2026-02-22
+
+### Added
+- 新增脚本：`apps/api-gateway/scripts/shared-smoke-local-stack.ts`
+  - 固化本地一键验收流程：
+    - `test:shared-smoke:reset-user`（默认开启，可关闭）
+    - 启动 `api-gateway`（Prisma）
+    - 启动 `worker-orchestrator`（Redis/BullMQ）
+    - `wait-gateway` 预检查
+    - 执行 `test:shared-smoke`
+    - 输出报告到 `apps/api-gateway/.runtime/reports/shared-smoke-local-stack-*.md`
+- `apps/api-gateway/package.json` 新增命令：
+  - `test:shared-smoke:local-stack`
+- `AGENTS.md` 命令基线新增：
+  - `pnpm --filter @apps/api-gateway test:shared-smoke:local-stack`
+
+### Changed
+- `doc/engineering/rd-progress-management.md`
+  - 新增第 70 节执行回填（INT-006 本地一键双进程验收脚本）。
+  - `INT-006` 任务备注更新为“已具备 local-stack 一键复验能力”。
+
+### Fixed
+- 修复 INT-006 本地复验依赖手工多命令串行、易遗漏步骤的问题，改为单命令可重复执行。
+
+### Security
+- `local-stack` 默认限定本地地址口径（`127.0.0.1/localhost`），避免误用于远端环境。
+
+### Rollback
+- 回退 `shared-smoke-local-stack.ts` 与脚本命令，恢复手工双进程执行流程。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/api-gateway`、`/Users/codelei/Documents/ai-project/remove-watermark/doc`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.55] - 2026-02-22
 
