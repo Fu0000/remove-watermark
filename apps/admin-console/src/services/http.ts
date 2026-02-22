@@ -22,9 +22,6 @@ const API_BASE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL || "h
 const SHARED_AUTH_CODE = process.env.NEXT_PUBLIC_SHARED_AUTH_CODE || "admin";
 const SHARED_USERNAME = process.env.NEXT_PUBLIC_SHARED_USERNAME || "admin";
 const SHARED_PASSWORD = process.env.NEXT_PUBLIC_SHARED_PASSWORD || "admin123";
-const ADMIN_ROLE = process.env.NEXT_PUBLIC_ADMIN_ROLE || "admin";
-const ADMIN_SECRET = process.env.NEXT_PUBLIC_ADMIN_SECRET || "admin123";
-const DEFAULT_ADMIN_SECRET = "admin123";
 
 let accessTokenCache: string | undefined;
 let accessTokenInFlight: Promise<string> | undefined;
@@ -62,27 +59,25 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     "X-Request-Id": requestId,
     ...(options.headers || {})
   };
+  const useAdminProxy = isAdminPath(path);
 
   if (options.idempotencyKey) {
     headers["Idempotency-Key"] = options.idempotencyKey;
   }
 
-  if (options.requireAuth !== false) {
+  if (!useAdminProxy && options.requireAuth !== false) {
     const accessToken = await ensureAccessToken();
     headers.Authorization = `Bearer ${accessToken}`;
   }
 
-  if (isAdminPath(path)) {
-    assertAdminSecretPolicy(path);
-    headers["X-Admin-Role"] = ADMIN_ROLE;
-    headers["X-Admin-Secret"] = ADMIN_SECRET;
-  }
-
-  const response = await fetch(buildRequestUrl(path, options.query), {
-    method,
-    headers,
-    body: options.data === undefined ? undefined : JSON.stringify(options.data)
-  });
+  const response = await fetch(
+    useAdminProxy ? buildAdminProxyUrl(path, options.query) : buildRequestUrl(path, options.query),
+    {
+      method,
+      headers,
+      body: options.data === undefined ? undefined : JSON.stringify(options.data)
+    }
+  );
 
   const envelope = (await safeJson(response)) as ApiEnvelope<T> | undefined;
   const code = envelope?.code ?? 50001;
@@ -162,8 +157,19 @@ function normalizeBaseUrl(url: string) {
 
 function buildRequestUrl(path: string, query?: Record<string, string | number | undefined>) {
   const url = new URL(path, `${API_BASE_URL}/`);
+  appendQuery(url, query);
+  return url.toString();
+}
+
+function buildAdminProxyUrl(path: string, query?: Record<string, string | number | undefined>) {
+  const url = new URL(`/api${path}`, "http://localhost");
+  appendQuery(url, query);
+  return `${url.pathname}${url.search}`;
+}
+
+function appendQuery(url: URL, query?: Record<string, string | number | undefined>) {
   if (!query) {
-    return url.toString();
+    return;
   }
 
   Object.entries(query).forEach(([key, value]) => {
@@ -172,28 +178,8 @@ function buildRequestUrl(path: string, query?: Record<string, string | number | 
     }
     url.searchParams.set(key, String(value));
   });
-
-  return url.toString();
 }
 
 function isAdminPath(path: string) {
   return path === "/admin" || path.startsWith("/admin/");
-}
-
-function assertAdminSecretPolicy(path: string) {
-  if (!isAdminPath(path)) {
-    return;
-  }
-
-  const apiHost = new URL(API_BASE_URL).hostname;
-  const isLocalTarget = apiHost === "127.0.0.1" || apiHost === "localhost";
-  if (isLocalTarget) {
-    return;
-  }
-
-  if (!ADMIN_SECRET || ADMIN_SECRET === DEFAULT_ADMIN_SECRET) {
-    throw new Error(
-      "NEXT_PUBLIC_ADMIN_SECRET must be configured with a non-default value for non-local admin API targets"
-    );
-  }
 }

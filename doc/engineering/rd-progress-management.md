@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.10 | 2026-02-22 | 新增 FE-008 服务端 admin 代理（浏览器去密钥化）与环境变量收敛 |
 | v1.9 | 2026-02-22 | 新增 `/admin/*` 密钥安全门禁（受保护环境禁用默认口令）与环境模板 |
 | v1.8 | 2026-02-22 | 新增 `/admin/*` 最小契约落地与 FE-008 后台写入能力（任务检索/重放、套餐新增/编辑） |
 | v1.7 | 2026-02-22 | 新增 FE-008 管理端真实数据流接入（任务检索/异常重放/套餐查询/Webhook 运维） |
@@ -202,6 +203,7 @@
 | FE-008 管理端真实数据流验证（本轮） | `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed` | 已验证管理端任务检索/异常重放、套餐查询、Webhook 投递查询/重试页面可构建并通过类型检查 |
 | FE-008 `/admin/*` 契约与后台写入验证（本轮） | `pnpm --filter @apps/api-gateway typecheck` + `pnpm --filter @apps/api-gateway test:contract` + `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed（contract 25/25）` | 已验证 `/admin/tasks`（检索+重放）与 `/admin/plans`（检索+新增+编辑）RBAC、错误码与页面接入闭环 |
 | `/admin/*` 密钥安全门禁验证（本轮） | `pnpm --filter @apps/api-gateway exec tsx -e \"...assertAdminRbacConfig...\"`（`APP_ENV=staging` 且未设置 `ADMIN_RBAC_SECRET`） | `passed（blocked）` | 已验证受保护环境会拒绝默认/缺失密钥配置，避免 `admin123` 漏入 shared/staging/prod |
+| FE-008 服务端 admin 代理验证（本轮） | `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console build` | `passed` | 已新增 `pages/api/admin/[...path]` 代理并将浏览器侧 `/admin/*` 调用改为服务端注入 `X-Admin-Secret` |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
 | Webhook Dispatcher 本地 smoke（本轮） | `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/remove_watermark pnpm --filter @apps/webhook-dispatcher test:smoke` | `passed` | 已验证 outbox `PENDING -> PUBLISHED`、签名头生成与 `webhook_deliveries(SUCCESS)` 持久化闭环 |
@@ -2149,3 +2151,45 @@
   - 回滚：回退安全门禁逻辑，恢复到仅请求时校验的旧行为（不建议）。
 - 下一步：
   - 在 shared/staging 注入高强度密钥并复跑 FE-008 smoke；之后评估去除前端明文密钥方案。
+
+## 57. 本次执行回填（FE-008 admin 代理去密钥化）
+
+- 任务编号：`DEV-20260222-FE008-ADMIN-PROXY`
+- 需求映射：`FR-012`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/admin-framework.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/testing-workflow.md`
+- 负责人：前端（后台）
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：shared/staging 环境需配置 `ADMIN_PROXY_SECRET`
+- 风险等级：中
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/pages/api/admin/[...path].ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/services/http.ts`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/.env.example`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增 Next 服务端代理 `pages/api/admin/[...path]`：
+    - 服务端登录获取 `accessToken`
+    - 服务端注入 `X-Admin-Role` 与 `X-Admin-Secret`
+    - 转发 `/admin/*` 请求到 api-gateway
+  - 前端 `request()` 在 `/admin/*` 路径自动改走 `/api/admin/*`，浏览器不再持有 `NEXT_PUBLIC_ADMIN_SECRET`。
+  - 新增 `ADMIN_PROXY_*` 环境变量模板，明确密钥仅服务端可见。
+  - `api-spec` 补充“管理端密钥必须由服务端代理注入，禁止浏览器暴露”。
+- 测试证据：
+  - `pnpm --filter @apps/admin-console typecheck`：通过
+  - `pnpm --filter @apps/admin-console build`：通过（含动态路由 `ƒ /api/admin/[...path]`）
+  - `pnpm --filter @apps/api-gateway typecheck`：通过
+- 联调结果：
+  - 本地地址口径下，FE-008 的 `/admin/*` 调用已切换到服务端代理链路。
+- 遗留问题：
+  - Webhook 相关页面仍走 `v1` 用户侧接口，后续可评估是否统一纳入 admin 代理链路。
+- 风险与回滚：
+  - 风险：若代理环境变量缺失，`/api/admin/*` 请求会返回配置错误。
+  - 回滚：回退 `admin` 代理路由与 `services/http.ts`，恢复浏览器直连模式（不建议）。
+- 下一步：
+  - shared/staging 配置 `ADMIN_PROXY_SECRET` 后执行 FE-008 smoke，推进 `QA`。

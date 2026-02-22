@@ -1,4 +1,4 @@
-# 变更日志规范（v1.47）
+# 变更日志规范（v1.48）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.48 | 2026-02-22 | 新增 FE-008 admin 服务端代理（浏览器去密钥化）与 `ADMIN_PROXY_*` 配置模板 |
 | v1.47 | 2026-02-22 | 新增 `/admin/*` 密钥安全门禁（受保护环境禁用默认口令）与环境模板 |
 | v1.46 | 2026-02-22 | 新增 `/admin/*` 最小契约与 FE-008 后台写入能力（任务检索/重放、套餐新增/编辑） |
 | v1.45 | 2026-02-22 | 新增 FE-008 管理端真实数据流接入（任务检索/异常重放/套餐查询/Webhook 运维） |
@@ -101,6 +102,35 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.43] - 2026-02-22
+
+### Added
+- `apps/admin-console/src/pages/api/admin/[...path].ts` 新增管理端服务端代理：
+  - 代理 `/admin/*` 请求
+  - 服务端登录获取 `accessToken`
+  - 服务端注入 `X-Admin-Role` 与 `X-Admin-Secret`
+- `apps/admin-console/.env.example` 新增 `ADMIN_PROXY_*` 配置模板（服务端密钥不再使用 `NEXT_PUBLIC`）。
+
+### Changed
+- `apps/admin-console/src/services/http.ts`：
+  - `/admin/*` 路径改为走 `/api/admin/*` 代理
+  - 浏览器侧不再注入 `X-Admin-Secret`
+- `doc/api-spec.md` 补充管理端密钥规则：必须服务端代理注入，禁止浏览器暴露。
+- `doc/engineering/rd-progress-management.md` 新增第 57 节回填与验证证据。
+
+### Fixed
+- 修复 FE-008 浏览器侧仍需持有管理端密钥的风险点，完成 admin 密钥去前端化。
+
+### Security
+- 将 `X-Admin-Secret` 暴露面从浏览器端收敛到服务端环境变量。
+
+### Rollback
+- 回退 `pages/api/admin/[...path]` 与 `services/http.ts` 代理改造，恢复到 0.5.42 的前端直连模式（不建议）。
+
+### References
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console`、`/Users/codelei/Documents/ai-project/remove-watermark/doc`
+- 回填文件：`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
 
 ## [0.5.42] - 2026-02-22
 

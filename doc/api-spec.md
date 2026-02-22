@@ -642,6 +642,7 @@ Query：
 - 安全门禁：
   - `shared/staging/prod` 禁止默认密钥（`admin123`）
   - 必须通过环境变量配置高强度口令（建议 32+ 字节随机值）
+  - 管理端前端不得在浏览器暴露该口令，必须由服务端代理/BFF 注入
 - 权限矩阵：
   - `admin`：`admin:task:read`、`admin:task:replay`、`admin:plan:read`、`admin:plan:write`
   - `operator`：`admin:task:read`、`admin:task:replay`、`admin:plan:read`
@@ -954,6 +955,7 @@ Query：
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.7 | 2026-02-22 | 补充管理端密钥“服务端代理注入”要求，禁止浏览器侧暴露 `X-Admin-Secret` |
 | v1.6 | 2026-02-22 | 补充 `/admin/*` 密钥安全门禁（shared/staging/prod 禁止默认口令） |
 | v1.5 | 2026-02-22 | 新增 `/admin/*` 最小运营后台契约（任务检索、异常重放、套餐检索/写入）与 RBAC 头约束 |
 | v1.4 | 2026-02-21 | 补充 Webhook 验签协议细节（`X-Webhook-Id/Timestamp/Key-Id/Signature`、常量时间比较、5 分钟窗口、24h 去重） |
