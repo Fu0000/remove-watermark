@@ -6,6 +6,7 @@ import { wechatLogin } from "@/services/auth";
 import { ApiError } from "@/services/http";
 import { useAuthStore } from "@/stores/auth.store";
 import { API_BASE_URL, SHARED_AUTH_CODE, SHARED_PASSWORD, SHARED_USERNAME } from "@/config/runtime";
+import "./index.scss";
 
 export default function HomePage() {
   const [loading, setLoading] = useState(false);
@@ -44,25 +45,30 @@ export default function HomePage() {
 
   return (
     <PageShell title="去水印工作台" subtitle="上传 -> 处理 -> 下载">
-      <View>
-        <Text>{user ? `已登录：${user.userId}（${user.planId}）` : "未登录"}</Text>
+      <View className="home-status">
+        <Text className="home-status-label">{user ? "已登录" : "未登录"}</Text>
+        <Text className="home-status-value">{user ? `${user.userId}（${user.planId}）` : "首次进入会自动创建联调会话"}</Text>
       </View>
-      <View>
-        <Text>{user ? `剩余额度：${user.quotaLeft}` : "首次进入会自动创建联调会话"}</Text>
+      <View className="home-status">
+        <Text className="home-status-label">当前 API</Text>
+        <Text className="home-status-value">{API_BASE_URL}</Text>
       </View>
-      <View>
-        <Text>当前 API：{API_BASE_URL}</Text>
+      <View className="home-status">
+        <Text className="home-status-label">剩余额度</Text>
+        <Text className="home-status-value">{user ? String(user.quotaLeft) : "-"}</Text>
       </View>
-      <View>
-        <Button loading={loading} onClick={handleStart}>
+      <View className="home-actions">
+        <Button className="home-btn home-btn-primary" loading={loading} onClick={handleStart}>
           {user ? "进入上传编辑" : "登录并开始"}
         </Button>
       </View>
-      <View>
-        <Button onClick={handleGoSubscription}>套餐与订阅</Button>
+      <View className="home-actions">
+        <Button className="home-btn home-btn-ghost" onClick={handleGoSubscription}>
+          套餐与订阅
+        </Button>
       </View>
       {errorText ? (
-        <View>
+        <View className="home-error">
           <Text>{errorText}</Text>
         </View>
       ) : null}

@@ -1,4 +1,4 @@
-const env = process.env.TARO_ENV || "h5";
+const env = (typeof process !== "undefined" ? process.env.TARO_ENV : undefined) || "h5";
 
 export function isH5() {
   return env === "h5";

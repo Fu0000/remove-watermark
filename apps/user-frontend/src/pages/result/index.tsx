@@ -6,6 +6,7 @@ import { PageShell } from "@/modules/common/page-shell";
 import { ApiError } from "@/services/http";
 import { getTaskDetail, getTaskResult } from "@/services/task";
 import { useTaskStore } from "@/stores/task.store";
+import { isH5 } from "@/utils/platform";
 import type { TaskStatus } from "@packages/contracts";
 
 const TERMINAL_STATUS = new Set<TaskStatus>(["SUCCEEDED", "FAILED", "CANCELED"]);
@@ -80,7 +81,7 @@ export default function ResultPage() {
       return;
     }
 
-    if (process.env.TARO_ENV === "h5" && typeof window !== "undefined") {
+    if (isH5() && typeof window !== "undefined") {
       window.open(resultUrl, "_blank");
       return;
     }

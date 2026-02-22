@@ -6,6 +6,7 @@ import { deleteAsset, getUploadPolicy } from "@/services/asset";
 import { createTask, upsertTaskMask } from "@/services/task";
 import { ApiError } from "@/services/http";
 import { buildIdempotencyKey } from "@/utils/idempotency";
+import { isH5 } from "@/utils/platform";
 import { useTaskStore } from "@/stores/task.store";
 import { useAuthStore } from "@/stores/auth.store";
 import type { TaskStatus } from "@packages/contracts";
@@ -31,6 +32,12 @@ interface BoardRect {
   top: number;
   width: number;
   height: number;
+}
+
+interface SelectedMedia {
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
 }
 
 function deepClonePath(path: MaskPath): MaskPath {
@@ -70,6 +77,7 @@ export default function EditorPage() {
   const [maskVersion, setMaskVersion] = useState(0);
   const [maskId, setMaskId] = useState("");
   const [assetId, setAssetId] = useState("");
+  const [selectedMedia, setSelectedMedia] = useState<SelectedMedia>();
 
   const [mode, setMode] = useState<MaskMode>("POLYGON");
   const [polygons, setPolygons] = useState<MaskPath[]>([]);
@@ -82,7 +90,7 @@ export default function EditorPage() {
   const [boardRect, setBoardRect] = useState<BoardRect | null>(null);
 
   const user = useAuthStore((state) => state.user);
-  const { taskId, setTask } = useTaskStore();
+  const { taskId, setTask, reset } = useTaskStore();
 
   const snapshotCurrent = (): MaskSnapshot => ({
     polygons: deepClonePaths(polygons),
@@ -320,6 +328,86 @@ export default function EditorPage() {
 
   const hasMaskData = submitPolygons.length > 0 || brushStrokes.length > 0;
 
+  const pickMediaForH5 = (accept: string) =>
+    new Promise<SelectedMedia>((resolve, reject) => {
+      if (typeof document === "undefined") {
+        reject(new Error("当前环境不支持文件选择"));
+        return;
+      }
+
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = accept;
+      input.style.display = "none";
+      input.onchange = () => {
+        const file = input.files?.[0];
+        if (!file) {
+          reject(new Error("未选择文件"));
+          return;
+        }
+
+        resolve({
+          fileName: file.name || (mediaType === "IMAGE" ? "image.png" : "video.mp4"),
+          fileSize: file.size || 1,
+          mimeType: file.type || (mediaType === "IMAGE" ? "image/png" : "video/mp4")
+        });
+      };
+      input.click();
+    });
+
+  const pickMediaForTaro = async (): Promise<SelectedMedia> => {
+    if (mediaType === "IMAGE") {
+      const result = await Taro.chooseImage({
+        count: 1,
+        sizeType: ["compressed", "original"],
+        sourceType: ["album", "camera"]
+      });
+
+      const path = result.tempFilePaths?.[0] || "image.png";
+      const fileRecord = result.tempFiles?.[0] as { size?: number; type?: string } | undefined;
+      const fallbackName = path.split("/").pop() || "image.png";
+      return {
+        fileName: fallbackName,
+        fileSize: fileRecord?.size || 1,
+        mimeType: fileRecord?.type || "image/png"
+      };
+    }
+
+    const video = await Taro.chooseVideo({
+      sourceType: ["album", "camera"],
+      maxDuration: 60
+    });
+
+    const path = video.tempFilePath || "video.mp4";
+    const fallbackName = path.split("/").pop() || "video.mp4";
+    return {
+      fileName: fallbackName,
+      fileSize: video.size || 1,
+      mimeType: "video/mp4"
+    };
+  };
+
+  const handlePickMedia = async () => {
+    setErrorText("");
+
+    try {
+      const nextMedia = isH5()
+        ? await pickMediaForH5(mediaType === "IMAGE" ? "image/*" : "video/*")
+        : await pickMediaForTaro();
+
+      setSelectedMedia(nextMedia);
+      setAssetId("");
+      setMaskId("");
+      setMaskVersion(0);
+      reset();
+    } catch (error) {
+      if (error instanceof Error && error.message === "未选择文件") {
+        return;
+      }
+      setErrorText("素材选择失败，请重试");
+    }
+  };
+
   const handleCreateTask = async () => {
     if (!agreement) {
       setErrorText("请先勾选授权声明");
@@ -331,14 +419,19 @@ export default function EditorPage() {
       return;
     }
 
+    if (!selectedMedia) {
+      setErrorText("请先选择要上传的素材文件");
+      return;
+    }
+
     setLoading(true);
     setErrorText("");
     try {
       const uploadPolicy = await getUploadPolicy({
-        fileName: mediaType === "IMAGE" ? "demo.png" : "demo.mp4",
-        fileSize: mediaType === "IMAGE" ? 1024 * 300 : 1024 * 1024 * 5,
+        fileName: selectedMedia.fileName,
+        fileSize: selectedMedia.fileSize,
         mediaType: mediaType === "IMAGE" ? "image" : "video",
-        mimeType: mediaType === "IMAGE" ? "image/png" : "video/mp4"
+        mimeType: selectedMedia.mimeType
       });
       setAssetId(uploadPolicy.data.assetId);
 
@@ -474,8 +567,17 @@ export default function EditorPage() {
         </Button>
       </View>
       <View className="editor-section">
+        <Button onClick={handlePickMedia}>选择素材文件（上传）</Button>
+      </View>
+      <View className="editor-section">
+        <Text>
+          已选素材：
+          {selectedMedia ? `${selectedMedia.fileName}（${Math.max(1, Math.ceil(selectedMedia.fileSize / 1024))} KB）` : "-"}
+        </Text>
+      </View>
+      <View className="editor-section">
         <Button type="primary" loading={loading} onClick={handleCreateTask}>
-          申请上传策略并创建任务（步骤 1）
+          上传素材并创建任务（步骤 1）
         </Button>
       </View>
       <View className="editor-section">

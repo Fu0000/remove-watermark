@@ -1,0 +1,60 @@
+.home-status {
+  margin-top: 12rpx;
+  padding: 14rpx 16rpx;
+  border: 1px solid #e2eaf4;
+  border-radius: 14rpx;
+  background: #f9fcff;
+}
+
+.home-status-label {
+  display: block;
+  font-size: 22rpx;
+  color: #60758f;
+}
+
+.home-status-value {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 26rpx;
+  color: #1d2f45;
+  word-break: break-all;
+}
+
+.home-actions {
+  margin-top: 14rpx;
+}
+
+.home-btn {
+  width: 100%;
+  border-radius: 12rpx;
+}
+
+.home-btn-primary {
+  border: none;
+  color: #ffffff;
+  background: linear-gradient(120deg, #2f7cff 0%, #3da5ff 100%);
+}
+
+.home-btn-ghost {
+  border: 1px solid #c6d8f2;
+  color: #2b4e7e;
+  background: #f7faff;
+}
+
+.home-error {
+  margin-top: 12rpx;
+  color: #d93025;
+  font-size: 24rpx;
+}
+
+.platform-h5 .home-status-label {
+  font-size: 12px;
+}
+
+.platform-h5 .home-status-value {
+  font-size: 15px;
+}
+
+.platform-h5 .home-error {
+  font-size: 14px;
+}
