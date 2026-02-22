@@ -1,4 +1,4 @@
-# 变更日志规范（v1.61）
+# 变更日志规范（v1.62）
 
 ## 1. 目标
 - 建立统一变更记录机制，保证发布可追溯。
@@ -51,6 +51,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.62 | 2026-02-22 | 新增 FE-008 管理端简约化视觉重构（layout/theme/page-header）与人工测试交接回填 |
 | v1.61 | 2026-02-22 | 新增 shared 本地双进程一键验收脚本（local-stack）与 INT-006 收尾证据 |
 | v1.60 | 2026-02-22 | 新增本地 smoke 用户数据重置脚本与 INT-006 shared 全量 smoke 复验证据 |
 | v1.59 | 2026-02-22 | 新增 INT-006 本地模拟回调网关闭环（payment-callback 验签、退款回滚、Prisma 证据） |
@@ -115,6 +116,51 @@
 | v1.0 | 2026-02-19 | 首版变更日志标准（Keep a Changelog + SemVer） |
 
 ## 7. 项目执行变更日志（当前）
+
+## [0.5.57] - 2026-02-22
+
+### Added
+- 新增管理端复用组件：`apps/admin-console/src/components/page-header.tsx`（统一页面标题、说明与操作位）。
+- 新增管理端视觉主题：`apps/admin-console/src/styles/admin-theme.css`（字体、色板、卡片、表格、按钮、动效与响应式规则）。
+
+### Changed
+- `apps/admin-console/src/components/layout.tsx` 重构为“左侧导航 + 顶部上下文 + 内容区”布局，并统一导航信息层级。
+- `apps/admin-console/src/pages/_app.tsx` 引入 `ConfigProvider` 主题 token，统一主色、圆角与字体。
+- 页面接入统一视觉层：
+  - `apps/admin-console/src/pages/index.tsx`
+  - `apps/admin-console/src/pages/tasks/index.tsx`
+  - `apps/admin-console/src/pages/plans/index.tsx`
+  - `apps/admin-console/src/pages/webhooks/index.tsx`
+  - `apps/admin-console/src/pages/risks/index.tsx`
+  - `apps/admin-console/src/pages/audit/index.tsx`
+- `doc/engineering/rd-progress-management.md`：
+  - 新增第 71 节执行回填（FE-008 管理端简约化视觉重构）；
+  - 更新 FE-008 总表完成状态与测试证据补充。
+
+### Fixed
+- 修复管理端页面视觉风格分散、信息层级不统一的问题，提升人工巡检与运维操作可读性。
+
+### Security
+- 本轮仅涉及前端视觉与结构层，不改变 `/admin/*` 鉴权链路、错误码语义、状态机字面量与幂等约束。
+
+### Rollback
+- 回退以下文件：
+  - `apps/admin-console/src/components/layout.tsx`
+  - `apps/admin-console/src/components/page-header.tsx`
+  - `apps/admin-console/src/pages/_app.tsx`
+  - `apps/admin-console/src/pages/index.tsx`
+  - `apps/admin-console/src/pages/tasks/index.tsx`
+  - `apps/admin-console/src/pages/plans/index.tsx`
+  - `apps/admin-console/src/pages/webhooks/index.tsx`
+  - `apps/admin-console/src/pages/risks/index.tsx`
+  - `apps/admin-console/src/pages/audit/index.tsx`
+  - `apps/admin-console/src/styles/admin-theme.css`
+  - `doc/engineering/rd-progress-management.md`
+  - `doc/engineering/change-log-standard.md`
+
+### References
+- Commit: `04f7a16 feat(admin-console): refactor console with minimal visual system`
+- 影响范围：`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console`、`/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering`
 
 ## [0.5.56] - 2026-02-22
 

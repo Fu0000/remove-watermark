@@ -57,6 +57,7 @@
 ## 6. 版本记录
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.23 | 2026-02-22 | 新增 FE-008 管理端简约化视觉重构（布局/主题/页面头部）与人工测试交接证据 |
 | v1.22 | 2026-02-22 | 新增 shared 本地双进程一键验收脚本（reset + api + worker + smoke）并形成 INT-006 收尾证据 |
 | v1.21 | 2026-02-22 | 新增 INT-006 本地配额脏数据清理脚本与 Prisma 双进程 shared 全量 smoke 复验证据 |
 | v1.20 | 2026-02-22 | 新增 FE-006 订阅中心真实联调页面（套餐/订阅/配额）与多端构建验收证据 |
@@ -127,7 +128,7 @@
 | FE-005 | 用户端主链路 | 结果页（预览、下载、过期提示） | 前端 | 2026-03-12 | 2026-03-18 | In Review | FR-007 | `/v1/tasks/{taskId}/result` | e2e | 结果查询、预览/复制下载地址、过期提示已联调 |
 | FE-006 | 商业化 | 套餐页/账单页/订阅入口 | 前端 | 2026-03-23 | 2026-04-03 | In Review | FR-008 | `/v1/plans`, `/v1/subscriptions/*`, `/v1/usage/me` | contract/e2e | 订阅中心已接入套餐查询、当前订阅、配额账单流水、`checkout + mock-confirm` 本地联调闭环，并补齐 H5/微信小程序双端构建验证 |
 | FE-007 | 数据治理 | 账户/隐私与删除申请页 | 前端 | 2026-03-30 | 2026-04-06 | In Review | FR-010/FR-011 | `/v1/account/delete-request*`, `/v1/account/audit-logs`, `DELETE /v1/assets/{assetId}`, `DELETE /v1/tasks/{taskId}` | e2e | 删除申请创建、list/detail、审计日志查询已联调；编辑/任务页删除入口已补齐并新增二次确认与成功提示 |
-| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Review | FR-012 | `/admin/*` | e2e/smoke | `/admin/tasks`、`/admin/plans`、`/admin/webhooks/deliveries*` 已打通；Webhook 运维已改为显式上下文（用户/租户）驱动且 `tenant` 已切换为真实数据层过滤；已补齐本地 `fe008-admin-e2e-lite` 与 Playwright UI smoke 证据，云端地址切换后复跑即可推进 QA |
+| FE-008 | 管理后台 | 任务检索/异常重放/套餐管理最小集 | 前端（后台） | 2026-03-23 | 2026-04-10 | In Review | FR-012 | `/admin/*` | e2e/smoke | `/admin/tasks`、`/admin/plans`、`/admin/webhooks/deliveries*` 已打通；Webhook 运维已改为显式上下文（用户/租户）驱动且 `tenant` 已切换为真实数据层过滤；已补齐本地 `fe008-admin-e2e-lite` 与 Playwright UI smoke 证据；已完成管理端简约化视觉重构（layout/theme/page-header/首页总览），待人工测试确认后推进 QA |
 
 ### 7.5 后端研发任务（API + Worker + Billing）
 
@@ -227,6 +228,7 @@
 | FE-008 API 驱动轻量 e2e（本轮，本地） | `SHARED_BASE_URL=http://127.0.0.1:3000 SHARED_USERNAME=admin SHARED_PASSWORD=admin123 SHARED_ADMIN_SECRET=admin123 pnpm --filter @apps/api-gateway test:fe008-admin-e2e-lite` | `passed` | 已覆盖 `/admin/tasks` 检索+重放权限边界、`/admin/plans` 新增+编辑、`/admin/webhooks/*` 查询+重试+跨租户隔离 |
 | FE-008 Playwright UI smoke（本轮，本地） | `pnpm --filter @apps/admin-console exec playwright install chromium` + `pnpm --filter @apps/admin-console test:e2e:fe008` | `passed（1/1）` | 已覆盖管理端 `/webhooks` 页面“上下文必填 -> 查询 -> 重试确认”真实交互，报告目录：`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/.runtime/reports/playwright-fe008` |
 | FE-008 Playwright UI smoke 矩阵（本轮，dev/shared/staging-local） | `FE008_E2E_MATRIX_TARGETS=dev=http://127.0.0.1:3000,shared=http://127.0.0.1:3000,staging=http://127.0.0.1:3000 pnpm --filter @apps/admin-console test:e2e:fe008:matrix` | `passed（dev/shared/staging=passed）` | 已支持多目标批量 UI smoke 与 Markdown 报告输出，报告文件：`/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/.runtime/reports/fe008-e2e-matrix-2026-02-22T10-42-26-523Z.md` |
+| FE-008 管理端视觉重构验证（本轮） | `pnpm --filter @apps/admin-console typecheck` + `pnpm --filter @apps/admin-console lint` | `passed` | 已验证视觉重构后页面可编译；lint 当前为占位脚本，视觉与交互回归以人工测试为准 |
 | `.env` 注入脚本验证（本轮） | `scripts/setup-admin-env.sh --dry-run` + `scripts/setup-admin-env.sh` | `passed` | 已生成 `apps/api-gateway` 与 `apps/admin-console` 的 `shared/staging/prod` 本地 `.env` 文件（权限 `600`），且被 `.gitignore` 忽略 |
 | Webhook Dispatcher 类型检查（本轮） | `pnpm --filter @apps/webhook-dispatcher typecheck` | `passed` | `webhook-dispatcher` 出站派发链路可编译 |
 | Webhook Dispatcher 指标阈值单元测试（本轮） | `pnpm --filter @apps/webhook-dispatcher test:unit` | `passed（3/3）` | 已覆盖成功率告警、重试率告警与窗口重置逻辑 |
@@ -2803,3 +2805,51 @@
   - 回滚：回退 `shared-smoke-local-stack.ts` 与命令配置，恢复手工双进程流程。
 - 下一步：
   - 你提供 shared/staging 云端地址后，复用现有 smoke/matrix 命令补齐云端证据并推进 `INT-006` 到 `QA`。
+
+## 71. 本次执行回填（FE-008 管理端简约化视觉重构）
+
+- 任务编号：`DEV-20260222-FE008-UI-REFINEMENT`
+- 需求映射：`FR-012`、`NFR-006`
+- 真源引用：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/prd.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/api-spec.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/frontend-framework.md`
+- 负责人：前端（后台）
+- 截止时间：`2026-04-10`
+- 当前状态：`In Review`
+- 阻塞项：无
+- 风险等级：低
+- 改动范围：
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/components/layout.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/components/page-header.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/pages/_app.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/pages/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/pages/tasks/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/pages/plans/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/pages/webhooks/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/pages/risks/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/pages/audit/index.tsx`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/apps/admin-console/src/styles/admin-theme.css`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/rd-progress-management.md`
+  - `/Users/codelei/Documents/ai-project/remove-watermark/doc/engineering/change-log-standard.md`
+- 实施摘要：
+  - 新增管理端主题样式系统（字体、色板、卡片、表格、按钮、动效与响应式）。
+  - 重构公共布局为“左侧导航 + 顶部上下文 + 内容区”。
+  - 新增可复用页面头部组件并接入首页、任务、套餐、Webhook、风险、审计页面。
+  - 首页改造为概览卡片 + KPI + 快捷入口，提升人工巡检与日常运维入口效率。
+  - 本轮仅重构视觉与信息层级，不改动后端契约、状态机字面量和核心业务动作。
+- 测试证据：
+  - `pnpm --filter @apps/admin-console typecheck`：通过
+  - `pnpm --filter @apps/admin-console lint`：通过（当前为占位脚本输出）
+  - `git commit`: `04f7a16 feat(admin-console): refactor console with minimal visual system`
+  - `git push origin main`：通过（`59ab6a5..04f7a16`）
+- 联调结果：
+  - `/admin/*` 业务链路保持不变，现有 FE-008 API/e2e/smoke 证据继续有效，可直接进入人工测试阶段。
+- 遗留问题：
+  - 需补齐人工测试截图与交互回归记录后，再推进 FE-008 到 `QA`。
+- 风险与回滚：
+  - 风险：视觉层重构可能引入页面间距、响应式或交互可见性回归。
+  - 回滚：回退本节列出的 `admin-console` 视觉相关文件到提交 `59ab6a5` 前版本。
+- 下一步：
+  - 执行人工测试（总览、任务、套餐、Webhook、风险、审计六页）并回填结果。
+  - 人工测试通过后，复跑 FE-008 分层验收命令并将状态推进到 `QA`。
