@@ -50,7 +50,11 @@ const runtime: WorkerRuntimeOptions = {
   inferenceSharedToken: "test-token",
   resultExpireDays: 7,
   assetSourceMode: "minio",
-  minioAssetBucket: "assets"
+  minioAssetBucket: "remove-waterremark",
+  minioResultBucket: "remove-waterremark",
+  minioSourcePrefix: "source",
+  minioResultPrefix: "result",
+  minioPublicEndpoint: "https://minio.local"
 };
 
 const retryPolicy: RetryPolicyOptions = {

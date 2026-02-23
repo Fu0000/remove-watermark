@@ -179,7 +179,8 @@ export class ComplianceService {
   private readonly minioEndpoint = process.env.MINIO_ENDPOINT || "http://127.0.0.1:9000";
   private readonly minioPublicEndpoint = process.env.MINIO_PUBLIC_ENDPOINT || this.minioEndpoint;
   private readonly minioRegion = process.env.MINIO_REGION || "us-east-1";
-  private readonly minioBucketAssets = process.env.MINIO_BUCKET_ASSETS || "assets";
+  private readonly minioBucketAssets = process.env.MINIO_BUCKET_ASSETS || "remove-waterremark";
+  private readonly minioSourcePrefix = this.normalizeObjectPrefix(process.env.MINIO_SOURCE_PREFIX || "source");
   private readonly minioAccessKey = process.env.MINIO_ACCESS_KEY || process.env.MINIO_ROOT_USER || "minio";
   private readonly minioSecretKey = process.env.MINIO_SECRET_KEY || process.env.MINIO_ROOT_PASSWORD || "miniopassword";
   private readonly minioPresignExpireSec = this.parsePositiveInt(process.env.MINIO_PRESIGN_EXPIRE_SEC, 600);
@@ -1257,7 +1258,30 @@ export class ComplianceService {
   }
 
   private buildAssetObjectKey(assetId: string): string {
-    return assetId;
+    const datePath = this.buildDatePathFromEntityId(assetId);
+    return `${this.minioSourcePrefix}/${datePath}/${assetId}`;
+  }
+
+  private normalizeObjectPrefix(prefix: string): string {
+    const trimmed = prefix.trim().replace(/^\/+|\/+$/g, "");
+    return trimmed.length > 0 ? trimmed : "source";
+  }
+
+  private buildDatePathFromEntityId(entityId: string): string {
+    const match = entityId.match(/^[a-z]+_(\d{10,13})_/i);
+    let epochMs = Date.now();
+    if (match?.[1]) {
+      const raw = Number.parseInt(match[1], 10);
+      if (Number.isFinite(raw) && raw > 0) {
+        epochMs = match[1].length <= 10 ? raw * 1000 : raw;
+      }
+    }
+
+    const date = new Date(epochMs);
+    const yyyy = String(date.getUTCFullYear());
+    const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(date.getUTCDate()).padStart(2, "0");
+    return `${yyyy}/${mm}/${dd}`;
   }
 
   private parsePositiveInt(raw: string | undefined, fallback: number): number {

@@ -3,9 +3,11 @@ from __future__ import annotations
 import glob
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import urlparse
@@ -52,10 +54,13 @@ class GatewayConfig(BaseModel):
     propainter_resize_ratio: float = Field(default_factory=lambda: float(os.getenv("PROPAINTER_RESIZE_RATIO", "1.0")))
     lama_refine: bool = Field(default_factory=lambda: read_bool("LAMA_REFINE", False))
     minio_endpoint: str = Field(default_factory=lambda: os.getenv("MINIO_ENDPOINT", "http://127.0.0.1:9000"))
+    minio_public_endpoint: str = Field(default_factory=lambda: os.getenv("MINIO_PUBLIC_ENDPOINT", "http://127.0.0.1:9000"))
     minio_region: str = Field(default_factory=lambda: os.getenv("MINIO_REGION", "us-east-1"))
     minio_access_key: str = Field(default_factory=lambda: os.getenv("MINIO_ACCESS_KEY", os.getenv("MINIO_ROOT_USER", "minio")))
     minio_secret_key: str = Field(default_factory=lambda: os.getenv("MINIO_SECRET_KEY", os.getenv("MINIO_ROOT_PASSWORD", "miniopassword")))
     minio_secure: bool = Field(default_factory=lambda: read_bool("MINIO_SECURE", False))
+    minio_bucket_results: str = Field(default_factory=lambda: os.getenv("MINIO_BUCKET_RESULTS", "remove-waterremark"))
+    minio_result_prefix: str = Field(default_factory=lambda: os.getenv("MINIO_RESULT_PREFIX", "result"))
 
 
 CONFIG = GatewayConfig()
@@ -101,8 +106,34 @@ def normalize_task_id(task_id: str) -> str:
     return "".join(c for c in task_id if c.isalnum() or c in {"-", "_"})
 
 
+def trim_trailing_slash(value: str) -> str:
+    return value.rstrip("/")
+
+
+def normalize_object_prefix(prefix: str, fallback: str) -> str:
+    normalized = prefix.strip().strip("/")
+    return normalized or fallback
+
+
+def build_date_path_from_entity_id(entity_id: str) -> str:
+    match = re.match(r"^[a-z]+_(\d{10,13})_", entity_id, re.IGNORECASE)
+    epoch_ms = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+    if match:
+        raw = int(match.group(1))
+        epoch_ms = raw * 1000 if len(match.group(1)) <= 10 else raw
+    dt = datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc)
+    return f"{dt.year:04d}/{dt.month:02d}/{dt.day:02d}"
+
+
+def build_result_object_key(task_id: str, ext: str) -> str:
+    prefix = normalize_object_prefix(CONFIG.minio_result_prefix, "result")
+    date_path = build_date_path_from_entity_id(task_id)
+    return f"{prefix}/{date_path}/{task_id}.{ext}"
+
+
 def build_result_url(task_id: str, ext: str) -> str:
-    return f"https://minio.local/result/{task_id}.{ext}"
+    endpoint = trim_trailing_slash(CONFIG.minio_public_endpoint)
+    return f"{endpoint}/{CONFIG.minio_bucket_results}/{build_result_object_key(task_id, ext)}"
 
 
 def task_work_dir(task_id: str) -> Path:
@@ -857,9 +888,12 @@ def ppt_to_pdf(payload: PptToPdfRequest, x_inference_token: Optional[str] = Head
 def render_pdf(payload: RenderPdfRequest, x_inference_token: Optional[str] = Header(default=None)) -> Dict[str, Any]:
     require_token(x_inference_token)
     if CONFIG.model_mode == "mock":
+        endpoint = trim_trailing_slash(CONFIG.minio_public_endpoint)
+        date_path = build_date_path_from_entity_id(payload.taskId)
+        result_prefix = normalize_object_prefix(CONFIG.minio_result_prefix, "result")
         return {
             "renderer": os.getenv("DEFAULT_PDF_RENDERER", "pdfium"),
-            "pageImagePrefix": f"https://minio.local/intermediate/{payload.taskId}/page",
+            "pageImagePrefix": f"{endpoint}/{CONFIG.minio_bucket_results}/{result_prefix}/{date_path}/intermediate/{payload.taskId}/page",
             "backend": "mock"
         }
 

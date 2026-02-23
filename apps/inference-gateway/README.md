@@ -32,6 +32,7 @@ The gateway supports two modes:
 - `INFERENCE_RESULT_DIR` (generated outputs)
 - `INFERENCE_WORK_DIR` (tmp/intermediate files)
 - `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET_ASSETS` (for `minio://bucket/key` sourcePath)
+- `MINIO_PUBLIC_ENDPOINT`, `MINIO_BUCKET_RESULTS`, `MINIO_RESULT_PREFIX` (result URL output, default `result/YYYY/MM/DD/...`)
 
 Optional tuning:
 
@@ -80,4 +81,4 @@ bash apps/inference-gateway/scripts/bootstrap-model-repos.sh
 ## Notes
 
 - Current gateway resolves source files from `INFERENCE_ASSET_DIR` by `assetId` prefix or explicit `sourcePath`.
-- Results are written to `INFERENCE_RESULT_DIR` and returned as URL placeholders (`https://minio.local/...`) for `/v1` compatibility.
+- Results are written to `INFERENCE_RESULT_DIR` and returned as MinIO public URLs under `MINIO_RESULT_PREFIX/YYYY/MM/DD/`.

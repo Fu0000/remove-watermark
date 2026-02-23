@@ -146,6 +146,12 @@ function extractPointFromEvent(
     touches?: Array<Record<string, unknown>>;
     changedTouches?: Array<Record<string, unknown>>;
     detail?: Record<string, unknown>;
+    x?: unknown;
+    y?: unknown;
+    pageX?: unknown;
+    pageY?: unknown;
+    clientX?: unknown;
+    clientY?: unknown;
   };
 
   const touched = record.touches?.[0] || record.changedTouches?.[0];
@@ -153,12 +159,18 @@ function extractPointFromEvent(
     asFiniteNumber(touched?.x) ??
     asFiniteNumber(touched?.clientX) ??
     asFiniteNumber(touched?.pageX) ??
+    asFiniteNumber(record.x) ??
+    asFiniteNumber(record.clientX) ??
+    asFiniteNumber(record.pageX) ??
     asFiniteNumber(record.detail?.x) ??
     asFiniteNumber(record.detail?.clientX);
   const rawY =
     asFiniteNumber(touched?.y) ??
     asFiniteNumber(touched?.clientY) ??
     asFiniteNumber(touched?.pageY) ??
+    asFiniteNumber(record.y) ??
+    asFiniteNumber(record.clientY) ??
+    asFiniteNumber(record.pageY) ??
     asFiniteNumber(record.detail?.y) ??
     asFiniteNumber(record.detail?.clientY);
 
@@ -308,7 +320,8 @@ function formatBytes(size: number) {
 export default function LabPage() {
   const [asset, setAsset] = useState<SelectedAsset>();
   const [boardRect, setBoardRect] = useState<BoardRect>();
-  const [anchorPoint, setAnchorPoint] = useState<[number, number] | null>(null);
+  const [dragStart, setDragStart] = useState<[number, number] | null>(null);
+  const [dragCurrent, setDragCurrent] = useState<[number, number] | null>(null);
   const [regions, setRegions] = useState<BoxRegion[]>([]);
   const [taskProgress, setTaskProgress] = useState<TaskProgress>();
   const [logs, setLogs] = useState<string[]>([]);
@@ -319,6 +332,7 @@ export default function LabPage() {
   const accessToken = useAuthStore((state) => state.accessToken);
   const user = useAuthStore((state) => state.user);
   const previewUrlRef = useRef<string | undefined>(undefined);
+  const lastTouchAtRef = useRef(0);
 
   useEffect(() => {
     setTokenAccessor(() => accessToken);
@@ -434,7 +448,8 @@ export default function LabPage() {
         height: dimensions.height
       });
       setRegions([]);
-      setAnchorPoint(null);
+      setDragStart(null);
+      setDragCurrent(null);
       setTaskProgress(undefined);
       setLogs([]);
       setTimeout(updateBoardRect, 20);
@@ -446,7 +461,11 @@ export default function LabPage() {
     }
   };
 
-  const handleBoardTap = (event: unknown) => {
+  const shouldIgnoreMouseEvent = () => {
+    return Date.now() - lastTouchAtRef.current < 450;
+  };
+
+  const beginDrag = (event: unknown) => {
     if (!asset || !boardRect) {
       return;
     }
@@ -459,27 +478,117 @@ export default function LabPage() {
       return;
     }
 
-    if (!anchorPoint) {
-      setAnchorPoint(point);
-      setErrorText("");
+    setDragStart(point);
+    setDragCurrent(point);
+    setErrorText("");
+  };
+
+  const updateDrag = (event: unknown) => {
+    if (!asset || !boardRect || !dragStart) {
       return;
     }
 
-    const nextRegion = normalizeBox(anchorPoint, point);
+    const point = extractPointFromEvent(event, boardRect, {
+      width: asset.width,
+      height: asset.height
+    });
+    if (!point) {
+      return;
+    }
+
+    setDragCurrent(point);
+  };
+
+  const finishDrag = (event: unknown) => {
+    if (!asset || !boardRect || !dragStart) {
+      return;
+    }
+
+    const point =
+      extractPointFromEvent(event, boardRect, {
+        width: asset.width,
+        height: asset.height
+      }) || dragCurrent;
+    if (!point) {
+      setDragStart(null);
+      setDragCurrent(null);
+      return;
+    }
+
+    const nextRegion = normalizeBox(dragStart, point);
     if (!nextRegion) {
       setErrorText("框选区域太小，请重新选择");
-      setAnchorPoint(null);
+      setDragStart(null);
+      setDragCurrent(null);
       return;
     }
 
     setRegions((current) => [...current, nextRegion]);
-    setAnchorPoint(null);
+    setDragStart(null);
+    setDragCurrent(null);
     setErrorText("");
+  };
+
+  const handleBoardMouseDown = (event: unknown) => {
+    if (shouldIgnoreMouseEvent()) {
+      return;
+    }
+    const target = (event as { target?: { closest?: (selector: string) => unknown } }).target;
+    if (target && typeof target.closest === "function" && target.closest(".lab-region-remove")) {
+      return;
+    }
+    beginDrag(event);
+  };
+
+  const handleBoardMouseMove = (event: unknown) => {
+    if (shouldIgnoreMouseEvent()) {
+      return;
+    }
+    updateDrag(event);
+  };
+
+  const handleBoardMouseUp = (event: unknown) => {
+    if (shouldIgnoreMouseEvent()) {
+      return;
+    }
+    finishDrag(event);
+  };
+
+  const handleBoardMouseLeave = (event: unknown) => {
+    if (shouldIgnoreMouseEvent()) {
+      return;
+    }
+    finishDrag(event);
+  };
+
+  const handleBoardTouchStart = (event: unknown) => {
+    lastTouchAtRef.current = Date.now();
+    (event as { preventDefault?: () => void }).preventDefault?.();
+    beginDrag(event);
+  };
+
+  const handleBoardTouchMove = (event: unknown) => {
+    lastTouchAtRef.current = Date.now();
+    (event as { preventDefault?: () => void }).preventDefault?.();
+    updateDrag(event);
+  };
+
+  const handleBoardTouchEnd = (event: unknown) => {
+    lastTouchAtRef.current = Date.now();
+    (event as { preventDefault?: () => void }).preventDefault?.();
+    finishDrag(event);
+  };
+
+  const handleBoardTouchCancel = (event: unknown) => {
+    lastTouchAtRef.current = Date.now();
+    (event as { preventDefault?: () => void }).preventDefault?.();
+    finishDrag(event);
   };
 
   const clearRegions = () => {
     setRegions([]);
-    setAnchorPoint(null);
+    setDragStart(null);
+    setDragCurrent(null);
   };
 
   const removeRegion = (id: string) => {
@@ -613,6 +722,19 @@ export default function LabPage() {
     return JSON.stringify(toRegionPayload(asset.mediaType, regions), null, 2);
   }, [asset, regions]);
 
+  const draftRegion = useMemo(() => {
+    if (!asset || !dragStart || !dragCurrent) {
+      return undefined;
+    }
+
+    return {
+      left: Math.min(dragStart[0], dragCurrent[0]),
+      top: Math.min(dragStart[1], dragCurrent[1]),
+      right: Math.max(dragStart[0], dragCurrent[0]),
+      bottom: Math.max(dragStart[1], dragCurrent[1])
+    };
+  }, [asset, dragCurrent, dragStart]);
+
   const openResult = (url: string) => {
     if (isH5() && typeof window !== "undefined") {
       window.open(url, "_blank");
@@ -620,6 +742,15 @@ export default function LabPage() {
     }
     void Taro.setClipboardData({ data: url });
   };
+
+  const h5DragMouseEvents = isH5()
+    ? ({
+        onMouseDown: handleBoardMouseDown,
+        onMouseMove: handleBoardMouseMove,
+        onMouseUp: handleBoardMouseUp,
+        onMouseLeave: handleBoardMouseLeave
+      } as Record<string, (event: unknown) => void>)
+    : {};
 
   return (
     <PageShell title="联调实验室" subtitle="上传 + 框选 + 创建任务 + 提交 regions + 结果回读">
@@ -632,7 +763,7 @@ export default function LabPage() {
         <Button className="lab-btn-primary" onClick={handleSelectAsset}>
           选择 IMAGE / VIDEO / PDF / PPT
         </Button>
-        <Button className="lab-btn-ghost" onClick={clearRegions} disabled={!regions.length && !anchorPoint}>
+        <Button className="lab-btn-ghost" onClick={clearRegions} disabled={!regions.length && !dragStart}>
           清空框选
         </Button>
       </View>
@@ -648,9 +779,16 @@ export default function LabPage() {
 
       <View className="lab-board-wrap">
         <View className="lab-board-tip">
-          <Text>框选方式：点击一次确定左上角，再点击一次确定右下角。VIDEO 默认写入 frameIndex=0，PDF/PPT 默认 pageIndex=0。</Text>
+          <Text>框选方式：按下后拖动，松开即生成矩形。VIDEO 默认写入 frameIndex=0，PDF/PPT 默认 pageIndex=0。</Text>
         </View>
-        <View className="lab-board" onClick={handleBoardTap}>
+        <View
+          className="lab-board"
+          {...(h5DragMouseEvents as unknown as Record<string, never>)}
+          onTouchStart={handleBoardTouchStart}
+          onTouchMove={handleBoardTouchMove}
+          onTouchEnd={handleBoardTouchEnd}
+          onTouchCancel={handleBoardTouchCancel}
+        >
           {asset?.mediaType === "IMAGE" && asset.previewUrl ? (
             <Image className="lab-media-preview" src={asset.previewUrl} mode="aspectFit" />
           ) : null}
@@ -693,18 +831,23 @@ export default function LabPage() {
                       event.stopPropagation();
                       removeRegion(region.id);
                     }}
+                    onTouchStart={(event) => {
+                      event.stopPropagation();
+                    }}
                   >
                     <Text>x</Text>
                   </View>
                 </View>
               ))
             : null}
-          {asset && anchorPoint ? (
+          {asset && draftRegion ? (
             <View
-              className="lab-anchor-point"
+              className="lab-region-box lab-region-box-draft"
               style={{
-                left: `${(anchorPoint[0] / asset.width) * 100}%`,
-                top: `${(anchorPoint[1] / asset.height) * 100}%`
+                left: `${(draftRegion.left / asset.width) * 100}%`,
+                top: `${(draftRegion.top / asset.height) * 100}%`,
+                width: `${((draftRegion.right - draftRegion.left) / asset.width) * 100}%`,
+                height: `${((draftRegion.bottom - draftRegion.top) / asset.height) * 100}%`
               }}
             />
           ) : null}

@@ -216,6 +216,42 @@ function parseBoolEnv(value: string | undefined, fallback: boolean): boolean {
   return fallback;
 }
 
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+function normalizeObjectPrefix(prefix: string, fallback: string): string {
+  const normalized = prefix.trim().replace(/^\/+|\/+$/g, "");
+  return normalized.length > 0 ? normalized : fallback;
+}
+
+function buildDatePathFromEntityId(entityId: string): string {
+  const match = entityId.match(/^[a-z]+_(\d{10,13})_/i);
+  let epochMs = Date.now();
+  if (match?.[1]) {
+    const raw = Number.parseInt(match[1], 10);
+    if (Number.isFinite(raw) && raw > 0) {
+      epochMs = match[1].length <= 10 ? raw * 1000 : raw;
+    }
+  }
+
+  const date = new Date(epochMs);
+  const yyyy = String(date.getUTCFullYear());
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  return `${yyyy}/${mm}/${dd}`;
+}
+
+function buildResultExt(mediaType: TaskMediaType): "png" | "mp4" | "pdf" {
+  if (mediaType === "VIDEO") {
+    return "mp4";
+  }
+  if (mediaType === "PDF" || mediaType === "PPT") {
+    return "pdf";
+  }
+  return "png";
+}
+
 @Injectable()
 export class TasksService {
   private readonly tasks = new Map<string, TaskRecord>();
@@ -231,6 +267,11 @@ export class TasksService {
   private readonly prismaService?: PrismaService;
   private readonly usePrismaStore: boolean;
   private readonly simulationEnabled: boolean;
+  private readonly minioPublicEndpoint = trimTrailingSlash(
+    process.env.MINIO_PUBLIC_ENDPOINT || "http://127.0.0.1:9000"
+  );
+  private readonly minioResultBucket = process.env.MINIO_BUCKET_RESULTS || "remove-waterremark";
+  private readonly minioResultPrefix = normalizeObjectPrefix(process.env.MINIO_RESULT_PREFIX || "result", "result");
 
   constructor(options: TasksServiceOptions = {}, prismaService?: PrismaService) {
     this.prismaService = prismaService;
@@ -1394,7 +1435,7 @@ export class TasksService {
       case "PACKAGING":
         nextStatus = "SUCCEEDED";
         progress = 100;
-        resultUrl = `https://minio.local/result/${taskId}.png`;
+        resultUrl = this.buildDefaultResultUrl(taskId, current.mediaType as TaskMediaType);
         break;
       default:
         break;
@@ -1435,7 +1476,7 @@ export class TasksService {
     toStatus: TaskStatus
   ) {
     if (toStatus === "SUCCEEDED") {
-      const resultUrl = task.resultUrl || `https://minio.local/result/${task.taskId}.png`;
+      const resultUrl = task.resultUrl || this.buildDefaultResultUrl(task.taskId, task.mediaType);
       const resultJson =
         task.resultJson ||
         ({
@@ -1811,7 +1852,7 @@ export class TasksService {
       case "PACKAGING":
         nextStatus = "SUCCEEDED";
         progress = 100;
-        resultUrl = `https://minio.local/result/${taskId}.png`;
+        resultUrl = this.buildDefaultResultUrl(taskId, current.mediaType);
         break;
       default:
         break;
@@ -1842,7 +1883,7 @@ export class TasksService {
 
   private handlePostTransitionUnsafe(task: TaskRecord, userId: string, fromStatus: TaskStatus, toStatus: TaskStatus) {
     if (toStatus === "SUCCEEDED") {
-      const resultUrl = task.resultUrl || `https://minio.local/result/${task.taskId}.png`;
+      const resultUrl = task.resultUrl || this.buildDefaultResultUrl(task.taskId, task.mediaType);
       task.resultUrl = resultUrl;
       task.resultJson =
         task.resultJson ||
@@ -2105,6 +2146,12 @@ export class TasksService {
 
   private buildId(prefix: string) {
     return `${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;
+  }
+
+  private buildDefaultResultUrl(taskId: string, mediaType: TaskMediaType): string {
+    const datePath = buildDatePathFromEntityId(taskId);
+    const ext = buildResultExt(mediaType);
+    return `${this.minioPublicEndpoint}/${this.minioResultBucket}/${this.minioResultPrefix}/${datePath}/${taskId}.${ext}`;
   }
 
   private runInTransaction<T>(runner: () => T): T {

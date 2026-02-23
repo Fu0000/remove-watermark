@@ -86,6 +86,10 @@ export interface WorkerRuntimeOptions {
   resultExpireDays: number;
   assetSourceMode: "minio" | "local";
   minioAssetBucket: string;
+  minioResultBucket: string;
+  minioSourcePrefix: string;
+  minioResultPrefix: string;
+  minioPublicEndpoint: string;
 }
 
 interface TaskArtifact {
@@ -163,6 +167,47 @@ function sleep(ms: number) {
 
 function buildId(prefix: string) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;
+}
+
+function trimTrailingSlash(value: string) {
+  return value.replace(/\/+$/, "");
+}
+
+function joinUrl(base: string, path: string) {
+  return `${trimTrailingSlash(base)}/${path.replace(/^\/+/, "")}`;
+}
+
+function normalizeObjectPrefix(prefix: string, fallback: string) {
+  const normalized = prefix.trim().replace(/^\/+|\/+$/g, "");
+  return normalized.length > 0 ? normalized : fallback;
+}
+
+function buildDatePathFromEntityId(entityId: string) {
+  const match = entityId.match(/^[a-z]+_(\d{10,13})_/i);
+  let epochMs = Date.now();
+  if (match?.[1]) {
+    const raw = Number.parseInt(match[1], 10);
+    if (Number.isFinite(raw) && raw > 0) {
+      epochMs = match[1].length <= 10 ? raw * 1000 : raw;
+    }
+  }
+  const date = new Date(epochMs);
+  const yyyy = String(date.getUTCFullYear());
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  return `${yyyy}/${mm}/${dd}`;
+}
+
+function buildResultObjectKey(runtime: WorkerRuntimeOptions, taskId: string, ext: string) {
+  const datePath = buildDatePathFromEntityId(taskId);
+  return `${runtime.minioResultPrefix}/${datePath}/${taskId}.${ext}`;
+}
+
+function normalizePublicUrl(runtime: WorkerRuntimeOptions, url: string) {
+  if (/^https?:\/\/minio\.local\//i.test(url)) {
+    return joinUrl(runtime.minioPublicEndpoint, url.replace(/^https?:\/\/minio\.local\//i, ""));
+  }
+  return url;
 }
 
 function readErrorName(error: unknown) {
@@ -307,16 +352,23 @@ async function publishDeadletter(
   });
 }
 
-function buildDefaultResultUrl(taskId: string, mediaType: TaskMediaType) {
-  switch (mediaType) {
-    case "VIDEO":
-      return `https://minio.local/result/${taskId}.mp4`;
-    case "PDF":
-    case "PPT":
-      return `https://minio.local/result/${taskId}.pdf`;
-    default:
-      return `https://minio.local/result/${taskId}.png`;
-  }
+function buildDefaultResultUrl(
+  runtime: WorkerRuntimeOptions,
+  taskId: string,
+  mediaType: TaskMediaType
+) {
+  const ext = mediaType === "VIDEO" ? "mp4" : mediaType === "PDF" || mediaType === "PPT" ? "pdf" : "png";
+  return joinUrl(
+    runtime.minioPublicEndpoint,
+    `${runtime.minioResultBucket}/${buildResultObjectKey(runtime, taskId, ext)}`
+  );
+}
+
+function buildDefaultZipUrl(runtime: WorkerRuntimeOptions, taskId: string) {
+  return joinUrl(
+    runtime.minioPublicEndpoint,
+    `${runtime.minioResultBucket}/${buildResultObjectKey(runtime, taskId, "zip")}`
+  );
 }
 
 function buildExpireAt(days: number) {
@@ -332,7 +384,8 @@ function buildAssetSourcePath(
   if (runtime.assetSourceMode !== "minio") {
     return undefined;
   }
-  return `minio://${runtime.minioAssetBucket}/${task.assetId}`;
+  const datePath = buildDatePathFromEntityId(task.assetId);
+  return `minio://${runtime.minioAssetBucket}/${runtime.minioSourcePrefix}/${datePath}/${task.assetId}`;
 }
 
 function toRecord(value: Prisma.JsonValue | null | undefined): Record<string, unknown> | undefined {
@@ -568,7 +621,7 @@ async function executePackaging(
 ): Promise<PackagingResult> {
   logger.debug({ taskId: task.taskId, mediaType: task.mediaType }, "execute packaging");
   const staged = toRecord(task.resultJson)?.staging as Record<string, unknown> | undefined;
-  const defaultUrl = buildDefaultResultUrl(task.taskId, task.mediaType as TaskMediaType);
+  const defaultUrl = buildDefaultResultUrl(runtime, task.taskId, task.mediaType as TaskMediaType);
   const expireAt = buildExpireAt(runtime.resultExpireDays);
 
   if (task.mediaType === "PDF" || task.mediaType === "PPT") {
@@ -585,8 +638,14 @@ async function executePackaging(
       }
     );
 
-    const pdfUrl = packaged.pdfUrl || packaged.resultUrl || defaultUrl;
-    const zipUrl = packaged.zipUrl || `https://minio.local/result/${task.taskId}.zip`;
+    const pdfUrl = normalizePublicUrl(
+      runtime,
+      packaged.pdfUrl || packaged.resultUrl || defaultUrl
+    );
+    const zipUrl = normalizePublicUrl(
+      runtime,
+      packaged.zipUrl || buildDefaultZipUrl(runtime, task.taskId)
+    );
     return {
       resultUrl: pdfUrl,
       artifacts: [
@@ -596,7 +655,10 @@ async function executePackaging(
     };
   }
 
-  const stagedOutput = typeof staged?.outputUrl === "string" ? staged.outputUrl : defaultUrl;
+  const stagedOutput =
+    typeof staged?.outputUrl === "string"
+      ? normalizePublicUrl(runtime, staged.outputUrl)
+      : defaultUrl;
   return {
     resultUrl: stagedOutput,
     artifacts: [
@@ -699,7 +761,9 @@ export async function processTaskStep(
     }
     case "INPAINTING": {
       const inpaint = await executeInpainting(task, runtime);
-      const outputUrl = inpaint.outputUrl || buildDefaultResultUrl(taskId, task.mediaType as TaskMediaType);
+      const outputUrl = inpaint.outputUrl
+        ? normalizePublicUrl(runtime, inpaint.outputUrl)
+        : buildDefaultResultUrl(runtime, taskId, task.mediaType as TaskMediaType);
       return advanceTask({
         taskId,
         userId: task.userId,
@@ -951,7 +1015,11 @@ async function bootstrap() {
     assetSourceMode: (readEnv("ASSET_SOURCE_MODE", "minio").toLowerCase() === "local" ? "local" : "minio") as
       | "minio"
       | "local",
-    minioAssetBucket: readEnv("MINIO_BUCKET_ASSETS", "assets")
+    minioAssetBucket: readEnv("MINIO_BUCKET_ASSETS", "remove-waterremark"),
+    minioResultBucket: readEnv("MINIO_BUCKET_RESULTS", "remove-waterremark"),
+    minioSourcePrefix: normalizeObjectPrefix(readEnv("MINIO_SOURCE_PREFIX", "source"), "source"),
+    minioResultPrefix: normalizeObjectPrefix(readEnv("MINIO_RESULT_PREFIX", "result"), "result"),
+    minioPublicEndpoint: trimTrailingSlash(readEnv("MINIO_PUBLIC_ENDPOINT", "http://127.0.0.1:9000"))
   };
   const workerConcurrency = parsePositiveInt(readEnv("ORCHESTRATOR_WORKER_CONCURRENCY", "4"), 4);
   const redisConnection = parseRedisConnection(redisUrl);

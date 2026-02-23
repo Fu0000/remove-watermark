@@ -21,6 +21,7 @@ services:
     environment:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: miniopassword
+      MINIO_API_CORS_ALLOW_ORIGIN: "*"
     ports:
       - "${STACK_MINIO_PORT:-9000}:9000"
       - "${STACK_MINIO_CONSOLE_PORT:-9001}:9001"
@@ -37,8 +38,11 @@ services:
         echo 'minio-init waiting for minio...';
         sleep 1;
       done &&
-      mc mb --ignore-existing local/${MINIO_BUCKET_ASSETS:-assets} &&
-      mc mb --ignore-existing local/${MINIO_BUCKET_RESULTS:-result}
+      mc mb --ignore-existing local/${MINIO_BUCKET_ASSETS:-remove-waterremark} &&
+      mc mb --ignore-existing local/${MINIO_BUCKET_RESULTS:-remove-waterremark} &&
+      printf '%s' '<CORSConfiguration><CORSRule><AllowedOrigin>*</AllowedOrigin><AllowedMethod>GET</AllowedMethod><AllowedMethod>PUT</AllowedMethod><AllowedMethod>POST</AllowedMethod><AllowedMethod>HEAD</AllowedMethod><AllowedHeader>*</AllowedHeader></CORSRule></CORSConfiguration>' > /tmp/cors.xml &&
+      (mc cors set local/${MINIO_BUCKET_ASSETS:-remove-waterremark} /tmp/cors.xml || true) &&
+      (mc cors set local/${MINIO_BUCKET_RESULTS:-remove-waterremark} /tmp/cors.xml || true)
       "
 
   inference-gateway:
@@ -67,9 +71,13 @@ services:
       LAMA_REFINE: "false"
       DEFAULT_PDF_RENDERER: pdfium
       MINIO_ENDPOINT: http://minio:9000
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://127.0.0.1:${STACK_MINIO_PORT:-9000}}
       MINIO_ACCESS_KEY: minio
       MINIO_SECRET_KEY: miniopassword
-      MINIO_BUCKET_ASSETS: ${MINIO_BUCKET_ASSETS:-assets}
+      MINIO_BUCKET_ASSETS: ${MINIO_BUCKET_ASSETS:-remove-waterremark}
+      MINIO_BUCKET_RESULTS: ${MINIO_BUCKET_RESULTS:-remove-waterremark}
+      MINIO_SOURCE_PREFIX: ${MINIO_SOURCE_PREFIX:-source}
+      MINIO_RESULT_PREFIX: ${MINIO_RESULT_PREFIX:-result}
       MINIO_REGION: ${MINIO_REGION:-us-east-1}
       MINIO_SECURE: "false"
     volumes:
@@ -104,10 +112,13 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/remove_watermark
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://127.0.0.1:9000}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://127.0.0.1:${STACK_MINIO_PORT:-9000}}
       MINIO_ACCESS_KEY: minio
       MINIO_SECRET_KEY: miniopassword
-      MINIO_BUCKET_ASSETS: ${MINIO_BUCKET_ASSETS:-assets}
+      MINIO_BUCKET_ASSETS: ${MINIO_BUCKET_ASSETS:-remove-waterremark}
+      MINIO_BUCKET_RESULTS: ${MINIO_BUCKET_RESULTS:-remove-waterremark}
+      MINIO_SOURCE_PREFIX: ${MINIO_SOURCE_PREFIX:-source}
+      MINIO_RESULT_PREFIX: ${MINIO_RESULT_PREFIX:-result}
       MINIO_REGION: ${MINIO_REGION:-us-east-1}
       MINIO_PRESIGN_ENABLED: "true"
       MINIO_PRESIGN_EXPIRE_SEC: "600"
@@ -164,7 +175,11 @@ services:
       INFERENCE_SHARED_TOKEN: inference-local-token
       RESULT_EXPIRE_DAYS: "30"
       ASSET_SOURCE_MODE: ${ASSET_SOURCE_MODE:-minio}
-      MINIO_BUCKET_ASSETS: ${MINIO_BUCKET_ASSETS:-assets}
+      MINIO_BUCKET_ASSETS: ${MINIO_BUCKET_ASSETS:-remove-waterremark}
+      MINIO_BUCKET_RESULTS: ${MINIO_BUCKET_RESULTS:-remove-waterremark}
+      MINIO_SOURCE_PREFIX: ${MINIO_SOURCE_PREFIX:-source}
+      MINIO_RESULT_PREFIX: ${MINIO_RESULT_PREFIX:-result}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://127.0.0.1:${STACK_MINIO_PORT:-9000}}
       ORCHESTRATOR_WORKER_CONCURRENCY: "1"
       CI: "true"
     depends_on:
