@@ -118,6 +118,14 @@ def require_token(token: Optional[str]) -> None:
         raise InferenceError(status_code=401, error_code="AUTH_INVALID_TOKEN", message="invalid inference token")
 
 
+def resolve_trace_id(trace_id_header: Optional[str], task_id: Optional[str]) -> str:
+    if trace_id_header and trace_id_header.strip():
+        return trace_id_header.strip()
+    seed = task_id or str(time.time_ns())
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:24]
+    return f"trc_{digest}"
+
+
 def run_with_pool(pool_name: str, task_id: str, runner):
     maybe_cleanup_filesystem()
     semaphore = INFERENCE_POOLS.get(pool_name)
@@ -1048,10 +1056,19 @@ def healthz() -> Dict[str, Any]:
 
 
 @app.post("/internal/inpaint/image")
-def inpaint_image(payload: InpaintImageRequest, x_inference_token: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+def inpaint_image(
+    payload: InpaintImageRequest,
+    x_inference_token: Optional[str] = Header(default=None),
+    x_trace_id: Optional[str] = Header(default=None)
+) -> Dict[str, Any]:
     require_token(x_inference_token)
+    trace_id = resolve_trace_id(x_trace_id, payload.taskId)
     if CONFIG.model_mode == "mock":
-        return {"outputUrl": build_result_url(payload.taskId, "png", payload.taskCreatedAt), "backend": "mock"}
+        return {
+            "outputUrl": build_result_url(payload.taskId, "png", payload.taskCreatedAt),
+            "backend": "mock",
+            "traceId": trace_id
+        }
 
     def execute() -> Dict[str, Any]:
         source_image = resolve_asset_path(payload.taskId, payload.assetId, "IMAGE", payload.sourcePath)
@@ -1060,17 +1077,27 @@ def inpaint_image(payload: InpaintImageRequest, x_inference_token: Optional[str]
         return {
             "outputUrl": output_url,
             "outputPath": str(output),
-            "backend": "lama"
+            "backend": "lama",
+            "traceId": trace_id
         }
 
     return run_with_pool("image", payload.taskId, execute)
 
 
 @app.post("/internal/inpaint/video")
-def inpaint_video(payload: InpaintVideoRequest, x_inference_token: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+def inpaint_video(
+    payload: InpaintVideoRequest,
+    x_inference_token: Optional[str] = Header(default=None),
+    x_trace_id: Optional[str] = Header(default=None)
+) -> Dict[str, Any]:
     require_token(x_inference_token)
+    trace_id = resolve_trace_id(x_trace_id, payload.taskId)
     if CONFIG.model_mode == "mock":
-        return {"outputUrl": build_result_url(payload.taskId, "mp4", payload.taskCreatedAt), "backend": "mock"}
+        return {
+            "outputUrl": build_result_url(payload.taskId, "mp4", payload.taskCreatedAt),
+            "backend": "mock",
+            "traceId": trace_id
+        }
 
     def execute() -> Dict[str, Any]:
         source_video = resolve_asset_path(payload.taskId, payload.assetId, "VIDEO", payload.sourcePath)
@@ -1080,17 +1107,27 @@ def inpaint_video(payload: InpaintVideoRequest, x_inference_token: Optional[str]
         return {
             "outputUrl": output_url,
             "outputPath": str(output),
-            "backend": "propainter"
+            "backend": "propainter",
+            "traceId": trace_id
         }
 
     return run_with_pool("video", payload.taskId, execute)
 
 
 @app.post("/internal/doc/ppt-to-pdf")
-def ppt_to_pdf(payload: PptToPdfRequest, x_inference_token: Optional[str] = Header(default=None)) -> Dict[str, str]:
+def ppt_to_pdf(
+    payload: PptToPdfRequest,
+    x_inference_token: Optional[str] = Header(default=None),
+    x_trace_id: Optional[str] = Header(default=None)
+) -> Dict[str, str]:
     require_token(x_inference_token)
+    trace_id = resolve_trace_id(x_trace_id, payload.taskId)
     if CONFIG.model_mode == "mock":
-        return {"pdfUrl": build_result_url(payload.taskId, "pdf", payload.taskCreatedAt), "backend": "mock"}
+        return {
+            "pdfUrl": build_result_url(payload.taskId, "pdf", payload.taskCreatedAt),
+            "backend": "mock",
+            "traceId": trace_id
+        }
 
     def execute() -> Dict[str, str]:
         ppt_file = resolve_asset_path(payload.taskId, payload.assetId, "PPT", payload.sourcePath)
@@ -1098,15 +1135,21 @@ def ppt_to_pdf(payload: PptToPdfRequest, x_inference_token: Optional[str] = Head
         return {
             "pdfUrl": build_result_url(payload.taskId, "pdf", payload.taskCreatedAt),
             "pdfPath": str(pdf_path),
-            "backend": "libreoffice"
+            "backend": "libreoffice",
+            "traceId": trace_id
         }
 
     return run_with_pool("doc", payload.taskId, execute)
 
 
 @app.post("/internal/doc/render-pdf")
-def render_pdf(payload: RenderPdfRequest, x_inference_token: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+def render_pdf(
+    payload: RenderPdfRequest,
+    x_inference_token: Optional[str] = Header(default=None),
+    x_trace_id: Optional[str] = Header(default=None)
+) -> Dict[str, Any]:
     require_token(x_inference_token)
+    trace_id = resolve_trace_id(x_trace_id, payload.taskId)
     if CONFIG.model_mode == "mock":
         endpoint = trim_trailing_slash(CONFIG.minio_public_endpoint)
         date_path = build_date_path(payload.taskCreatedAt, payload.taskId)
@@ -1114,7 +1157,8 @@ def render_pdf(payload: RenderPdfRequest, x_inference_token: Optional[str] = Hea
         return {
             "renderer": os.getenv("DEFAULT_PDF_RENDERER", "pdfium"),
             "pageImagePrefix": f"{endpoint}/{CONFIG.minio_bucket_results}/{result_prefix}/{date_path}/intermediate/{payload.taskId}/page",
-            "backend": "mock"
+            "backend": "mock",
+            "traceId": trace_id
         }
 
     def execute() -> Dict[str, Any]:
@@ -1129,19 +1173,26 @@ def render_pdf(payload: RenderPdfRequest, x_inference_token: Optional[str] = Hea
         return {
             "renderer": renderer,
             "pageImagePrefix": str(prefix),
-            "backend": "doc-render"
+            "backend": "doc-render",
+            "traceId": trace_id
         }
 
     return run_with_pool("doc", payload.taskId, execute)
 
 
 @app.post("/internal/doc/inpaint-pages")
-def inpaint_doc_pages(payload: DocInpaintPagesRequest, x_inference_token: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+def inpaint_doc_pages(
+    payload: DocInpaintPagesRequest,
+    x_inference_token: Optional[str] = Header(default=None),
+    x_trace_id: Optional[str] = Header(default=None)
+) -> Dict[str, Any]:
     require_token(x_inference_token)
+    trace_id = resolve_trace_id(x_trace_id, payload.taskId)
     if CONFIG.model_mode == "mock":
         return {
             "outputUrl": build_result_url(payload.taskId, "pdf", payload.taskCreatedAt),
-            "backend": "mock"
+            "backend": "mock",
+            "traceId": trace_id
         }
 
     def execute() -> Dict[str, Any]:
@@ -1149,21 +1200,28 @@ def inpaint_doc_pages(payload: DocInpaintPagesRequest, x_inference_token: Option
         return {
             "outputUrl": build_result_url(payload.taskId, "pdf", payload.taskCreatedAt),
             "processedPages": processed,
-            "backend": "doc-lama"
+            "backend": "doc-lama",
+            "traceId": trace_id
         }
 
     return run_with_pool("doc", payload.taskId, execute)
 
 
 @app.post("/internal/doc/package")
-def package_doc(payload: DocPackageRequest, x_inference_token: Optional[str] = Header(default=None)) -> Dict[str, str]:
+def package_doc(
+    payload: DocPackageRequest,
+    x_inference_token: Optional[str] = Header(default=None),
+    x_trace_id: Optional[str] = Header(default=None)
+) -> Dict[str, str]:
     require_token(x_inference_token)
+    trace_id = resolve_trace_id(x_trace_id, payload.taskId)
     if CONFIG.model_mode == "mock":
         return {
             "resultUrl": build_result_url(payload.taskId, "pdf", payload.taskCreatedAt),
             "pdfUrl": build_result_url(payload.taskId, "pdf", payload.taskCreatedAt),
             "zipUrl": build_result_url(payload.taskId, "zip", payload.taskCreatedAt),
-            "backend": "mock"
+            "backend": "mock",
+            "traceId": trace_id
         }
 
     def execute() -> Dict[str, str]:
@@ -1183,7 +1241,8 @@ def package_doc(payload: DocPackageRequest, x_inference_token: Optional[str] = H
             "zipUrl": zip_url,
             "pdfPath": str(result_pdf),
             "zipPath": str(result_zip),
-            "backend": "doc-package"
+            "backend": "doc-package",
+            "traceId": trace_id
         }
 
     return run_with_pool("doc", payload.taskId, execute)

@@ -1,6 +1,7 @@
 import { Body, Controller, Headers, Post } from "@nestjs/common";
-import { badRequest } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
+import { parseRequestBody } from "../../common/request-validation";
+import { z } from "zod";
 
 interface WechatLoginRequest {
   code: string;
@@ -12,13 +13,21 @@ interface RefreshRequest {
   refreshToken: string;
 }
 
+const WechatLoginRequestSchema = z.object({
+  code: z.string().min(1),
+  deviceId: z.string().optional(),
+  clientVersion: z.string().optional()
+});
+
+const RefreshRequestSchema = z.object({
+  refreshToken: z.string().min(1)
+});
+
 @Controller("v1/auth")
 export class AuthController {
   @Post("wechat-login")
-  wechatLogin(@Body() body: WechatLoginRequest, @Headers("x-request-id") requestIdHeader?: string) {
-    if (!body.code) {
-      badRequest(40001, "参数非法：code 必填", requestIdHeader);
-    }
+  wechatLogin(@Body() rawBody: WechatLoginRequest, @Headers("x-request-id") requestIdHeader?: string) {
+    const body = parseRequestBody(WechatLoginRequestSchema, rawBody, requestIdHeader);
 
     return ok(
       {
@@ -38,10 +47,8 @@ export class AuthController {
   }
 
   @Post("refresh")
-  refreshToken(@Body() body: RefreshRequest, @Headers("x-request-id") requestIdHeader?: string) {
-    if (!body.refreshToken) {
-      badRequest(40001, "参数非法：refreshToken 必填", requestIdHeader);
-    }
+  refreshToken(@Body() rawBody: RefreshRequest, @Headers("x-request-id") requestIdHeader?: string) {
+    const body = parseRequestBody(RefreshRequestSchema, rawBody, requestIdHeader);
 
     return ok(
       {

@@ -3,11 +3,13 @@ import type { TaskStatus } from "@packages/contracts";
 import { ensureAdminPermission } from "../../common/admin-rbac";
 import { badRequest, conflict, notFound, unprocessableEntity } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
+import { parseRequestBody } from "../../common/request-validation";
 import { TASK_STATUS } from "../../common/task-status";
 import { ComplianceService } from "../compliance/compliance.service";
 import { PlansService } from "../plans/plans.service";
 import { TasksService } from "../tasks/tasks.service";
 import { type WebhookScope, WebhooksService } from "../webhooks/webhooks.service";
+import { z } from "zod";
 
 interface ReplayTaskRequest {
   reason: string;
@@ -31,6 +33,31 @@ interface UpdatePlanRequest {
   sortOrder?: number;
   isActive?: boolean;
 }
+
+const ReplayTaskRequestSchema = z.object({
+  reason: z.string().trim().min(1)
+});
+
+const CreatePlanRequestSchema = z.object({
+  planId: z.string().trim().min(1),
+  name: z.string().trim().min(1),
+  price: z.number().int().min(0),
+  monthlyQuota: z.number().int().min(0),
+  features: z.array(z.string()),
+  sortOrder: z.number().int(),
+  isActive: z.boolean().optional()
+});
+
+const UpdatePlanRequestSchema = z
+  .object({
+    name: z.string().trim().min(1).optional(),
+    price: z.number().int().min(0).optional(),
+    monthlyQuota: z.number().int().min(0).optional(),
+    features: z.array(z.string()).optional(),
+    sortOrder: z.number().int().optional(),
+    isActive: z.boolean().optional()
+  })
+  .refine((payload) => Object.keys(payload).length > 0);
 
 @Controller("admin")
 export class AdminController {
@@ -91,8 +118,9 @@ export class AdminController {
     @Headers("x-forwarded-for") forwardedFor: string | undefined,
     @Headers("user-agent") userAgent: string | undefined,
     @Param("taskId") taskId: string,
-    @Body() body: ReplayTaskRequest
+    @Body() rawBody: ReplayTaskRequest
   ) {
+    const body = parseRequestBody(ReplayTaskRequestSchema, rawBody, requestIdHeader);
     const role = ensureAdminPermission({
       authorization,
       role: adminRole,
@@ -107,10 +135,7 @@ export class AdminController {
     if (!taskId) {
       badRequest(40001, "参数非法：taskId", requestIdHeader);
     }
-    const reason = (body.reason || "").trim();
-    if (!reason) {
-      badRequest(40001, "参数非法：reason", requestIdHeader);
-    }
+    const reason = body.reason;
 
     const existing = await this.tasksService.getByTaskId(taskId, { advance: false });
     if (!existing) {
@@ -298,8 +323,9 @@ export class AdminController {
     @Headers("x-admin-secret") adminSecret: string | undefined,
     @Headers("x-forwarded-for") forwardedFor: string | undefined,
     @Headers("user-agent") userAgent: string | undefined,
-    @Body() body: CreatePlanRequest
+    @Body() rawBody: CreatePlanRequest
   ) {
+    const body = parseRequestBody(CreatePlanRequestSchema, rawBody, requestIdHeader);
     const role = ensureAdminPermission({
       authorization,
       role: adminRole,
@@ -308,7 +334,6 @@ export class AdminController {
       requestId: requestIdHeader
     });
 
-    assertCreatePlanPayload(body, requestIdHeader);
     const result = await this.plansService.createPlan({
       planId: body.planId,
       name: body.name,
@@ -352,8 +377,9 @@ export class AdminController {
     @Headers("x-forwarded-for") forwardedFor: string | undefined,
     @Headers("user-agent") userAgent: string | undefined,
     @Param("planId") planId: string,
-    @Body() body: UpdatePlanRequest
+    @Body() rawBody: UpdatePlanRequest
   ) {
+    const body = parseRequestBody(UpdatePlanRequestSchema, rawBody, requestIdHeader);
     const role = ensureAdminPermission({
       authorization,
       role: adminRole,
@@ -365,7 +391,6 @@ export class AdminController {
     if (!planId) {
       badRequest(40001, "参数非法：planId", requestIdHeader);
     }
-    assertUpdatePlanPayload(body, requestIdHeader);
 
     const result = await this.plansService.updatePlan(planId, body);
     if (result === undefined) {
@@ -514,43 +539,4 @@ function parseForwardedIp(forwardedFor: string | undefined): string | undefined 
 
   const first = forwardedFor.split(",")[0]?.trim();
   return first && first.length > 0 ? first : undefined;
-}
-
-function assertCreatePlanPayload(body: CreatePlanRequest, requestIdHeader?: string) {
-  if (!body.planId || !body.name) {
-    badRequest(40001, "参数非法", requestIdHeader);
-  }
-  if (!Number.isInteger(body.price) || body.price < 0) {
-    badRequest(40001, "参数非法：price", requestIdHeader);
-  }
-  if (!Number.isInteger(body.monthlyQuota) || body.monthlyQuota < 0) {
-    badRequest(40001, "参数非法：monthlyQuota", requestIdHeader);
-  }
-  if (!Number.isInteger(body.sortOrder)) {
-    badRequest(40001, "参数非法：sortOrder", requestIdHeader);
-  }
-  if (!Array.isArray(body.features) || body.features.some((item) => typeof item !== "string")) {
-    badRequest(40001, "参数非法：features", requestIdHeader);
-  }
-}
-
-function assertUpdatePlanPayload(body: UpdatePlanRequest, requestIdHeader?: string) {
-  if (!body || Object.keys(body).length === 0) {
-    badRequest(40001, "参数非法：empty patch body", requestIdHeader);
-  }
-  if (body.name !== undefined && body.name.trim().length === 0) {
-    badRequest(40001, "参数非法：name", requestIdHeader);
-  }
-  if (body.price !== undefined && (!Number.isInteger(body.price) || body.price < 0)) {
-    badRequest(40001, "参数非法：price", requestIdHeader);
-  }
-  if (body.monthlyQuota !== undefined && (!Number.isInteger(body.monthlyQuota) || body.monthlyQuota < 0)) {
-    badRequest(40001, "参数非法：monthlyQuota", requestIdHeader);
-  }
-  if (body.sortOrder !== undefined && !Number.isInteger(body.sortOrder)) {
-    badRequest(40001, "参数非法：sortOrder", requestIdHeader);
-  }
-  if (body.features !== undefined && (!Array.isArray(body.features) || body.features.some((item) => typeof item !== "string"))) {
-    badRequest(40001, "参数非法：features", requestIdHeader);
-  }
 }

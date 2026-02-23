@@ -2,12 +2,19 @@ import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Query } 
 import { ensureAuthorization } from "../../common/auth";
 import { badRequest, conflict, notFound } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
+import { parseRequestBody } from "../../common/request-validation";
 import { ComplianceService } from "./compliance.service";
+import { z } from "zod";
 
 interface AccountDeleteRequestBody {
   reason?: string;
   confirm?: boolean;
 }
+
+const AccountDeleteRequestBodySchema = z.object({
+  reason: z.string().trim().min(1),
+  confirm: z.literal(true)
+});
 
 @Controller("v1/account")
 export class AccountController {
@@ -21,20 +28,14 @@ export class AccountController {
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Headers("x-forwarded-for") forwardedFor: string | undefined,
     @Headers("user-agent") userAgent: string | undefined,
-    @Body() body: AccountDeleteRequestBody
+    @Body() rawBody: AccountDeleteRequestBody
   ) {
     const auth = ensureAuthorization(authorization, requestIdHeader);
+    const body = parseRequestBody(AccountDeleteRequestBodySchema, rawBody, requestIdHeader);
     if (!idempotencyKey) {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
-    if (!body.confirm) {
-      badRequest(40001, "confirm must be true", requestIdHeader);
-    }
-
-    const reason = (body.reason || "").trim();
-    if (!reason) {
-      badRequest(40001, "reason is required", requestIdHeader);
-    }
+    const reason = body.reason.trim();
 
     const result = await this.complianceService.createAccountDeleteRequest(auth.userId, reason, idempotencyKey, {
       requestId: requestIdHeader,

@@ -2,12 +2,14 @@ import { Body, Controller, Get, Headers, HttpCode, Inject, Post } from "@nestjs/
 import { ensureAuthorization } from "../../common/auth";
 import { badRequest, notFound, unauthorized } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
+import { parseRequestBody } from "../../common/request-validation";
 import {
   safeCompareSignature,
   signPaymentCallback,
   type PaymentCallbackSignatureInput
 } from "./payment-callback-signature";
 import { SubscriptionsService } from "./subscriptions.service";
+import { z } from "zod";
 
 interface CheckoutRequest {
   planId: string;
@@ -29,6 +31,41 @@ interface PaymentCallbackRequest {
   refundReason?: string;
 }
 
+const CheckoutRequestSchema = z.object({
+  planId: z.string().min(1),
+  channel: z.literal("wechat_pay"),
+  clientReturnUrl: z.string().url()
+});
+
+const ConfirmRequestSchema = z.object({
+  orderId: z.string().min(1)
+});
+
+const PaymentCallbackRequestSchema = z
+  .object({
+    eventId: z.string().min(1),
+    orderId: z.string().min(1),
+    paymentStatus: z.enum(["PAID", "REFUNDED"]),
+    providerTradeNo: z.string().optional(),
+    paidAt: z.string().optional(),
+    refundedAt: z.string().optional(),
+    refundReason: z.string().optional()
+  })
+  .superRefine((value, ctx) => {
+    if (value.paidAt !== undefined && Number.isNaN(new Date(value.paidAt).getTime())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "paidAt"
+      });
+    }
+    if (value.refundedAt !== undefined && Number.isNaN(new Date(value.refundedAt).getTime())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "refundedAt"
+      });
+    }
+  });
+
 @Controller("v1/subscriptions")
 export class SubscriptionsController {
   private readonly paymentCallbackSecret = process.env.PAYMENT_CALLBACK_SECRET || "payment-local-secret";
@@ -44,23 +81,10 @@ export class SubscriptionsController {
   async checkout(
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined,
-    @Body() body: CheckoutRequest
+    @Body() rawBody: CheckoutRequest
   ) {
     const auth = ensureAuthorization(authorization, requestIdHeader);
-
-    if (!body.planId || !body.channel || !body.clientReturnUrl) {
-      badRequest(40001, "参数非法", requestIdHeader);
-    }
-
-    if (body.channel !== "wechat_pay") {
-      badRequest(40001, "参数非法：channel 仅支持 wechat_pay", requestIdHeader);
-    }
-
-    try {
-      new URL(body.clientReturnUrl);
-    } catch {
-      badRequest(40001, "参数非法：clientReturnUrl", requestIdHeader);
-    }
+    const body = parseRequestBody(CheckoutRequestSchema, rawBody, requestIdHeader);
 
     const result = await this.subscriptionsService.checkout(auth.userId, body);
     if (!result) {
@@ -85,12 +109,10 @@ export class SubscriptionsController {
   async mockConfirm(
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined,
-    @Body() body: ConfirmRequest
+    @Body() rawBody: ConfirmRequest
   ) {
     const auth = ensureAuthorization(authorization, requestIdHeader);
-    if (!body.orderId) {
-      badRequest(40001, "参数非法：orderId", requestIdHeader);
-    }
+    const body = parseRequestBody(ConfirmRequestSchema, rawBody, requestIdHeader);
 
     const result = await this.subscriptionsService.confirmCheckout(auth.userId, body.orderId);
     if (!result) {
@@ -106,15 +128,9 @@ export class SubscriptionsController {
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Headers("x-payment-timestamp") paymentTimestampHeader: string | undefined,
     @Headers("x-payment-signature") paymentSignatureHeader: string | undefined,
-    @Body() body: PaymentCallbackRequest
+    @Body() rawBody: PaymentCallbackRequest
   ) {
-    if (!body.eventId || !body.orderId || !body.paymentStatus) {
-      badRequest(40001, "参数非法：eventId/orderId/paymentStatus", requestIdHeader);
-    }
-
-    if (body.paymentStatus !== "PAID" && body.paymentStatus !== "REFUNDED") {
-      badRequest(40001, "参数非法：paymentStatus", requestIdHeader);
-    }
+    const body = parseRequestBody(PaymentCallbackRequestSchema, rawBody, requestIdHeader);
 
     if (!paymentTimestampHeader || !paymentSignatureHeader) {
       unauthorized(40101, "鉴权失败：缺少支付回调签名", requestIdHeader);

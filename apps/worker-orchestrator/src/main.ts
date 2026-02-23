@@ -1,5 +1,5 @@
 import type { TaskMediaType, TaskStatus } from "@packages/contracts";
-import { createLogger, readEnv } from "@packages/shared";
+import { buildStableTraceId, createLogger, readEnv } from "@packages/shared";
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { JobsOptions, Queue, UnrecoverableError, Worker } from "bullmq";
 import { pathToFileURL } from "node:url";
@@ -434,7 +434,8 @@ export async function callInferenceGateway<T>(
   }
 ): Promise<T> {
   const taskId = typeof payload.taskId === "string" ? payload.taskId : undefined;
-  logger.debug({ taskId, path, timeoutMs: options.timeoutMs }, "inference request");
+  const traceId = taskId ? buildStableTraceId(`task:${taskId}`) : buildStableTraceId(`req:${crypto.randomUUID()}`);
+  logger.debug({ taskId, traceId, path, timeoutMs: options.timeoutMs }, "inference request");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
   let response: Response;
@@ -443,7 +444,8 @@ export async function callInferenceGateway<T>(
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-inference-token": runtime.inferenceSharedToken
+        "x-inference-token": runtime.inferenceSharedToken,
+        "x-trace-id": traceId
       },
       body: JSON.stringify(payload),
       signal: controller.signal
@@ -460,9 +462,9 @@ export async function callInferenceGateway<T>(
   if (!response.ok) {
     const body = await response.text();
     if (response.status >= 400 && response.status < 500) {
-      throw new UnrecoverableError(`inference non-retryable ${response.status}: ${body || "unknown"}`);
+      throw new UnrecoverableError(`inference non-retryable ${response.status}: ${body || "unknown"} (trace=${traceId})`);
     }
-    throw new Error(`inference failed ${response.status}: ${body || "unknown"}`);
+    throw new Error(`inference failed ${response.status}: ${body || "unknown"} (trace=${traceId})`);
   }
 
   return (await response.json()) as T;

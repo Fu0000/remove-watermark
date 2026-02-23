@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomUUID } from "node:crypto";
+import { buildStableTraceId } from "@packages/shared";
 import { PrismaClient, type Prisma, type WebhookDelivery as DbWebhookDelivery } from "@prisma/client";
 
 const WEBHOOK_SIGNATURE_VERSION = "v1";
@@ -51,6 +52,7 @@ interface EndpointRecord {
 interface EventContext {
   userId: string;
   occurredAt: string;
+  traceId: string;
   data: Record<string, unknown>;
 }
 
@@ -320,6 +322,7 @@ async function resolveEventContext(
       return {
         userId: task.userId,
         occurredAt: task.updatedAt.toISOString(),
+        traceId: buildStableTraceId(`task:${task.taskId}`),
         data: {
           taskId: task.taskId,
           userId: task.userId,
@@ -335,6 +338,7 @@ async function resolveEventContext(
       return {
         userId: task.userId,
         occurredAt: task.updatedAt.toISOString(),
+        traceId: buildStableTraceId(`task:${task.taskId}`),
         data: {
           taskId: task.taskId,
           userId: task.userId,
@@ -367,6 +371,7 @@ async function resolveEventContext(
     return {
       userId: subscription.userId,
       occurredAt: (subscription.effectiveAt || subscription.updatedAt || event.createdAt).toISOString(),
+      traceId: buildStableTraceId(`subscription:${subscription.subscriptionId}`),
       data: {
         subscriptionId: subscription.subscriptionId,
         userId: subscription.userId,
@@ -484,7 +489,7 @@ async function sendDeliveryAttempt(
   }
 ): Promise<DeliveryAttemptResult> {
   const deliveryId = buildId("wh_dl");
-  const traceId = buildId("req");
+  const traceId = input.context.traceId;
   const keyId = input.endpoint.activeKeyId || DEFAULT_KEY_ID;
   const secret = input.endpoint.secretByKeyId[keyId];
 

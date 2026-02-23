@@ -2,8 +2,10 @@ import { Body, Controller, Delete, Get, Headers, HttpCode, Inject, Param, Patch,
 import { ensureAuthorization } from "../../common/auth";
 import { badRequest, notFound, unprocessableEntity } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
+import { parseRequestBody } from "../../common/request-validation";
 import type { WebhookScope } from "./webhooks.service";
 import { WebhooksService } from "./webhooks.service";
+import { z } from "zod";
 
 interface CreateEndpointRequest {
   name: string;
@@ -24,6 +26,33 @@ interface UpdateEndpointRequest {
 
 const MAX_TIMEOUT_MS = 30_000;
 const MAX_RETRIES = 10;
+const HttpUrlSchema = z.string().url().refine((value) => {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+});
+
+const CreateEndpointRequestSchema = z.object({
+  name: z.string().trim().min(1),
+  url: HttpUrlSchema,
+  events: z.array(z.string().trim().min(1)).min(1),
+  timeoutMs: z.number().int().positive().max(MAX_TIMEOUT_MS),
+  maxRetries: z.number().int().min(0).max(MAX_RETRIES)
+});
+
+const UpdateEndpointRequestSchema = z
+  .object({
+    name: z.string().trim().min(1).optional(),
+    url: HttpUrlSchema.optional(),
+    events: z.array(z.string().trim().min(1)).min(1).optional(),
+    status: z.enum(["ACTIVE", "PAUSED"]).optional(),
+    timeoutMs: z.number().int().positive().max(MAX_TIMEOUT_MS).optional(),
+    maxRetries: z.number().int().min(0).max(MAX_RETRIES).optional()
+  })
+  .refine((payload) => Object.keys(payload).length > 0);
 
 @Controller("v1/webhooks")
 export class WebhooksController {
@@ -35,10 +64,10 @@ export class WebhooksController {
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Headers("x-tenant-id") tenantIdHeader: string | undefined,
-    @Body() body: CreateEndpointRequest
+    @Body() rawBody: CreateEndpointRequest
   ) {
     const auth = ensureAuthorization(authorization, requestIdHeader);
-    this.assertCreatePayload(body, requestIdHeader);
+    const body = parseRequestBody(CreateEndpointRequestSchema, rawBody, requestIdHeader);
 
     const result = await this.webhooksService.createEndpoint(auth.userId, body, {
       tenantId: normalizeTenantIdHeader(tenantIdHeader) || auth.tenantId
@@ -62,13 +91,13 @@ export class WebhooksController {
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Param("endpointId") endpointId: string,
-    @Body() body: UpdateEndpointRequest
+    @Body() rawBody: UpdateEndpointRequest
   ) {
     const auth = ensureAuthorization(authorization, requestIdHeader);
+    const body = parseRequestBody(UpdateEndpointRequestSchema, rawBody, requestIdHeader);
     if (!endpointId) {
       badRequest(40001, "参数非法：endpointId", requestIdHeader);
     }
-    this.assertUpdatePayload(body, requestIdHeader);
 
     const result = await this.webhooksService.updateEndpoint(auth.userId, endpointId, body);
     if (!result) {
@@ -173,75 +202,6 @@ export class WebhooksController {
     }
 
     return ok({ deliveryId: retried.deliveryId }, requestIdHeader);
-  }
-
-  private assertCreatePayload(body: CreateEndpointRequest, requestIdHeader?: string) {
-    if (!body.name || body.name.trim().length === 0) {
-      badRequest(40001, "参数非法：name", requestIdHeader);
-    }
-    this.assertUrl(body.url, requestIdHeader);
-    this.assertEvents(body.events, requestIdHeader);
-    this.assertTimeoutMs(body.timeoutMs, requestIdHeader);
-    this.assertMaxRetries(body.maxRetries, requestIdHeader);
-  }
-
-  private assertUpdatePayload(body: UpdateEndpointRequest, requestIdHeader?: string) {
-    if (!body || Object.keys(body).length === 0) {
-      badRequest(40001, "参数非法：empty patch body", requestIdHeader);
-    }
-    if (body.name !== undefined && body.name.trim().length === 0) {
-      badRequest(40001, "参数非法：name", requestIdHeader);
-    }
-    if (body.url !== undefined) {
-      this.assertUrl(body.url, requestIdHeader);
-    }
-    if (body.events !== undefined) {
-      this.assertEvents(body.events, requestIdHeader);
-    }
-    if (body.status !== undefined && body.status !== "ACTIVE" && body.status !== "PAUSED") {
-      badRequest(40001, "参数非法：status", requestIdHeader);
-    }
-    if (body.timeoutMs !== undefined) {
-      this.assertTimeoutMs(body.timeoutMs, requestIdHeader);
-    }
-    if (body.maxRetries !== undefined) {
-      this.assertMaxRetries(body.maxRetries, requestIdHeader);
-    }
-  }
-
-  private assertUrl(url: string, requestIdHeader?: string) {
-    if (!url) {
-      badRequest(40001, "参数非法：url", requestIdHeader);
-    }
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-        badRequest(40001, "参数非法：url", requestIdHeader);
-      }
-    } catch {
-      badRequest(40001, "参数非法：url", requestIdHeader);
-    }
-  }
-
-  private assertEvents(events: string[], requestIdHeader?: string) {
-    if (!Array.isArray(events) || events.length === 0) {
-      badRequest(40001, "参数非法：events", requestIdHeader);
-    }
-    if (events.some((item) => typeof item !== "string" || item.trim().length === 0)) {
-      badRequest(40001, "参数非法：events", requestIdHeader);
-    }
-  }
-
-  private assertTimeoutMs(timeoutMs: number, requestIdHeader?: string) {
-    if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS) {
-      badRequest(40001, "参数非法：timeoutMs", requestIdHeader);
-    }
-  }
-
-  private assertMaxRetries(maxRetries: number, requestIdHeader?: string) {
-    if (!Number.isInteger(maxRetries) || maxRetries < 0 || maxRetries > MAX_RETRIES) {
-      badRequest(40001, "参数非法：maxRetries", requestIdHeader);
-    }
   }
 
   private parsePositiveInt(value: string | undefined, fallback: number, field: string, requestIdHeader?: string) {
