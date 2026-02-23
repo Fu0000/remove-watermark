@@ -2,11 +2,94 @@ import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter } from "@nestjs/platform-fastify";
 import { assertAdminRbacConfig } from "./common/admin-rbac";
+import { beginApiRequest, createApiMetricsState, endApiRequest, observeApiRequest, renderPrometheusMetrics } from "./metrics";
 import { AppModule } from "./modules/app.module";
+
+const METRICS_SKIP_PATHS = new Set(["/metrics", "/healthz"]);
+
+function stripQueryString(url: string) {
+  const queryIndex = url.indexOf("?");
+  if (queryIndex < 0) {
+    return url || "/";
+  }
+  const path = url.slice(0, queryIndex);
+  return path.length > 0 ? path : "/";
+}
+
+function shouldSkipMetrics(url: string | undefined) {
+  if (!url) {
+    return false;
+  }
+  const path = stripQueryString(url);
+  return METRICS_SKIP_PATHS.has(path);
+}
+
+function resolveRouteLabel(request: any) {
+  const routeFromRouter = request?.routeOptions?.url ?? request?.routerPath;
+  if (typeof routeFromRouter === "string" && routeFromRouter.trim().length > 0) {
+    return routeFromRouter;
+  }
+  return stripQueryString(request?.raw?.url || "/");
+}
+
+function resolveMethod(request: any) {
+  if (typeof request?.method === "string") {
+    return request.method;
+  }
+  if (typeof request?.raw?.method === "string") {
+    return request.raw.method;
+  }
+  return "UNKNOWN";
+}
 
 async function bootstrap() {
   assertAdminRbacConfig();
   const app = await NestFactory.create(AppModule, new FastifyAdapter());
+  const adapter = app.getHttpAdapter();
+  const fastify = adapter.getInstance();
+  const metricsState = createApiMetricsState();
+  const requestStartedAt = new WeakMap<object, number>();
+
+  fastify.addHook("onRequest", (request: any, _reply: any, done: () => void) => {
+    if (shouldSkipMetrics(request?.raw?.url)) {
+      done();
+      return;
+    }
+    beginApiRequest(metricsState);
+    if (request?.raw && typeof request.raw === "object") {
+      requestStartedAt.set(request.raw, Date.now());
+    }
+    done();
+  });
+
+  fastify.addHook("onResponse", (request: any, reply: any, done: () => void) => {
+    if (shouldSkipMetrics(request?.raw?.url)) {
+      done();
+      return;
+    }
+
+    const startedAt =
+      request?.raw && typeof request.raw === "object" ? requestStartedAt.get(request.raw) || Date.now() : Date.now();
+    endApiRequest(metricsState);
+    observeApiRequest(metricsState, {
+      method: resolveMethod(request),
+      route: resolveRouteLabel(request),
+      statusCode: Number(reply?.statusCode || 0),
+      durationMs: Date.now() - startedAt
+    });
+    done();
+  });
+
+  fastify.get("/healthz", async (_request: any, reply: any) => {
+    reply.header("content-type", "application/json; charset=utf-8");
+    return { status: "ok" };
+  });
+
+  fastify.get("/metrics", async (_request: any, reply: any) => {
+    reply.header("content-type", "text/plain; version=0.0.4; charset=utf-8");
+    return renderPrometheusMetrics(metricsState);
+  });
+
   const exactAllowlist = new Set([
     "http://127.0.0.1:10086",
     "http://localhost:10086",

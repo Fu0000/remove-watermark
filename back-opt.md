@@ -185,9 +185,9 @@
 - P1-5：`task.succeeded` webhook 增加 `mediaType/artifacts` 载荷。
 - P1-6：compose 改为预构建镜像启动（不再容器启动时 `pnpm install`）。
 - P2-2：上传 MIME 白名单抽取为单一常量源（assets/compliance 共用）。
+- P2-4：全链路 traceId + Prometheus 指标体系补齐（worker/webhook/API 已提供 `/metrics` 与 `/healthz` 基线）。
 - P2-5：推理工作目录与结果目录增加 TTL 清理策略。
 
 ### 仍待完成
 - P2-1：DTO 校验体系统一（已完成全部含 `@Body` 控制器的 zod 接入，`Query/Param` 逐步迁移中）。
 - P2-3：`tasks.service` 职责拆分（已拆出 `TaskQuotaService`，剩余生命周期/幂等/模拟模块待解耦）。
-- P2-4：全链路 traceId + Prometheus 指标体系补齐（已完成 trace 透传，worker+webhook `/metrics` 基线，API 指标聚合待补）。
