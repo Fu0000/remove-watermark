@@ -106,6 +106,45 @@ export function recordDispatchMetrics(
   };
 }
 
+export function renderPrometheusMetrics(state: WebhookMetricsState): string {
+  const snapshot = snapshotMetrics(state);
+  const lines: string[] = [];
+  lines.push("# HELP webhook_success_rate Current success rate in the active metrics window.");
+  lines.push("# TYPE webhook_success_rate gauge");
+  lines.push(`webhook_success_rate ${snapshot.webhook_success_rate}`);
+
+  lines.push("# HELP webhook_retry_total Retry deliveries in the active metrics window.");
+  lines.push("# TYPE webhook_retry_total gauge");
+  lines.push(`webhook_retry_total ${snapshot.webhook_retry_total}`);
+
+  lines.push("# HELP webhook_retry_rate Current retry rate in the active metrics window.");
+  lines.push("# TYPE webhook_retry_rate gauge");
+  lines.push(`webhook_retry_rate ${snapshot.webhook_retry_rate}`);
+
+  lines.push("# HELP webhook_dispatch_attempts_total Total delivery attempts since process start.");
+  lines.push("# TYPE webhook_dispatch_attempts_total counter");
+  lines.push(`webhook_dispatch_attempts_total ${snapshot.totalAttempts}`);
+
+  lines.push("# HELP webhook_dispatch_success_total Total successful deliveries since process start.");
+  lines.push("# TYPE webhook_dispatch_success_total counter");
+  lines.push(`webhook_dispatch_success_total ${snapshot.totalSuccesses}`);
+
+  lines.push("# HELP webhook_dispatch_failure_total Total failed deliveries since process start.");
+  lines.push("# TYPE webhook_dispatch_failure_total counter");
+  lines.push(`webhook_dispatch_failure_total ${snapshot.totalFailures}`);
+
+  lines.push("# HELP webhook_dispatch_retry_total Total retry deliveries since process start.");
+  lines.push("# TYPE webhook_dispatch_retry_total counter");
+  lines.push(`webhook_dispatch_retry_total ${snapshot.totalRetryDeliveries}`);
+
+  lines.push("# HELP webhook_dispatch_window_attempts Current window attempts.");
+  lines.push("# TYPE webhook_dispatch_window_attempts gauge");
+  lines.push(`webhook_dispatch_window_attempts ${snapshot.attempts}`);
+  lines.push(`webhook_dispatch_window_successes ${snapshot.successes}`);
+  lines.push(`webhook_dispatch_window_failures ${snapshot.failures}`);
+  return `${lines.join("\n")}\n`;
+}
+
 function ensureWindowFresh(
   state: WebhookMetricsState,
   options: WebhookMetricsAlertOptions,

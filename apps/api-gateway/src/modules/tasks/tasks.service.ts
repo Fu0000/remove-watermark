@@ -4,6 +4,7 @@ import { Injectable } from "@nestjs/common";
 import type { TaskArtifactType, TaskMediaType, TaskPolicy, TaskStatus } from "@packages/contracts";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../common/prisma.service";
+import { TaskQuotaService, type MemoryUsageLedgerRecord } from "./task-quota.service";
 
 export interface CreateTaskInput {
   assetId: string;
@@ -81,14 +82,9 @@ interface TaskRegionRecord {
   updatedAt: string;
 }
 
-interface UsageLedgerRecord {
+interface UsageLedgerRecord extends MemoryUsageLedgerRecord {
   ledgerId: string;
-  userId: string;
-  taskId: string;
-  status: "HELD" | "COMMITTED" | "RELEASED";
   source: string;
-  consumeUnit: number;
-  consumeAt: string;
 }
 
 interface OutboxEventRecord {
@@ -296,6 +292,7 @@ export class TasksService {
   private readonly prismaService?: PrismaService;
   private readonly usePrismaStore: boolean;
   private readonly simulationEnabled: boolean;
+  private readonly quotaService = new TaskQuotaService(FREE_MONTHLY_QUOTA);
   private readonly minioPublicEndpoint = trimTrailingSlash(
     process.env.MINIO_PUBLIC_ENDPOINT || "http://127.0.0.1:9000"
   );
@@ -2137,138 +2134,17 @@ export class TasksService {
   }
 
   private assertQuotaAvailableInMemory(userId: string) {
-    const { periodStart, periodEnd } = this.getCurrentPeriod();
-    const usedUnits = this.countReservedUnitsInMemory(userId, periodStart, periodEnd);
-
-    if (usedUnits >= FREE_MONTHLY_QUOTA) {
-      throw new QuotaExceededError(FREE_MONTHLY_QUOTA, usedUnits);
+    const result = this.quotaService.checkInMemory(userId, this.usageLedgers.values());
+    if (result.exceeded) {
+      throw new QuotaExceededError(result.quotaTotal, result.usedUnits);
     }
   }
 
   private async assertQuotaAvailableWithPrisma(tx: DbTransactionClient, userId: string, now: Date) {
-    const { periodStart, periodEnd } = this.getCurrentPeriod(now);
-    const quotaTotal = await this.resolveMonthlyQuotaWithPrisma(tx, userId, now);
-    const usedUnits = await this.countReservedUnitsWithPrisma(tx, userId, periodStart, periodEnd);
-
-    if (usedUnits >= quotaTotal) {
-      throw new QuotaExceededError(quotaTotal, usedUnits);
+    const result = await this.quotaService.checkWithPrisma(tx, userId, now);
+    if (result.exceeded) {
+      throw new QuotaExceededError(result.quotaTotal, result.usedUnits);
     }
-  }
-
-  private async resolveMonthlyQuotaWithPrisma(tx: DbTransactionClient, userId: string, at: Date) {
-    const activeSubscription = await tx.subscription.findFirst({
-      where: {
-        userId,
-        status: "ACTIVE",
-        AND: [
-          {
-            OR: [{ effectiveAt: null }, { effectiveAt: { lte: at } }]
-          },
-          {
-            OR: [{ expireAt: null }, { expireAt: { gt: at } }]
-          }
-        ]
-      },
-      orderBy: [{ effectiveAt: "desc" }, { createdAt: "desc" }]
-    });
-
-    const planId = activeSubscription?.planId || "free";
-    const plan = await tx.plan.findUnique({
-      where: { planId }
-    });
-
-    if (plan?.monthlyQuota && plan.monthlyQuota > 0) {
-      return plan.monthlyQuota;
-    }
-
-    const freePlan = await tx.plan.findUnique({
-      where: { planId: "free" }
-    });
-    return freePlan?.monthlyQuota || FREE_MONTHLY_QUOTA;
-  }
-
-  private async countReservedUnitsWithPrisma(
-    tx: DbTransactionClient,
-    userId: string,
-    periodStart: Date,
-    periodEnd: Date
-  ) {
-    const rows = await tx.$queryRaw<Array<{ usedUnits: number }>>(Prisma.sql`
-      SELECT COALESCE(
-        SUM(
-          CASE
-            WHEN ledger.committed_units > 0 THEN ledger.committed_units
-            ELSE GREATEST(ledger.held_units - ledger.released_units, 0)
-          END
-        ),
-        0
-      )::int AS "usedUnits"
-      FROM (
-        SELECT
-          task_id,
-          COALESCE(SUM(CASE WHEN status = 'COMMITTED' THEN consume_unit ELSE 0 END), 0)::int AS committed_units,
-          COALESCE(SUM(CASE WHEN status = 'HELD' THEN consume_unit ELSE 0 END), 0)::int AS held_units,
-          COALESCE(SUM(CASE WHEN status = 'RELEASED' THEN consume_unit ELSE 0 END), 0)::int AS released_units
-        FROM usage_ledger
-        WHERE user_id = ${userId}
-          AND consume_at >= ${periodStart}
-          AND consume_at < ${periodEnd}
-        GROUP BY task_id
-      ) ledger
-    `);
-
-    return rows[0]?.usedUnits || 0;
-  }
-
-  private countReservedUnitsInMemory(userId: string, periodStart: Date, periodEnd: Date) {
-    const summary = new Map<string, { committed: number; held: number; released: number }>();
-
-    for (const ledger of this.usageLedgers.values()) {
-      if (ledger.userId !== userId) {
-        continue;
-      }
-
-      const consumeAt = Date.parse(ledger.consumeAt);
-      if (!Number.isFinite(consumeAt)) {
-        continue;
-      }
-      if (consumeAt < periodStart.getTime() || consumeAt >= periodEnd.getTime()) {
-        continue;
-      }
-
-      const current = summary.get(ledger.taskId) || { committed: 0, held: 0, released: 0 };
-      if (ledger.status === "COMMITTED") {
-        current.committed += ledger.consumeUnit;
-      } else if (ledger.status === "HELD") {
-        current.held += ledger.consumeUnit;
-      } else {
-        current.released += ledger.consumeUnit;
-      }
-      summary.set(ledger.taskId, current);
-    }
-
-    let usedUnits = 0;
-    for (const item of summary.values()) {
-      if (item.committed > 0) {
-        usedUnits += item.committed;
-      } else {
-        usedUnits += Math.max(0, item.held - item.released);
-      }
-    }
-    return usedUnits;
-  }
-
-  private getCurrentPeriod(referenceDate = new Date()) {
-    const periodStart = new Date(
-      Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth(), 1, 0, 0, 0, 0)
-    );
-    const periodEnd = new Date(
-      Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth() + 1, 1, 0, 0, 0, 0)
-    );
-    return {
-      periodStart,
-      periodEnd
-    };
   }
 
   private buildId(prefix: string) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createWebhookMetricsState, recordDispatchMetrics } from "./metrics";
+import { createWebhookMetricsState, recordDispatchMetrics, renderPrometheusMetrics } from "./metrics";
 
 test("metrics should trigger success-rate alert once per window", () => {
   const state = createWebhookMetricsState(0);
@@ -120,4 +120,33 @@ test("metrics window should reset after ttl", () => {
   assert.equal(reset.snapshot.attempts, 1);
   assert.equal(reset.snapshot.webhook_success_rate, 1);
   assert.equal(reset.successRateAlertTriggered, false);
+});
+
+test("renderPrometheusMetrics should expose key gauges/counters", () => {
+  const state = createWebhookMetricsState(0);
+  const options = {
+    windowMs: 60_000,
+    minSamples: 1,
+    minSuccessRate: 0.5,
+    maxRetryRate: 0.8
+  };
+  recordDispatchMetrics(
+    state,
+    options,
+    {
+      scanned: 2,
+      published: 1,
+      pending: 1,
+      dead: 0,
+      deliveriesCreated: 2,
+      deliverySuccesses: 1,
+      deliveryFailures: 1,
+      retryDeliveries: 1
+    },
+    10
+  );
+  const text = renderPrometheusMetrics(state);
+  assert.match(text, /webhook_success_rate 0.5/);
+  assert.match(text, /webhook_dispatch_attempts_total 2/);
+  assert.match(text, /webhook_dispatch_retry_total 1/);
 });

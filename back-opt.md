@@ -189,5 +189,5 @@
 
 ### 仍待完成
 - P2-1：DTO 校验体系统一（已完成全部含 `@Body` 控制器的 zod 接入，`Query/Param` 逐步迁移中）。
-- P2-3：`tasks.service` 职责拆分（生命周期/配额/幂等/模拟解耦）。
-- P2-4：全链路 traceId + Prometheus 指标体系补齐（已完成 worker->inference->webhook traceId 透传基线，指标侧待补）。
+- P2-3：`tasks.service` 职责拆分（已拆出 `TaskQuotaService`，剩余生命周期/幂等/模拟模块待解耦）。
+- P2-4：全链路 traceId + Prometheus 指标体系补齐（已完成 trace 透传，worker+webhook `/metrics` 基线，API 指标聚合待补）。

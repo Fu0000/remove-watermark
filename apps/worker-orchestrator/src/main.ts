@@ -2,7 +2,17 @@ import type { TaskMediaType, TaskStatus } from "@packages/contracts";
 import { buildStableTraceId, createLogger, readEnv } from "@packages/shared";
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { JobsOptions, Queue, UnrecoverableError, Worker } from "bullmq";
+import { createServer, type Server } from "node:http";
 import { pathToFileURL } from "node:url";
+import {
+  createWorkerMetricsState,
+  observeTaskFailure,
+  observeTaskTransition,
+  renderPrometheusMetrics,
+  setOutboxBatch,
+  setQueueDepth,
+  type WorkerMetricsState
+} from "./metrics";
 
 const appName = "worker-orchestrator";
 const logger = createLogger(appName);
@@ -74,7 +84,7 @@ type TaskStepResult =
   | { kind: "WAIT_MASK"; status: TaskStatus }
   | { kind: "NO_PLAN"; status: TaskStatus }
   | { kind: "VERSION_CONFLICT" }
-  | { kind: "ADVANCED"; status: TaskStatus };
+  | { kind: "ADVANCED"; fromStatus: TaskStatus; status: TaskStatus };
 
 export interface WorkerRuntimeOptions {
   stepDelayMs: number;
@@ -245,6 +255,33 @@ function isUnrecoverableError(error: unknown) {
     return true;
   }
   return readErrorName(error) === "UnrecoverableError";
+}
+
+function toMetricPort(raw: string) {
+  return parseNonNegativeInt(raw, 0);
+}
+
+function startMetricsServer(port: number, metrics: WorkerMetricsState): Server {
+  const server = createServer((request, response) => {
+    const path = request.url || "/";
+    if (path === "/metrics") {
+      response.writeHead(200, { "content-type": "text/plain; version=0.0.4; charset=utf-8" });
+      response.end(renderPrometheusMetrics(metrics));
+      return;
+    }
+    if (path === "/healthz") {
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({ status: "ok" }));
+      return;
+    }
+    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    response.end("not found");
+  });
+
+  server.listen(port, () => {
+    logger.info({ metricsPort: port }, "metrics server started");
+  });
+  return server;
 }
 
 function jitterDelay(baseDelayMs: number, jitterRatio: number) {
@@ -826,7 +863,7 @@ async function advanceTask(input: {
       await handleSuccessSideEffects(tx, input.taskId, input.userId);
     }
 
-    return { kind: "ADVANCED", status: input.nextStatus };
+    return { kind: "ADVANCED", fromStatus: input.expectedStatus, status: input.nextStatus };
   });
 }
 
@@ -923,17 +960,20 @@ export async function processQueueJob(
   queue: OrchestratorQueue,
   taskId: string,
   options: WorkerRuntimeOptions,
-  retryPolicy: RetryPolicyOptions
+  retryPolicy: RetryPolicyOptions,
+  metrics: WorkerMetricsState = createWorkerMetricsState()
 ) {
   const followupJobId = `job_followup_${taskId}`;
 
   for (let index = 0; index < options.maxStepIterations; index += 1) {
     let result: TaskStepResult;
+    const startedAtMs = Date.now();
     try {
       result = await processTaskStep(taskId, options);
     } catch (error) {
       if (isUnrecoverableError(error)) {
         await markTaskFailed(taskId, readErrorMessage(error), "50021");
+        observeTaskFailure(metrics, "50021");
         return;
       }
       throw error;
@@ -971,6 +1011,7 @@ export async function processQueueJob(
     }
 
     if (result.kind === "ADVANCED") {
+      observeTaskTransition(metrics, result.fromStatus, result.status, Date.now() - startedAtMs);
       if (result.status === "SUCCEEDED") {
         return;
       }
@@ -1155,6 +1196,8 @@ async function bootstrap() {
     minioPublicEndpoint: trimTrailingSlash(readEnv("MINIO_PUBLIC_ENDPOINT", "http://127.0.0.1:9000"))
   };
   const workerConcurrency = parsePositiveInt(readEnv("ORCHESTRATOR_WORKER_CONCURRENCY", "4"), 4);
+  const metricsPort = toMetricPort(readEnv("ORCHESTRATOR_METRICS_PORT", "0"));
+  const metrics = createWorkerMetricsState();
   const redisConnection = parseRedisConnection(redisUrl);
 
   const queue: OrchestratorQueue = new Queue<OrchestratorJobData, void, "task.progress">(queueName, {
@@ -1169,7 +1212,7 @@ async function bootstrap() {
   const worker = new Worker<OrchestratorJobData, void, "task.progress">(
     queueName,
     async (job) => {
-      await processQueueJob(queue, job.data.taskId, runtimeOptions, retryPolicy);
+      await processQueueJob(queue, job.data.taskId, runtimeOptions, retryPolicy, metrics);
     },
     {
       connection: redisConnection,
@@ -1206,8 +1249,10 @@ async function bootstrap() {
         return;
       }
 
+      const failureCode = resolveTaskFailureCode(error);
+      observeTaskFailure(metrics, failureCode);
       try {
-        await markTaskFailed(job.data.taskId, readErrorMessage(error), resolveTaskFailureCode(error));
+        await markTaskFailed(job.data.taskId, readErrorMessage(error), failureCode);
       } catch (markError) {
         logger.error(
           {
@@ -1257,6 +1302,7 @@ async function bootstrap() {
       outboxBatchSize,
       outboxMaxRetries,
       workerConcurrency,
+      metricsPort,
       runtimeOptions: {
         stepDelayMs: runtimeOptions.stepDelayMs,
         waitMaskDelayMs: runtimeOptions.waitMaskDelayMs,
@@ -1277,6 +1323,11 @@ async function bootstrap() {
     "service initialized"
   );
 
+  let metricsServer: Server | undefined;
+  if (metricsPort > 0) {
+    metricsServer = startMetricsServer(metricsPort, metrics);
+  }
+
   let running = true;
 
   const stop = async (signal: string) => {
@@ -1288,6 +1339,18 @@ async function bootstrap() {
     await worker.close();
     await queue.close();
     await deadletterQueue.close();
+    if (metricsServer) {
+      await new Promise<void>((resolve, reject) => {
+        metricsServer?.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+      metricsServer = undefined;
+    }
     await prisma.$disconnect();
   };
 
@@ -1310,6 +1373,14 @@ async function bootstrap() {
       if (result.scanned > 0 || result.failed > 0 || result.deadlettered > 0) {
         logger.info(result, "outbox dispatch finished");
       }
+      setOutboxBatch(metrics, result);
+      const queueCounts = await queue.getJobCounts("waiting", "active", "delayed", "failed");
+      setQueueDepth(metrics, {
+        waiting: queueCounts.waiting || 0,
+        active: queueCounts.active || 0,
+        delayed: queueCounts.delayed || 0,
+        failed: queueCounts.failed || 0
+      });
     } catch (error) {
       logger.error({ error }, "outbox dispatch failed");
     }

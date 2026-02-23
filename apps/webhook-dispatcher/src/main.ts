@@ -1,10 +1,12 @@
 import { createLogger, readEnv } from "@packages/shared";
 import { PrismaClient } from "@prisma/client";
+import { createServer, type Server } from "node:http";
 import { dispatchPendingEvents, parseBoolean, parsePositiveInt, parseRetryScheduleMs } from "./dispatcher";
 import {
   createWebhookMetricsState,
   parseRatio,
   recordDispatchMetrics,
+  renderPrometheusMetrics,
   type WebhookMetricsAlertOptions
 } from "./metrics";
 
@@ -14,6 +16,36 @@ const prisma = new PrismaClient();
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseNonNegativeInt(value: string, fallback: number) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return fallback;
+  }
+  return parsed;
+}
+
+function startMetricsServer(port: number, metricsState: ReturnType<typeof createWebhookMetricsState>): Server {
+  const server = createServer((request, response) => {
+    const path = request.url || "/";
+    if (path === "/metrics") {
+      response.writeHead(200, { "content-type": "text/plain; version=0.0.4; charset=utf-8" });
+      response.end(renderPrometheusMetrics(metricsState));
+      return;
+    }
+    if (path === "/healthz") {
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({ status: "ok" }));
+      return;
+    }
+    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    response.end("not found");
+  });
+  server.listen(port, () => {
+    logger.info({ metricsPort: port }, "metrics server started");
+  });
+  return server;
 }
 
 async function bootstrap() {
@@ -31,7 +63,12 @@ async function bootstrap() {
     minSuccessRate: parseRatio(readEnv("WEBHOOK_DISPATCHER_ALERT_MIN_SUCCESS_RATE", "0.95"), 0.95),
     maxRetryRate: parseRatio(readEnv("WEBHOOK_DISPATCHER_ALERT_MAX_RETRY_RATE", "0.3"), 0.3)
   };
+  const metricsPort = parseNonNegativeInt(readEnv("WEBHOOK_DISPATCHER_METRICS_PORT", "0"), 0);
   const metricsState = createWebhookMetricsState();
+  let metricsServer: Server | undefined;
+  if (metricsPort > 0) {
+    metricsServer = startMetricsServer(metricsPort, metricsState);
+  }
 
   logger.info(
     {
@@ -98,6 +135,18 @@ async function bootstrap() {
     running = false;
     logger.info({ signal }, "shutdown signal received");
     await prisma.$disconnect();
+    if (metricsServer) {
+      await new Promise<void>((resolve, reject) => {
+        metricsServer?.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+      metricsServer = undefined;
+    }
   };
 
   process.on("SIGINT", () => {
