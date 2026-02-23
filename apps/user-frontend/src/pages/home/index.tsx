@@ -43,6 +43,10 @@ export default function HomePage() {
     void Taro.navigateTo({ url: "/pages/subscription/index" });
   };
 
+  const handleGoLab = () => {
+    void Taro.navigateTo({ url: "/pages/lab/index" });
+  };
+
   return (
     <PageShell title="去水印工作台" subtitle="上传 -> 处理 -> 下载">
       <View className="home-status">
@@ -65,6 +69,11 @@ export default function HomePage() {
       <View className="home-actions">
         <Button className="home-btn home-btn-ghost" onClick={handleGoSubscription}>
           套餐与订阅
+        </Button>
+      </View>
+      <View className="home-actions">
+        <Button className="home-btn home-btn-ghost" onClick={handleGoLab}>
+          联调实验室（4 媒体）
         </Button>
       </View>
       {errorText ? (

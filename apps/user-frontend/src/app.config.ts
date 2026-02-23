@@ -2,6 +2,7 @@ export default defineAppConfig({
   pages: [
     "pages/home/index",
     "pages/editor/index",
+    "pages/lab/index",
     "pages/tasks/index",
     "pages/result/index",
     "pages/subscription/index",
