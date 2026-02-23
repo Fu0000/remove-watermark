@@ -80,6 +80,13 @@ services:
       MINIO_RESULT_PREFIX: ${MINIO_RESULT_PREFIX:-result}
       MINIO_REGION: ${MINIO_REGION:-us-east-1}
       MINIO_SECURE: "false"
+      INFERENCE_QUEUE_WAIT_SEC: "60"
+      INFERENCE_POOL_IMAGE: ${INFERENCE_POOL_IMAGE:-2}
+      INFERENCE_POOL_VIDEO: ${INFERENCE_POOL_VIDEO:-1}
+      INFERENCE_POOL_DOC: ${INFERENCE_POOL_DOC:-1}
+      INFERENCE_CLEANUP_INTERVAL_SEC: ${INFERENCE_CLEANUP_INTERVAL_SEC:-300}
+      INFERENCE_WORK_TTL_SEC: ${INFERENCE_WORK_TTL_SEC:-86400}
+      INFERENCE_RESULT_TTL_SEC: ${INFERENCE_RESULT_TTL_SEC:-86400}
     volumes:
       - ./.runtime/inference-assets:/data/assets
       - ./.runtime/inference-results:/data/results
@@ -95,19 +102,10 @@ services:
       - minio-init
 
   api-gateway:
-    image: node:20
-    working_dir: /workspace
-    command: >
-      sh -lc "corepack enable &&
-      pnpm install --frozen-lockfile &&
-      pnpm --filter @apps/api-gateway prisma:generate &&
-      until pnpm --filter @apps/api-gateway prisma:push; do
-        echo 'api-gateway waiting for postgres...';
-        sleep 2;
-      done &&
-      pnpm --filter @apps/api-gateway exec tsx src/main.ts"
-    volumes:
-      - ./:/workspace
+    build:
+      context: .
+      dockerfile: docker/node-workspace.Dockerfile
+      target: api-gateway-runtime
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/remove_watermark
       REDIS_URL: redis://redis:6379
@@ -151,21 +149,10 @@ services:
       retries: 30
 
   worker-orchestrator:
-    image: node:20
-    working_dir: /workspace
-    command: >
-      sh -lc "corepack enable &&
-      until pnpm --filter @apps/worker-orchestrator exec tsx --version >/dev/null 2>&1; do
-        echo 'worker-orchestrator waiting for workspace dependencies...';
-        sleep 2;
-      done &&
-      until node -e \"const req=require('http').request({hostname:'api-gateway',port:3000,path:'/v1/auth/wechat-login',method:'POST',headers:{'content-type':'application/json'}},(res)=>process.exit(res.statusCode && res.statusCode >= 200 && res.statusCode < 300 ? 0 : 1));req.on('error',()=>process.exit(1));req.end(JSON.stringify({code:'admin',username:'admin',password:'admin123'}));\"; do
-        echo 'worker-orchestrator waiting for api-gateway health...';
-        sleep 2;
-      done &&
-      pnpm --filter @apps/worker-orchestrator exec tsx src/main.ts"
-    volumes:
-      - ./:/workspace
+    build:
+      context: .
+      dockerfile: docker/node-workspace.Dockerfile
+      target: worker-orchestrator-runtime
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/remove_watermark
       REDIS_URL: redis://redis:6379
@@ -180,6 +167,9 @@ services:
       MINIO_SOURCE_PREFIX: ${MINIO_SOURCE_PREFIX:-source}
       MINIO_RESULT_PREFIX: ${MINIO_RESULT_PREFIX:-result}
       MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://127.0.0.1:${STACK_MINIO_PORT:-9000}}
+      INFERENCE_REQUEST_TIMEOUT_IMAGE_MS: ${INFERENCE_REQUEST_TIMEOUT_IMAGE_MS:-120000}
+      INFERENCE_REQUEST_TIMEOUT_VIDEO_MS: ${INFERENCE_REQUEST_TIMEOUT_VIDEO_MS:-900000}
+      INFERENCE_REQUEST_TIMEOUT_DOC_MS: ${INFERENCE_REQUEST_TIMEOUT_DOC_MS:-300000}
       ORCHESTRATOR_WORKER_CONCURRENCY: "1"
       CI: "true"
     depends_on:
@@ -193,6 +183,23 @@ services:
         condition: service_started
       minio-init:
         condition: service_completed_successfully
+
+  webhook-dispatcher:
+    build:
+      context: .
+      dockerfile: docker/node-workspace.Dockerfile
+      target: webhook-dispatcher-runtime
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/remove_watermark
+      WEBHOOK_DISPATCHER_POLL_MS: "1000"
+      WEBHOOK_DISPATCHER_BATCH_SIZE: "50"
+      WEBHOOK_DISPATCHER_DEFAULT_TIMEOUT_MS: "5000"
+      CI: "true"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      postgres:
+        condition: service_started
 
 volumes:
   pg_data:

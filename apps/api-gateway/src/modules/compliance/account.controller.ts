@@ -23,7 +23,7 @@ export class AccountController {
     @Headers("user-agent") userAgent: string | undefined,
     @Body() body: AccountDeleteRequestBody
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     if (!idempotencyKey) {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
@@ -36,7 +36,7 @@ export class AccountController {
       badRequest(40001, "reason is required", requestIdHeader);
     }
 
-    const result = await this.complianceService.createAccountDeleteRequest("u_1001", reason, idempotencyKey, {
+    const result = await this.complianceService.createAccountDeleteRequest(auth.userId, reason, idempotencyKey, {
       requestId: requestIdHeader,
       ip: parseForwardedIp(forwardedFor),
       userAgent
@@ -56,7 +56,7 @@ export class AccountController {
     @Query("page") pageRaw: string | undefined,
     @Query("pageSize") pageSizeRaw: string | undefined
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     const page = parsePositiveInt(pageRaw, 1);
     const pageSize = parsePositiveInt(pageSizeRaw, 20);
     const normalizedStatus = normalizeDeleteStatus(status);
@@ -64,7 +64,7 @@ export class AccountController {
       badRequest(40001, "status must be one of PENDING/PROCESSING/DONE/FAILED", requestIdHeader);
     }
 
-    const result = await this.complianceService.listAccountDeleteRequests("u_1001", {
+    const result = await this.complianceService.listAccountDeleteRequests(auth.userId, {
       status: normalizedStatus,
       page,
       pageSize
@@ -79,8 +79,8 @@ export class AccountController {
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Param("requestId") requestId: string
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
-    const result = await this.complianceService.getAccountDeleteRequest("u_1001", requestId);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
+    const result = await this.complianceService.getAccountDeleteRequest(auth.userId, requestId);
     if (!result) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
@@ -98,7 +98,7 @@ export class AccountController {
     @Query("page") pageRaw: string | undefined,
     @Query("pageSize") pageSizeRaw: string | undefined
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     const page = parsePositiveInt(pageRaw, 1);
     const pageSize = parsePositiveInt(pageSizeRaw, 20);
 
@@ -109,7 +109,7 @@ export class AccountController {
       badRequest(40001, "to is invalid datetime", requestIdHeader);
     }
 
-    const result = await this.complianceService.listAuditLogs("u_1001", {
+    const result = await this.complianceService.listAuditLogs(auth.userId, {
       action,
       resourceType,
       from,

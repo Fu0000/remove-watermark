@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Headers, HttpCode, Inject, Param, Post } from "@nestjs/common";
 import { ensureAuthorization } from "../../common/auth";
+import { isSupportedMime, type UploadMediaType } from "../../common/media-mime";
 import { badRequest, conflict, notFound } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
 import { ComplianceService } from "../compliance/compliance.service";
@@ -7,7 +8,7 @@ import { ComplianceService } from "../compliance/compliance.service";
 interface UploadPolicyRequest {
   fileName: string;
   fileSize: number;
-  mediaType: "image" | "video" | "pdf" | "ppt";
+  mediaType: UploadMediaType;
   mimeType: string;
   sha256?: string;
 }
@@ -24,7 +25,7 @@ export class AssetsController {
     @Headers("user-agent") userAgent: string | undefined,
     @Body() body: UploadPolicyRequest
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
 
     if (!body.fileName || !body.fileSize || body.fileSize <= 0) {
       badRequest(40001, "参数非法", requestIdHeader);
@@ -34,7 +35,7 @@ export class AssetsController {
       badRequest(40001, "不支持的媒体类型或 MIME", requestIdHeader);
     }
 
-    const payload = await this.complianceService.createUploadPolicy("u_1001", body, {
+    const payload = await this.complianceService.createUploadPolicy(auth.userId, body, {
       requestId: requestIdHeader,
       ip: parseForwardedIp(forwardedFor),
       userAgent
@@ -53,12 +54,12 @@ export class AssetsController {
     @Headers("user-agent") userAgent: string | undefined,
     @Param("assetId") assetId: string
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     if (!idempotencyKey) {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
 
-    const result = await this.complianceService.deleteAsset("u_1001", assetId, idempotencyKey, {
+    const result = await this.complianceService.deleteAsset(auth.userId, assetId, idempotencyKey, {
       requestId: requestIdHeader,
       ip: parseForwardedIp(forwardedFor),
       userAgent
@@ -81,19 +82,4 @@ function parseForwardedIp(forwardedFor: string | undefined): string | undefined 
 
   const first = forwardedFor.split(",")[0]?.trim();
   return first && first.length > 0 ? first : undefined;
-}
-
-const MEDIA_MIME_ALLOWLIST: Record<UploadPolicyRequest["mediaType"], string[]> = {
-  image: ["image/png", "image/jpeg", "image/jpg", "image/webp"],
-  video: ["video/mp4", "video/quicktime", "video/webm"],
-  pdf: ["application/pdf"],
-  ppt: [
-    "application/vnd.ms-powerpoint",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-  ]
-};
-
-function isSupportedMime(mediaType: UploadPolicyRequest["mediaType"], mimeType: string) {
-  const list = MEDIA_MIME_ALLOWLIST[mediaType] || [];
-  return list.includes(mimeType.toLowerCase());
 }

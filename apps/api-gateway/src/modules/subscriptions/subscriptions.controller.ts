@@ -46,7 +46,7 @@ export class SubscriptionsController {
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Body() body: CheckoutRequest
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
 
     if (!body.planId || !body.channel || !body.clientReturnUrl) {
       badRequest(40001, "参数非法", requestIdHeader);
@@ -62,7 +62,7 @@ export class SubscriptionsController {
       badRequest(40001, "参数非法：clientReturnUrl", requestIdHeader);
     }
 
-    const result = await this.subscriptionsService.checkout("u_1001", body);
+    const result = await this.subscriptionsService.checkout(auth.userId, body);
     if (!result) {
       badRequest(40001, "参数非法：planId 不存在", requestIdHeader);
     }
@@ -75,8 +75,8 @@ export class SubscriptionsController {
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
-    const result = await this.subscriptionsService.getMySubscription("u_1001");
+    const auth = ensureAuthorization(authorization, requestIdHeader);
+    const result = await this.subscriptionsService.getMySubscription(auth.userId);
     return ok(result, requestIdHeader);
   }
 
@@ -87,12 +87,12 @@ export class SubscriptionsController {
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Body() body: ConfirmRequest
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     if (!body.orderId) {
       badRequest(40001, "参数非法：orderId", requestIdHeader);
     }
 
-    const result = await this.subscriptionsService.confirmCheckout("u_1001", body.orderId);
+    const result = await this.subscriptionsService.confirmCheckout(auth.userId, body.orderId);
     if (!result) {
       badRequest(40001, "参数非法：orderId 不存在", requestIdHeader);
     }

@@ -37,11 +37,11 @@ export class WebhooksController {
     @Headers("x-tenant-id") tenantIdHeader: string | undefined,
     @Body() body: CreateEndpointRequest
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     this.assertCreatePayload(body, requestIdHeader);
 
-    const result = await this.webhooksService.createEndpoint("u_1001", body, {
-      tenantId: normalizeTenantIdHeader(tenantIdHeader)
+    const result = await this.webhooksService.createEndpoint(auth.userId, body, {
+      tenantId: normalizeTenantIdHeader(tenantIdHeader) || auth.tenantId
     });
     return ok(result, requestIdHeader);
   }
@@ -51,8 +51,8 @@ export class WebhooksController {
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
-    const result = await this.webhooksService.listEndpoints("u_1001");
+    const auth = ensureAuthorization(authorization, requestIdHeader);
+    const result = await this.webhooksService.listEndpoints(auth.userId);
     return ok(result, requestIdHeader);
   }
 
@@ -64,13 +64,13 @@ export class WebhooksController {
     @Param("endpointId") endpointId: string,
     @Body() body: UpdateEndpointRequest
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     if (!endpointId) {
       badRequest(40001, "参数非法：endpointId", requestIdHeader);
     }
     this.assertUpdatePayload(body, requestIdHeader);
 
-    const result = await this.webhooksService.updateEndpoint("u_1001", endpointId, body);
+    const result = await this.webhooksService.updateEndpoint(auth.userId, endpointId, body);
     if (!result) {
       notFound(40401, "资源不存在：endpoint", requestIdHeader);
     }
@@ -85,12 +85,12 @@ export class WebhooksController {
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Param("endpointId") endpointId: string
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     if (!endpointId) {
       badRequest(40001, "参数非法：endpointId", requestIdHeader);
     }
 
-    const deleted = await this.webhooksService.deleteEndpoint("u_1001", endpointId);
+    const deleted = await this.webhooksService.deleteEndpoint(auth.userId, endpointId);
     if (!deleted) {
       notFound(40401, "资源不存在：endpoint", requestIdHeader);
     }
@@ -111,12 +111,12 @@ export class WebhooksController {
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Param("endpointId") endpointId: string
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     if (!endpointId) {
       badRequest(40001, "参数非法：endpointId", requestIdHeader);
     }
 
-    const result = await this.webhooksService.sendTestDelivery("u_1001", endpointId);
+    const result = await this.webhooksService.sendTestDelivery(auth.userId, endpointId);
     if (!result) {
       notFound(40401, "资源不存在：endpoint", requestIdHeader);
     }
@@ -134,12 +134,12 @@ export class WebhooksController {
     @Query("page") page: string | undefined,
     @Query("pageSize") pageSize: string | undefined
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     const normalizedStatus = this.parseDeliveryStatus(status, requestIdHeader);
     const normalizedPage = this.parsePositiveInt(page, 1, "page", requestIdHeader);
     const normalizedPageSize = this.parsePositiveInt(pageSize, 20, "pageSize", requestIdHeader);
 
-    const result = await this.webhooksService.listDeliveries(toUserScope("u_1001"), {
+    const result = await this.webhooksService.listDeliveries(toUserScope(auth.userId), {
       endpointId,
       eventType,
       status: normalizedStatus,
@@ -156,12 +156,12 @@ export class WebhooksController {
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Param("deliveryId") deliveryId: string
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     if (!deliveryId) {
       badRequest(40001, "参数非法：deliveryId", requestIdHeader);
     }
 
-    const retried = await this.webhooksService.retryDelivery(toUserScope("u_1001"), deliveryId);
+    const retried = await this.webhooksService.retryDelivery(toUserScope(auth.userId), deliveryId);
     if (retried.kind === "NOT_FOUND") {
       notFound(40401, "资源不存在：delivery", requestIdHeader);
     }

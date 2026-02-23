@@ -301,8 +301,10 @@ async function resolveEventContext(
       select: {
         taskId: true,
         userId: true,
+        mediaType: true,
         status: true,
         resultUrl: true,
+        resultJson: true,
         errorCode: true,
         errorMessage: true,
         updatedAt: true
@@ -313,14 +315,18 @@ async function resolveEventContext(
     }
 
     if (event.eventType === "task.succeeded") {
+      const resultJson = toRecord(task.resultJson);
+      const artifacts = toArray(resultJson?.artifacts);
       return {
         userId: task.userId,
         occurredAt: task.updatedAt.toISOString(),
         data: {
           taskId: task.taskId,
           userId: task.userId,
+          mediaType: task.mediaType,
           status: task.status,
-          resultUrl: task.resultUrl
+          resultUrl: task.resultUrl,
+          artifacts
         }
       };
     }
@@ -684,6 +690,17 @@ function readErrorMessage(error: unknown) {
     return error;
   }
   return "unknown error";
+}
+
+function toRecord(value: Prisma.JsonValue | null | undefined): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function toArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
 }
 
 function isUniqueViolation(error: unknown) {

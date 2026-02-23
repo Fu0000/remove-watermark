@@ -225,17 +225,16 @@ function normalizeObjectPrefix(prefix: string, fallback: string): string {
   return normalized.length > 0 ? normalized : fallback;
 }
 
-function buildDatePathFromEntityId(entityId: string): string {
-  const match = entityId.match(/^[a-z]+_(\d{10,13})_/i);
-  let epochMs = Date.now();
-  if (match?.[1]) {
-    const raw = Number.parseInt(match[1], 10);
-    if (Number.isFinite(raw) && raw > 0) {
-      epochMs = match[1].length <= 10 ? raw * 1000 : raw;
+function buildDatePathFromDate(reference: Date | string | undefined): string {
+  let date = new Date();
+  if (reference instanceof Date) {
+    date = reference;
+  } else if (typeof reference === "string") {
+    const parsed = new Date(reference);
+    if (!Number.isNaN(parsed.getTime())) {
+      date = parsed;
     }
   }
-
-  const date = new Date(epochMs);
   const yyyy = String(date.getUTCFullYear());
   const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(date.getUTCDate()).padStart(2, "0");
@@ -250,6 +249,36 @@ function buildResultExt(mediaType: TaskMediaType): "png" | "mp4" | "pdf" {
     return "pdf";
   }
   return "png";
+}
+
+const MEDIA_MIME_PREFIX: Record<TaskMediaType, string[]> = {
+  IMAGE: ["image/"],
+  VIDEO: ["video/"],
+  PDF: ["application/pdf"],
+  PPT: [
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ]
+};
+
+function normalizeMediaType(raw: string): TaskMediaType | undefined {
+  if (raw === "IMAGE" || raw === "VIDEO" || raw === "PDF" || raw === "PPT") {
+    return raw;
+  }
+  return undefined;
+}
+
+function isMimeCompatible(mediaType: TaskMediaType, mimeType: string): boolean {
+  const normalized = mimeType.toLowerCase();
+  const allowlist = MEDIA_MIME_PREFIX[mediaType] || [];
+  return allowlist.some((rule) => (rule.endsWith("/") ? normalized.startsWith(rule) : normalized === rule));
+}
+
+export class InvalidTaskAssetError extends Error {
+  constructor(public readonly reason: "NOT_FOUND" | "FORBIDDEN" | "INVALID_MEDIA") {
+    super(`invalid task asset: ${reason}`);
+    this.name = "InvalidTaskAssetError";
+  }
 }
 
 @Injectable()
@@ -615,6 +644,31 @@ export class TasksService {
     return !hasInput;
   }
 
+  async findTasksWaitingForRegions(userId: string, taskIds: string[]): Promise<Set<string>> {
+    if (taskIds.length === 0) {
+      return new Set();
+    }
+
+    if (this.usePrismaStore) {
+      return this.findTasksWaitingForRegionsWithPrisma(userId, taskIds);
+    }
+
+    const waiting = new Set<string>();
+    for (const taskId of taskIds) {
+      const task = this.tasks.get(taskId);
+      if (!task || task.userId !== userId || task.status !== "DETECTING") {
+        continue;
+      }
+      const hasRegion = this.taskRegions.has(taskId);
+      const hasMask = task.mediaType === "IMAGE" && this.taskMasks.has(taskId);
+      if (!hasRegion && !hasMask) {
+        waiting.add(taskId);
+      }
+    }
+
+    return waiting;
+  }
+
   async advanceTaskStatus(userId: string, taskId: string, input: AdvanceTaskStatusInput): Promise<AdvanceTaskStatusResult> {
     if (this.usePrismaStore) {
       return this.advanceTaskStatusWithPrisma(userId, taskId, input);
@@ -821,6 +875,28 @@ export class TasksService {
       const taskId = this.buildId("tsk");
       const taskPolicy = input.taskPolicy || "FAST";
       await this.assertQuotaAvailableWithPrisma(tx, userId, now);
+
+      const asset = await tx.asset.findUnique({
+        where: { assetId: input.assetId },
+        select: {
+          assetId: true,
+          userId: true,
+          mediaType: true,
+          mimeType: true,
+          status: true,
+          deletedAt: true
+        }
+      });
+      if (!asset || asset.deletedAt || asset.status === "DELETED") {
+        throw new InvalidTaskAssetError("NOT_FOUND");
+      }
+      if (asset.userId !== userId) {
+        throw new InvalidTaskAssetError("FORBIDDEN");
+      }
+      const assetMediaType = normalizeMediaType(asset.mediaType);
+      if (!assetMediaType || assetMediaType !== input.mediaType || !isMimeCompatible(input.mediaType, asset.mimeType)) {
+        throw new InvalidTaskAssetError("INVALID_MEDIA");
+      }
 
       await tx.task.create({
         data: {
@@ -1393,6 +1469,57 @@ export class TasksService {
     return false;
   }
 
+  private async findTasksWaitingForRegionsWithPrisma(userId: string, taskIds: string[]): Promise<Set<string>> {
+    const prisma = this.ensurePrismaService();
+    const targets = await prisma.task.findMany({
+      where: {
+        userId,
+        taskId: { in: taskIds },
+        status: "DETECTING"
+      },
+      select: {
+        taskId: true,
+        mediaType: true
+      }
+    });
+    if (targets.length === 0) {
+      return new Set();
+    }
+
+    const targetTaskIds = targets.map((item) => item.taskId);
+    const imageTaskIds = targets
+      .filter((item) => (item.mediaType as TaskMediaType) === "IMAGE")
+      .map((item) => item.taskId);
+
+    const [regions, imageMasks] = await Promise.all([
+      prisma.taskRegion.findMany({
+        where: { taskId: { in: targetTaskIds } },
+        select: { taskId: true }
+      }),
+      imageTaskIds.length > 0
+        ? prisma.taskMask.findMany({
+            where: { taskId: { in: imageTaskIds } },
+            select: { taskId: true }
+          })
+        : Promise.resolve([])
+    ]);
+
+    const regionTaskIds = new Set(regions.map((item) => item.taskId));
+    const imageMaskTaskIds = new Set(imageMasks.map((item) => item.taskId));
+    const waiting = new Set<string>();
+    for (const target of targets) {
+      if (regionTaskIds.has(target.taskId)) {
+        continue;
+      }
+      const mediaType = target.mediaType as TaskMediaType;
+      if (mediaType === "IMAGE" && imageMaskTaskIds.has(target.taskId)) {
+        continue;
+      }
+      waiting.add(target.taskId);
+    }
+    return waiting;
+  }
+
   private async maybeAdvanceForSimulationWithPrisma(taskId: string) {
     const prisma = this.ensurePrismaService();
     const current = await prisma.task.findUnique({
@@ -1435,7 +1562,7 @@ export class TasksService {
       case "PACKAGING":
         nextStatus = "SUCCEEDED";
         progress = 100;
-        resultUrl = this.buildDefaultResultUrl(taskId, current.mediaType as TaskMediaType);
+        resultUrl = this.buildDefaultResultUrl(taskId, current.mediaType as TaskMediaType, current.createdAt);
         break;
       default:
         break;
@@ -1476,7 +1603,7 @@ export class TasksService {
     toStatus: TaskStatus
   ) {
     if (toStatus === "SUCCEEDED") {
-      const resultUrl = task.resultUrl || this.buildDefaultResultUrl(task.taskId, task.mediaType);
+      const resultUrl = task.resultUrl || this.buildDefaultResultUrl(task.taskId, task.mediaType, task.createdAt);
       const resultJson =
         task.resultJson ||
         ({
@@ -1852,7 +1979,7 @@ export class TasksService {
       case "PACKAGING":
         nextStatus = "SUCCEEDED";
         progress = 100;
-        resultUrl = this.buildDefaultResultUrl(taskId, current.mediaType);
+        resultUrl = this.buildDefaultResultUrl(taskId, current.mediaType, current.createdAt);
         break;
       default:
         break;
@@ -1883,7 +2010,7 @@ export class TasksService {
 
   private handlePostTransitionUnsafe(task: TaskRecord, userId: string, fromStatus: TaskStatus, toStatus: TaskStatus) {
     if (toStatus === "SUCCEEDED") {
-      const resultUrl = task.resultUrl || this.buildDefaultResultUrl(task.taskId, task.mediaType);
+      const resultUrl = task.resultUrl || this.buildDefaultResultUrl(task.taskId, task.mediaType, task.createdAt);
       task.resultUrl = resultUrl;
       task.resultJson =
         task.resultJson ||
@@ -2148,8 +2275,8 @@ export class TasksService {
     return `${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;
   }
 
-  private buildDefaultResultUrl(taskId: string, mediaType: TaskMediaType): string {
-    const datePath = buildDatePathFromEntityId(taskId);
+  private buildDefaultResultUrl(taskId: string, mediaType: TaskMediaType, createdAt?: Date | string): string {
+    const datePath = buildDatePathFromDate(createdAt);
     const ext = buildResultExt(mediaType);
     return `${this.minioPublicEndpoint}/${this.minioResultBucket}/${this.minioResultPrefix}/${datePath}/${taskId}.${ext}`;
   }

@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Headers, HttpCode, Inject, Param, Post }
 import { ensureAuthorization } from "../../common/auth";
 import { badRequest, conflict, forbidden, notFound, unprocessableEntity } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
-import { QuotaExceededError, TasksService } from "./tasks.service";
+import { InvalidTaskAssetError, QuotaExceededError, TasksService } from "./tasks.service";
 import type { TaskMediaType, TaskPolicy } from "@packages/contracts";
 import { ComplianceService } from "../compliance/compliance.service";
 
@@ -42,7 +42,7 @@ export class TasksController {
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Body() body: CreateTaskRequest
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
 
     if (!idempotencyKey) {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
@@ -54,10 +54,19 @@ export class TasksController {
 
     let result: Awaited<ReturnType<TasksService["createTask"]>>;
     try {
-      result = await this.tasksService.createTask("u_1001", idempotencyKey, body);
+      result = await this.tasksService.createTask(auth.userId, idempotencyKey, body);
     } catch (error) {
       if (error instanceof QuotaExceededError) {
         forbidden(40302, `配额不足（quota=${error.quotaTotal}, used=${error.usedUnits}）`, requestIdHeader);
+      }
+      if (error instanceof InvalidTaskAssetError) {
+        if (error.reason === "NOT_FOUND") {
+          notFound(40401, "资源不存在", requestIdHeader);
+        }
+        if (error.reason === "FORBIDDEN") {
+          forbidden(40301, "权限不足", requestIdHeader);
+        }
+        badRequest(40001, "参数非法：asset 与 mediaType 不匹配", requestIdHeader);
       }
       throw error;
     }
@@ -92,20 +101,20 @@ export class TasksController {
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
-    const items = await this.tasksService.listByUser("u_1001");
-    const visibleItems = await this.complianceService.filterVisibleTasks("u_1001", items);
-    const enhancedItems = await Promise.all(
-      visibleItems.map(async (item) => {
-        const waiting = await this.tasksService.isWaitingForRegions("u_1001", item.taskId);
-        if (!waiting) {
-          return item;
-        }
-        return {
-          ...item,
-          waitReason: "WAITING_REGIONS" as const
-        };
-      })
+    const auth = ensureAuthorization(authorization, requestIdHeader);
+    const items = await this.tasksService.listByUser(auth.userId);
+    const visibleItems = await this.complianceService.filterVisibleTasks(auth.userId, items);
+    const waitingTaskIds = await this.tasksService.findTasksWaitingForRegions(
+      auth.userId,
+      visibleItems.map((item) => item.taskId)
+    );
+    const enhancedItems = visibleItems.map((item) =>
+      waitingTaskIds.has(item.taskId)
+        ? {
+            ...item,
+            waitReason: "WAITING_REGIONS" as const
+          }
+        : item
     );
 
     return ok(
@@ -125,17 +134,17 @@ export class TasksController {
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Param("taskId") taskId: string
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
-    if (await this.complianceService.isTaskDeleted("u_1001", taskId)) {
+    const auth = ensureAuthorization(authorization, requestIdHeader);
+    if (await this.complianceService.isTaskDeleted(auth.userId, taskId)) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
 
-    const task = await this.tasksService.getByUser("u_1001", taskId);
+    const task = await this.tasksService.getByUser(auth.userId, taskId);
     if (!task) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
 
-    const waiting = await this.tasksService.isWaitingForRegions("u_1001", taskId);
+    const waiting = await this.tasksService.isWaitingForRegions(auth.userId, taskId);
     return ok(
       waiting
         ? {
@@ -155,15 +164,15 @@ export class TasksController {
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Param("taskId") taskId: string
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     if (!idempotencyKey) {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
-    if (await this.complianceService.isTaskDeleted("u_1001", taskId)) {
+    if (await this.complianceService.isTaskDeleted(auth.userId, taskId)) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
 
-    const result = await this.tasksService.retry("u_1001", taskId, idempotencyKey);
+    const result = await this.tasksService.retry(auth.userId, taskId, idempotencyKey);
     if (result.kind === "NOT_FOUND") {
       notFound(40401, "资源不存在", requestIdHeader);
     }
@@ -194,11 +203,11 @@ export class TasksController {
     @Param("taskId") taskId: string,
     @Body() body: UpsertMaskRequest
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     if (!idempotencyKey) {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
-    if (await this.complianceService.isTaskDeleted("u_1001", taskId)) {
+    if (await this.complianceService.isTaskDeleted(auth.userId, taskId)) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
 
@@ -206,7 +215,7 @@ export class TasksController {
       badRequest(40001, "参数非法", requestIdHeader);
     }
 
-    const task = await this.tasksService.getByUser("u_1001", taskId, { advance: false });
+    const task = await this.tasksService.getByUser(auth.userId, taskId, { advance: false });
     if (!task) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
@@ -214,7 +223,7 @@ export class TasksController {
       badRequest(40001, "仅 IMAGE 任务支持 mask 接口", requestIdHeader);
     }
 
-    const result = await this.tasksService.upsertMask("u_1001", taskId, body);
+    const result = await this.tasksService.upsertMask(auth.userId, taskId, body);
     if (!result) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
@@ -242,11 +251,11 @@ export class TasksController {
     @Param("taskId") taskId: string,
     @Body() body: UpsertRegionsRequest
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     if (!idempotencyKey) {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
-    if (await this.complianceService.isTaskDeleted("u_1001", taskId)) {
+    if (await this.complianceService.isTaskDeleted(auth.userId, taskId)) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
 
@@ -254,7 +263,7 @@ export class TasksController {
       badRequest(40001, "参数非法", requestIdHeader);
     }
 
-    const result = await this.tasksService.upsertRegions("u_1001", taskId, body);
+    const result = await this.tasksService.upsertRegions(auth.userId, taskId, body);
     if (!result) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
@@ -281,15 +290,15 @@ export class TasksController {
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Param("taskId") taskId: string
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     if (!idempotencyKey) {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
-    if (await this.complianceService.isTaskDeleted("u_1001", taskId)) {
+    if (await this.complianceService.isTaskDeleted(auth.userId, taskId)) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
 
-    const result = await this.tasksService.cancel("u_1001", taskId, idempotencyKey);
+    const result = await this.tasksService.cancel(auth.userId, taskId, idempotencyKey);
     if (result.kind === "NOT_FOUND") {
       notFound(40401, "资源不存在", requestIdHeader);
     }
@@ -317,12 +326,12 @@ export class TasksController {
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Param("taskId") taskId: string
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
-    if (await this.complianceService.isTaskDeleted("u_1001", taskId)) {
+    const auth = ensureAuthorization(authorization, requestIdHeader);
+    if (await this.complianceService.isTaskDeleted(auth.userId, taskId)) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
 
-    const task = await this.tasksService.getByUser("u_1001", taskId);
+    const task = await this.tasksService.getByUser(auth.userId, taskId);
     if (!task) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
@@ -353,12 +362,12 @@ export class TasksController {
     @Headers("user-agent") userAgent: string | undefined,
     @Param("taskId") taskId: string
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
+    const auth = ensureAuthorization(authorization, requestIdHeader);
     if (!idempotencyKey) {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
 
-    const result = await this.complianceService.deleteTaskView("u_1001", taskId, idempotencyKey, {
+    const result = await this.complianceService.deleteTaskView(auth.userId, taskId, idempotencyKey, {
       requestId: requestIdHeader,
       ip: parseForwardedIp(forwardedFor),
       userAgent

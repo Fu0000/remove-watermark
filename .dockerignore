@@ -1,0 +1,10 @@
+.git
+.gitignore
+.DS_Store
+.runtime
+node_modules
+.pnpm-store
+**/node_modules
+**/.DS_Store
+**/__pycache__
+**/dist

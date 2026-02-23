@@ -12,8 +12,8 @@ export class UsageController {
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined
   ) {
-    ensureAuthorization(authorization, requestIdHeader);
-    const usage = await this.subscriptionsService.getMyUsage("u_1001");
+    const auth = ensureAuthorization(authorization, requestIdHeader);
+    const usage = await this.subscriptionsService.getMyUsage(auth.userId);
     return ok(usage, requestIdHeader);
   }
 }

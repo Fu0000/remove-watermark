@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Prisma } from "@prisma/client";
+import { isSupportedMime, type UploadMediaType } from "../../common/media-mime";
 import type { TaskRecord } from "../tasks/tasks.service";
 import { TasksService } from "../tasks/tasks.service";
 import { PrismaService } from "../common/prisma.service";
@@ -9,7 +10,7 @@ import { PrismaService } from "../common/prisma.service";
 interface UploadPolicyInput {
   fileName: string;
   fileSize: number;
-  mediaType: "image" | "video" | "pdf" | "ppt";
+  mediaType: UploadMediaType;
   mimeType: string;
   sha256?: string;
 }
@@ -154,15 +155,6 @@ export interface ProcessDeleteRequestsSummary {
 
 const DELETE_REQUEST_SLA_HOURS = 24;
 const DEFAULT_AUDIT_RETENTION_DAYS = 180;
-const MEDIA_MIME_ALLOWLIST: Record<UploadPolicyInput["mediaType"], string[]> = {
-  image: ["image/png", "image/jpeg", "image/jpg", "image/webp"],
-  video: ["video/mp4", "video/quicktime", "video/webm"],
-  pdf: ["application/pdf"],
-  ppt: [
-    "application/vnd.ms-powerpoint",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-  ]
-};
 
 @Injectable()
 export class ComplianceService {
@@ -202,9 +194,7 @@ export class ComplianceService {
     headers: Record<string, string>;
     expireAt: string;
   }> {
-    const normalizedMimeType = input.mimeType.toLowerCase();
-    const supportedMimeList = MEDIA_MIME_ALLOWLIST[input.mediaType] || [];
-    if (!supportedMimeList.includes(normalizedMimeType)) {
+    if (!isSupportedMime(input.mediaType, input.mimeType)) {
       throw new Error(`unsupported mimeType for ${input.mediaType}: ${input.mimeType}`);
     }
 

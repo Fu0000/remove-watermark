@@ -83,6 +83,9 @@ export interface WorkerRuntimeOptions {
   followupDelayMs: number;
   inferenceGatewayUrl: string;
   inferenceSharedToken: string;
+  inferenceRequestTimeoutImageMs: number;
+  inferenceRequestTimeoutVideoMs: number;
+  inferenceRequestTimeoutDocMs: number;
   resultExpireDays: number;
   assetSourceMode: "minio" | "local";
   minioAssetBucket: string;
@@ -182,24 +185,24 @@ function normalizeObjectPrefix(prefix: string, fallback: string) {
   return normalized.length > 0 ? normalized : fallback;
 }
 
-function buildDatePathFromEntityId(entityId: string) {
-  const match = entityId.match(/^[a-z]+_(\d{10,13})_/i);
-  let epochMs = Date.now();
-  if (match?.[1]) {
-    const raw = Number.parseInt(match[1], 10);
-    if (Number.isFinite(raw) && raw > 0) {
-      epochMs = match[1].length <= 10 ? raw * 1000 : raw;
+function buildDatePath(reference: Date | string | null | undefined) {
+  let date = new Date();
+  if (reference instanceof Date) {
+    date = reference;
+  } else if (typeof reference === "string") {
+    const parsed = new Date(reference);
+    if (!Number.isNaN(parsed.getTime())) {
+      date = parsed;
     }
   }
-  const date = new Date(epochMs);
   const yyyy = String(date.getUTCFullYear());
   const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(date.getUTCDate()).padStart(2, "0");
   return `${yyyy}/${mm}/${dd}`;
 }
 
-function buildResultObjectKey(runtime: WorkerRuntimeOptions, taskId: string, ext: string) {
-  const datePath = buildDatePathFromEntityId(taskId);
+function buildResultObjectKey(runtime: WorkerRuntimeOptions, taskId: string, ext: string, createdAt?: Date | string | null) {
+  const datePath = buildDatePath(createdAt);
   return `${runtime.minioResultPrefix}/${datePath}/${taskId}.${ext}`;
 }
 
@@ -355,19 +358,20 @@ async function publishDeadletter(
 function buildDefaultResultUrl(
   runtime: WorkerRuntimeOptions,
   taskId: string,
-  mediaType: TaskMediaType
+  mediaType: TaskMediaType,
+  createdAt?: Date | string | null
 ) {
   const ext = mediaType === "VIDEO" ? "mp4" : mediaType === "PDF" || mediaType === "PPT" ? "pdf" : "png";
   return joinUrl(
     runtime.minioPublicEndpoint,
-    `${runtime.minioResultBucket}/${buildResultObjectKey(runtime, taskId, ext)}`
+    `${runtime.minioResultBucket}/${buildResultObjectKey(runtime, taskId, ext, createdAt)}`
   );
 }
 
-function buildDefaultZipUrl(runtime: WorkerRuntimeOptions, taskId: string) {
+function buildDefaultZipUrl(runtime: WorkerRuntimeOptions, taskId: string, createdAt?: Date | string | null) {
   return joinUrl(
     runtime.minioPublicEndpoint,
-    `${runtime.minioResultBucket}/${buildResultObjectKey(runtime, taskId, "zip")}`
+    `${runtime.minioResultBucket}/${buildResultObjectKey(runtime, taskId, "zip", createdAt)}`
   );
 }
 
@@ -375,17 +379,43 @@ function buildExpireAt(days: number) {
   return new Date(Date.now() + days * 24 * 3600 * 1000).toISOString();
 }
 
-function buildAssetSourcePath(
+async function buildAssetSourcePath(
   runtime: WorkerRuntimeOptions,
   task: {
     assetId: string;
+    createdAt?: Date | null;
   }
 ) {
   if (runtime.assetSourceMode !== "minio") {
     return undefined;
   }
-  const datePath = buildDatePathFromEntityId(task.assetId);
+  let createdAt: Date | null = task.createdAt || null;
+  if (process.env.DATABASE_URL) {
+    try {
+      const asset = await prisma.asset.findUnique({
+        where: { assetId: task.assetId },
+        select: { createdAt: true }
+      });
+      createdAt = asset?.createdAt || createdAt;
+    } catch (error) {
+      logger.warn(
+        {
+          assetId: task.assetId,
+          error
+        },
+        "failed to load asset createdAt, fallback to task createdAt"
+      );
+    }
+  }
+  const datePath = buildDatePath(createdAt);
   return `minio://${runtime.minioAssetBucket}/${runtime.minioSourcePrefix}/${datePath}/${task.assetId}`;
+}
+
+function serializeTaskCreatedAt(value: Date | null | undefined): string | undefined {
+  if (!(value instanceof Date)) {
+    return undefined;
+  }
+  return value.toISOString();
 }
 
 function toRecord(value: Prisma.JsonValue | null | undefined): Record<string, unknown> | undefined {
@@ -398,18 +428,34 @@ function toRecord(value: Prisma.JsonValue | null | undefined): Record<string, un
 export async function callInferenceGateway<T>(
   runtime: WorkerRuntimeOptions,
   path: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  options: {
+    timeoutMs: number;
+  }
 ): Promise<T> {
   const taskId = typeof payload.taskId === "string" ? payload.taskId : undefined;
-  logger.debug({ taskId, path }, "inference request");
-  const response = await fetch(`${runtime.inferenceGatewayUrl}${path}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-inference-token": runtime.inferenceSharedToken
-    },
-    body: JSON.stringify(payload)
-  });
+  logger.debug({ taskId, path, timeoutMs: options.timeoutMs }, "inference request");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(`${runtime.inferenceGatewayUrl}${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-inference-token": runtime.inferenceSharedToken
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (readErrorName(error) === "AbortError") {
+      throw new Error(`inference timeout after ${options.timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const body = await response.text();
@@ -420,6 +466,30 @@ export async function callInferenceGateway<T>(
   }
 
   return (await response.json()) as T;
+}
+
+function resolveInferenceTimeoutMs(
+  runtime: WorkerRuntimeOptions,
+  mediaType: TaskMediaType
+) {
+  if (mediaType === "VIDEO") {
+    return runtime.inferenceRequestTimeoutVideoMs;
+  }
+  if (mediaType === "PDF" || mediaType === "PPT") {
+    return runtime.inferenceRequestTimeoutDocMs;
+  }
+  return runtime.inferenceRequestTimeoutImageMs;
+}
+
+function resolveTaskFailureCode(error: unknown): string {
+  const message = readErrorMessage(error).toLowerCase();
+  if (message.includes("timeout")) {
+    return "50023";
+  }
+  if (isUnrecoverableError(error)) {
+    return "50021";
+  }
+  return "50001";
 }
 
 async function handleSuccessSideEffects(tx: Prisma.TransactionClient, taskId: string, userId: string) {
@@ -536,26 +606,44 @@ async function executePreprocessing(
     taskId: string;
     assetId: string;
     mediaType: string;
+    createdAt: Date;
   },
   runtime: WorkerRuntimeOptions
 ) {
   logger.debug({ taskId: task.taskId, mediaType: task.mediaType }, "execute preprocessing");
-  const sourcePath = buildAssetSourcePath(runtime, task);
+  const sourcePath = await buildAssetSourcePath(runtime, task);
+  const timeoutMs = resolveInferenceTimeoutMs(runtime, task.mediaType as TaskMediaType);
   if (task.mediaType === "PPT") {
-    await callInferenceGateway(runtime, "/internal/doc/ppt-to-pdf", {
-      taskId: task.taskId,
-      assetId: task.assetId,
-      sourcePath
-    });
+    await callInferenceGateway(
+      runtime,
+      "/internal/doc/ppt-to-pdf",
+      {
+        taskId: task.taskId,
+        assetId: task.assetId,
+        sourcePath,
+        taskCreatedAt: serializeTaskCreatedAt(task.createdAt)
+      },
+      {
+        timeoutMs
+      }
+    );
   }
 
   if (task.mediaType === "PDF" || task.mediaType === "PPT") {
-    await callInferenceGateway(runtime, "/internal/doc/render-pdf", {
-      taskId: task.taskId,
-      assetId: task.assetId,
-      mediaType: task.mediaType,
-      sourcePath
-    });
+    await callInferenceGateway(
+      runtime,
+      "/internal/doc/render-pdf",
+      {
+        taskId: task.taskId,
+        assetId: task.assetId,
+        mediaType: task.mediaType,
+        sourcePath,
+        taskCreatedAt: serializeTaskCreatedAt(task.createdAt)
+      },
+      {
+        timeoutMs
+      }
+    );
   }
 }
 
@@ -564,6 +652,7 @@ async function executeInpainting(
     taskId: string;
     assetId: string;
     mediaType: string;
+    createdAt: Date;
   },
   runtime: WorkerRuntimeOptions
 ) {
@@ -575,7 +664,7 @@ async function executeInpainting(
     where: { taskId: task.taskId }
   });
 
-  const sourcePath = buildAssetSourcePath(runtime, task);
+  const sourcePath = await buildAssetSourcePath(runtime, task);
   const regionsPayload =
     (region?.regionsJson as Prisma.JsonValue | undefined) ||
     ({
@@ -583,31 +672,56 @@ async function executeInpainting(
       brushStrokes: (mask?.brushStrokes as Prisma.JsonValue | undefined) || []
     } satisfies Record<string, unknown>);
 
+  const timeoutMs = resolveInferenceTimeoutMs(runtime, task.mediaType as TaskMediaType);
   if (task.mediaType === "VIDEO") {
-    return callInferenceGateway<{ outputUrl?: string }>(runtime, "/internal/inpaint/video", {
-      taskId: task.taskId,
-      assetId: task.assetId,
-      regions: regionsPayload,
-      sourcePath
-    });
+    return callInferenceGateway<{ outputUrl?: string }>(
+      runtime,
+      "/internal/inpaint/video",
+      {
+        taskId: task.taskId,
+        assetId: task.assetId,
+        regions: regionsPayload,
+        sourcePath,
+        taskCreatedAt: serializeTaskCreatedAt(task.createdAt)
+      },
+      {
+        timeoutMs
+      }
+    );
   }
 
   if (task.mediaType === "PDF" || task.mediaType === "PPT") {
-    return callInferenceGateway<{ outputUrl?: string }>(runtime, "/internal/doc/inpaint-pages", {
+    return callInferenceGateway<{ outputUrl?: string }>(
+      runtime,
+      "/internal/doc/inpaint-pages",
+      {
+        taskId: task.taskId,
+        assetId: task.assetId,
+        mediaType: task.mediaType,
+        regions: regionsPayload,
+        taskCreatedAt: serializeTaskCreatedAt(task.createdAt)
+      },
+      {
+        timeoutMs
+      }
+    );
+  }
+
+  return callInferenceGateway<{ outputUrl?: string }>(
+    runtime,
+    "/internal/inpaint/image",
+    {
       taskId: task.taskId,
       assetId: task.assetId,
       mediaType: task.mediaType,
-      regions: regionsPayload
-    });
-  }
-
-  return callInferenceGateway<{ outputUrl?: string }>(runtime, "/internal/inpaint/image", {
-    taskId: task.taskId,
-    assetId: task.assetId,
-    mediaType: task.mediaType,
-    regions: regionsPayload,
-    sourcePath
-  });
+      regions: regionsPayload,
+      sourcePath,
+      taskCreatedAt: serializeTaskCreatedAt(task.createdAt)
+    },
+    {
+      timeoutMs
+    }
+  );
 }
 
 async function executePackaging(
@@ -616,16 +730,17 @@ async function executePackaging(
     assetId: string;
     mediaType: string;
     resultJson: Prisma.JsonValue | null;
+    createdAt: Date;
   },
   runtime: WorkerRuntimeOptions
 ): Promise<PackagingResult> {
   logger.debug({ taskId: task.taskId, mediaType: task.mediaType }, "execute packaging");
   const staged = toRecord(task.resultJson)?.staging as Record<string, unknown> | undefined;
-  const defaultUrl = buildDefaultResultUrl(runtime, task.taskId, task.mediaType as TaskMediaType);
+  const defaultUrl = buildDefaultResultUrl(runtime, task.taskId, task.mediaType as TaskMediaType, task.createdAt);
   const expireAt = buildExpireAt(runtime.resultExpireDays);
 
   if (task.mediaType === "PDF" || task.mediaType === "PPT") {
-    const sourcePath = buildAssetSourcePath(runtime, task);
+    const sourcePath = await buildAssetSourcePath(runtime, task);
     const packaged = await callInferenceGateway<{ resultUrl?: string; pdfUrl?: string; zipUrl?: string }>(
       runtime,
       "/internal/doc/package",
@@ -634,7 +749,11 @@ async function executePackaging(
         assetId: task.assetId,
         mediaType: task.mediaType,
         staged,
-        sourcePath
+        sourcePath,
+        taskCreatedAt: serializeTaskCreatedAt(task.createdAt)
+      },
+      {
+        timeoutMs: runtime.inferenceRequestTimeoutDocMs
       }
     );
 
@@ -644,7 +763,7 @@ async function executePackaging(
     );
     const zipUrl = normalizePublicUrl(
       runtime,
-      packaged.zipUrl || buildDefaultZipUrl(runtime, task.taskId)
+      packaged.zipUrl || buildDefaultZipUrl(runtime, task.taskId, task.createdAt)
     );
     return {
       resultUrl: pdfUrl,
@@ -763,7 +882,7 @@ export async function processTaskStep(
       const inpaint = await executeInpainting(task, runtime);
       const outputUrl = inpaint.outputUrl
         ? normalizePublicUrl(runtime, inpaint.outputUrl)
-        : buildDefaultResultUrl(runtime, taskId, task.mediaType as TaskMediaType);
+        : buildDefaultResultUrl(runtime, taskId, task.mediaType as TaskMediaType, task.createdAt);
       return advanceTask({
         taskId,
         userId: task.userId,
@@ -1011,6 +1130,18 @@ async function bootstrap() {
     followupDelayMs: parsePositiveInt(readEnv("ORCHESTRATOR_FOLLOWUP_DELAY_MS", "1000"), 1000),
     inferenceGatewayUrl: readEnv("INFERENCE_GATEWAY_URL", "http://127.0.0.1:8088"),
     inferenceSharedToken: readEnv("INFERENCE_SHARED_TOKEN", "inference-local-token"),
+    inferenceRequestTimeoutImageMs: parsePositiveInt(
+      readEnv("INFERENCE_REQUEST_TIMEOUT_IMAGE_MS", readEnv("INFERENCE_REQUEST_TIMEOUT_MS", "120000")),
+      120000
+    ),
+    inferenceRequestTimeoutVideoMs: parsePositiveInt(
+      readEnv("INFERENCE_REQUEST_TIMEOUT_VIDEO_MS", readEnv("INFERENCE_REQUEST_TIMEOUT_MS", "900000")),
+      900000
+    ),
+    inferenceRequestTimeoutDocMs: parsePositiveInt(
+      readEnv("INFERENCE_REQUEST_TIMEOUT_DOC_MS", readEnv("INFERENCE_REQUEST_TIMEOUT_MS", "300000")),
+      300000
+    ),
     resultExpireDays: parsePositiveInt(readEnv("RESULT_EXPIRE_DAYS", "30"), 30),
     assetSourceMode: (readEnv("ASSET_SOURCE_MODE", "minio").toLowerCase() === "local" ? "local" : "minio") as
       | "minio"
@@ -1073,6 +1204,17 @@ async function bootstrap() {
         return;
       }
 
+      try {
+        await markTaskFailed(job.data.taskId, readErrorMessage(error), resolveTaskFailureCode(error));
+      } catch (markError) {
+        logger.error(
+          {
+            taskId: job.data.taskId,
+            markError
+          },
+          "failed to mark task as failed on final worker error"
+        );
+      }
       recordProcessedMetric(deadletterAlertState, deadletterAlertOptions);
       await publishDeadletter(
         deadletterQueue,
@@ -1119,6 +1261,9 @@ async function bootstrap() {
         maxStepIterations: runtimeOptions.maxStepIterations,
         followupDelayMs: runtimeOptions.followupDelayMs,
         inferenceGatewayUrl: runtimeOptions.inferenceGatewayUrl,
+        inferenceRequestTimeoutImageMs: runtimeOptions.inferenceRequestTimeoutImageMs,
+        inferenceRequestTimeoutVideoMs: runtimeOptions.inferenceRequestTimeoutVideoMs,
+        inferenceRequestTimeoutDocMs: runtimeOptions.inferenceRequestTimeoutDocMs,
         resultExpireDays: runtimeOptions.resultExpireDays
       },
       retryPolicy,

@@ -89,7 +89,25 @@ async function bootstrap() {
     return;
   }
 
-  while (true) {
+  let running = true;
+
+  const stop = async (signal: string) => {
+    if (!running) {
+      return;
+    }
+    running = false;
+    logger.info({ signal }, "shutdown signal received");
+    await prisma.$disconnect();
+  };
+
+  process.on("SIGINT", () => {
+    void stop("SIGINT");
+  });
+  process.on("SIGTERM", () => {
+    void stop("SIGTERM");
+  });
+
+  while (running) {
     try {
       const result = await dispatchPendingEvents(prisma, {
         batchSize,
@@ -136,6 +154,9 @@ async function bootstrap() {
       logger.error({ error }, "webhook dispatch batch failed");
     }
 
+    if (!running) {
+      break;
+    }
     await sleep(pollMs);
   }
 }
