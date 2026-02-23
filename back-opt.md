@@ -189,5 +189,5 @@
 - P2-5：推理工作目录与结果目录增加 TTL 清理策略。
 
 ### 仍待完成
-- P2-1：DTO 校验体系统一（已完成全部含 `@Body` 控制器的 zod 接入，`Query/Param` 逐步迁移中）。
+- P2-1：DTO 校验体系统一（已完成全部含 `@Body` 控制器的 zod 接入，`Query/Param` 已覆盖 `webhooks` 与 `account`，其余控制器逐步迁移中）。
 - P2-3：`tasks.service` 职责拆分（已拆出 `TaskQuotaService`，剩余生命周期/幂等/模拟模块待解耦）。
