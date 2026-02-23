@@ -5,8 +5,11 @@ node_modules
 coverage
 dist
 .temp
+.runtime
 *.log
 *.tsbuildinfo
+.DS_Store
+__pycache__/
 .env
 .env.*
 !.env.example

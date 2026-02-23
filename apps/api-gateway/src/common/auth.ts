@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { unauthorized } from "./http-errors";
+import { resolveJwtSecret } from "./jwt";
 
 export interface AuthContext {
   userId: string;
@@ -39,14 +40,14 @@ export function ensureAuthorization(authHeader: string | undefined, requestId?: 
     };
   }
 
-  const allowLegacy = parseBoolEnv(process.env.AUTH_ALLOW_LEGACY_BEARER, process.env.NODE_ENV !== "production");
+  const allowLegacy = parseBoolEnv(process.env.AUTH_ALLOW_LEGACY_BEARER, false);
   if (!allowLegacy) {
     unauthorized(40101, "鉴权失败", requestId);
   }
 
   return {
-    userId: resolveLegacyUserId(token),
-    tenantId: resolveLegacyTenantId(token),
+    userId: resolveLegacyUserId(token, requestId),
+    tenantId: resolveLegacyTenantId(token, requestId),
     token
   };
 }
@@ -119,9 +120,9 @@ function validateJwt(token: string, parsed: { header: Record<string, unknown>; p
     }
   }
 
-  const secret = process.env.AUTH_JWT_SECRET;
+  const secret = resolveJwtSecret();
   if (!secret) {
-    const allowUnsigned = parseBoolEnv(process.env.AUTH_ALLOW_UNSIGNED_JWT, process.env.NODE_ENV !== "production");
+    const allowUnsigned = parseBoolEnv(process.env.AUTH_ALLOW_UNSIGNED_JWT, false);
     if (!allowUnsigned) {
       unauthorized(40101, "鉴权失败", requestId);
     }
@@ -143,7 +144,7 @@ function validateJwt(token: string, parsed: { header: Record<string, unknown>; p
   }
 }
 
-function resolveLegacyUserId(token: string): string {
+function resolveLegacyUserId(token: string, requestId?: string): string {
   if (token.startsWith("user:")) {
     const userId = normalizeUserId(token.slice("user:".length));
     if (userId) {
@@ -151,20 +152,37 @@ function resolveLegacyUserId(token: string): string {
     }
   }
 
-  return process.env.AUTH_LEGACY_DEFAULT_USER_ID || "u_1001";
+  if (token.startsWith("tenant:")) {
+    const parts = token.split(":");
+    const userId = normalizeUserId(parts[2]);
+    if (userId) {
+      return userId;
+    }
+  }
+
+  const fallbackUserId = normalizeUserId(process.env.AUTH_LEGACY_DEFAULT_USER_ID);
+  if (fallbackUserId) {
+    return fallbackUserId;
+  }
+
+  unauthorized(40101, "鉴权失败", requestId);
 }
 
-function resolveLegacyTenantId(token: string): string {
+function resolveLegacyTenantId(token: string, requestId?: string): string {
   if (token.startsWith("tenant:")) {
-    const rest = token.slice("tenant:".length);
-    const [tenant] = rest.split(":");
-    const normalized = normalizeUserId(tenant);
+    const parts = token.split(":");
+    const normalized = normalizeUserId(parts[1]);
     if (normalized) {
       return normalized;
     }
   }
 
-  return process.env.AUTH_LEGACY_DEFAULT_TENANT_ID || resolveLegacyUserId(token);
+  const fallbackTenantId = normalizeUserId(process.env.AUTH_LEGACY_DEFAULT_TENANT_ID);
+  if (fallbackTenantId) {
+    return fallbackTenantId;
+  }
+
+  return resolveLegacyUserId(token, requestId);
 }
 
 function normalizeUserId(raw: string | undefined): string | undefined {

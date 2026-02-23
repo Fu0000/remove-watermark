@@ -187,7 +187,9 @@
 - P2-2：上传 MIME 白名单抽取为单一常量源（assets/compliance 共用）。
 - P2-4：全链路 traceId + Prometheus 指标体系补齐（worker/webhook/API 已提供 `/metrics` 与 `/healthz` 基线）。
 - P2-5：推理工作目录与结果目录增加 TTL 清理策略。
+- P0-3（补强）：鉴权默认策略改为显式开关（legacy/unsigned 默认关闭），`/v1/auth/wechat-login` 改为签发 HS256 JWT，移除固定 `u_1001` 登录回包。
+- P2（治理补强）：统一 `parseForwardedIp` 与 `requireIdempotencyKey` 公共工具，减少控制器重复校验/解析逻辑。
 
 ### 仍待完成
-- P2-1：DTO 校验体系统一（已完成全部含 `@Body` 控制器的 zod 接入，`Query/Param` 已覆盖 `webhooks` 与 `account`，其余控制器逐步迁移中）。
-- P2-3：`tasks.service` 职责拆分（已拆出 `TaskQuotaService` 与 `task-action` 幂等/动作判定模块，剩余生命周期/模拟模块待解耦）。
+- P2-1：DTO 校验体系统一（已完成全部含 `@Body` 控制器的 zod 接入，`Query/Param` 已覆盖 `webhooks`、`account`、`admin`、`tasks`，其余控制器逐步迁移中）。
+- P2-3：`tasks.service` 职责拆分（已拆出 `TaskQuotaService`、`task-action` 幂等/动作判定模块、`task-lifecycle` 生命周期规划模块；剩余持久化编排与内存存储适配层待继续解耦）。

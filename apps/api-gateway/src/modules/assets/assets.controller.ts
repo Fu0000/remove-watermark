@@ -3,7 +3,9 @@ import { ensureAuthorization } from "../../common/auth";
 import { isSupportedMime, type UploadMediaType } from "../../common/media-mime";
 import { badRequest, conflict, notFound } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
-import { parseRequestBody } from "../../common/request-validation";
+import { parseForwardedIp } from "../../common/network";
+import { requireIdempotencyKey } from "../../common/request-headers";
+import { parseRequestBody, parseRequestParams } from "../../common/request-validation";
 import { ComplianceService } from "../compliance/compliance.service";
 import { z } from "zod";
 
@@ -21,6 +23,10 @@ const UploadPolicyRequestSchema = z.object({
   mediaType: z.enum(["image", "video", "pdf", "ppt"]),
   mimeType: z.string().min(1),
   sha256: z.string().optional()
+});
+
+const AssetIdParamSchema = z.object({
+  assetId: z.string().trim().min(1)
 });
 
 @Controller("v1/assets")
@@ -62,11 +68,10 @@ export class AssetsController {
     @Param("assetId") assetId: string
   ) {
     const auth = ensureAuthorization(authorization, requestIdHeader);
-    if (!idempotencyKey) {
-      badRequest(40001, "Idempotency-Key is required", requestIdHeader);
-    }
+    const idempotency = requireIdempotencyKey(idempotencyKey, requestIdHeader);
+    const params = parseRequestParams(AssetIdParamSchema, { assetId }, requestIdHeader);
 
-    const result = await this.complianceService.deleteAsset(auth.userId, assetId, idempotencyKey, {
+    const result = await this.complianceService.deleteAsset(auth.userId, params.assetId, idempotency, {
       requestId: requestIdHeader,
       ip: parseForwardedIp(forwardedFor),
       userAgent
@@ -80,13 +85,4 @@ export class AssetsController {
 
     return ok(result.data, requestIdHeader);
   }
-}
-
-function parseForwardedIp(forwardedFor: string | undefined): string | undefined {
-  if (!forwardedFor) {
-    return undefined;
-  }
-
-  const first = forwardedFor.split(",")[0]?.trim();
-  return first && first.length > 0 ? first : undefined;
 }

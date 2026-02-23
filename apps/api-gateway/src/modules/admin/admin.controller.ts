@@ -3,7 +3,9 @@ import type { TaskStatus } from "@packages/contracts";
 import { ensureAdminPermission } from "../../common/admin-rbac";
 import { badRequest, conflict, notFound, unprocessableEntity } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
-import { parseRequestBody } from "../../common/request-validation";
+import { parseForwardedIp } from "../../common/network";
+import { requireIdempotencyKey } from "../../common/request-headers";
+import { parseRequestBody, parseRequestParams, parseRequestQuery } from "../../common/request-validation";
 import { TASK_STATUS } from "../../common/task-status";
 import { ComplianceService } from "../compliance/compliance.service";
 import { PlansService } from "../plans/plans.service";
@@ -59,6 +61,111 @@ const UpdatePlanRequestSchema = z
   })
   .refine((payload) => Object.keys(payload).length > 0);
 
+const OptionalTrimmedStringSchema = z.preprocess((raw) => {
+  if (typeof raw !== "string") {
+    return raw;
+  }
+  const value = raw.trim();
+  return value.length > 0 ? value : undefined;
+}, z.string().min(1).optional());
+
+const PositiveIntFromQueryWithDefault = (fallback: number) =>
+  z.preprocess((raw) => {
+    if (raw === undefined || raw === null || raw === "") {
+      return undefined;
+    }
+    if (typeof raw === "number") {
+      return raw;
+    }
+    if (typeof raw === "string") {
+      return Number.parseInt(raw, 10);
+    }
+    return raw;
+  }, z.number().int().positive().default(fallback));
+
+const OptionalDateTimeSchema = z.preprocess((raw) => {
+  if (typeof raw !== "string") {
+    return raw;
+  }
+  const value = raw.trim();
+  return value.length > 0 ? value : undefined;
+}, z.string().refine((value) => !Number.isNaN(new Date(value).getTime())).optional());
+
+const OptionalTaskStatusSchema = z.custom<TaskStatus>(
+  (raw) => typeof raw === "string" && TASK_STATUS.includes(raw as TaskStatus)
+).optional();
+
+const OptionalBooleanFromQuerySchema = z.preprocess((raw) => {
+  if (raw === undefined || raw === null || raw === "") {
+    return undefined;
+  }
+  if (raw === "true") {
+    return true;
+  }
+  if (raw === "false") {
+    return false;
+  }
+  return raw;
+}, z.boolean().optional());
+
+const OptionalDeliveryStatusFromQuerySchema = z.preprocess((raw) => {
+  if (raw === undefined || raw === null || raw === "") {
+    return undefined;
+  }
+  if (typeof raw !== "string") {
+    return raw;
+  }
+  return raw.trim().toUpperCase();
+}, z.enum(["SUCCESS", "FAILED"]).optional());
+
+const TaskIdParamSchema = z.object({
+  taskId: z.string().trim().min(1)
+});
+
+const PlanIdParamSchema = z.object({
+  planId: z.string().trim().min(1)
+});
+
+const DeliveryIdParamSchema = z.object({
+  deliveryId: z.string().trim().min(1)
+});
+
+const ListTasksQuerySchema = z.object({
+  taskId: OptionalTrimmedStringSchema,
+  userId: OptionalTrimmedStringSchema,
+  status: OptionalTaskStatusSchema,
+  from: OptionalDateTimeSchema,
+  to: OptionalDateTimeSchema,
+  page: PositiveIntFromQueryWithDefault(1),
+  pageSize: PositiveIntFromQueryWithDefault(20)
+});
+
+const ListPlansQuerySchema = z.object({
+  keyword: OptionalTrimmedStringSchema,
+  isActive: OptionalBooleanFromQuerySchema,
+  page: PositiveIntFromQueryWithDefault(1),
+  pageSize: PositiveIntFromQueryWithDefault(20)
+});
+
+const ListWebhookDeliveriesQuerySchema = z.object({
+  scopeType: OptionalTrimmedStringSchema,
+  scopeId: OptionalTrimmedStringSchema,
+  userId: OptionalTrimmedStringSchema,
+  tenantId: OptionalTrimmedStringSchema,
+  endpointId: OptionalTrimmedStringSchema,
+  eventType: OptionalTrimmedStringSchema,
+  status: OptionalDeliveryStatusFromQuerySchema,
+  page: PositiveIntFromQueryWithDefault(1),
+  pageSize: PositiveIntFromQueryWithDefault(20)
+});
+
+const RetryWebhookDeliveryQuerySchema = z.object({
+  scopeType: OptionalTrimmedStringSchema,
+  scopeId: OptionalTrimmedStringSchema,
+  userId: OptionalTrimmedStringSchema,
+  tenantId: OptionalTrimmedStringSchema
+});
+
 @Controller("admin")
 export class AdminController {
   constructor(
@@ -90,18 +197,28 @@ export class AdminController {
       requestId: requestIdHeader
     });
 
-    const normalizedStatus = parseTaskStatus(status, requestIdHeader);
-    validateDateTime("from", from, requestIdHeader);
-    validateDateTime("to", to, requestIdHeader);
+    const query = parseRequestQuery(
+      ListTasksQuerySchema,
+      {
+        taskId,
+        userId,
+        status,
+        from,
+        to,
+        page: pageRaw,
+        pageSize: pageSizeRaw
+      },
+      requestIdHeader
+    );
 
     const result = await this.tasksService.listForAdmin({
-      taskId: taskId || undefined,
-      userId: userId || undefined,
-      status: normalizedStatus,
-      from: from || undefined,
-      to: to || undefined,
-      page: parsePositiveInt(pageRaw, 1, "page", requestIdHeader),
-      pageSize: parsePositiveInt(pageSizeRaw, 20, "pageSize", requestIdHeader)
+      taskId: query.taskId,
+      userId: query.userId,
+      status: query.status,
+      from: query.from,
+      to: query.to,
+      page: query.page,
+      pageSize: query.pageSize
     });
 
     return ok(result, requestIdHeader);
@@ -129,20 +246,16 @@ export class AdminController {
       requestId: requestIdHeader
     });
 
-    if (!idempotencyKey) {
-      badRequest(40001, "Idempotency-Key is required", requestIdHeader);
-    }
-    if (!taskId) {
-      badRequest(40001, "参数非法：taskId", requestIdHeader);
-    }
+    const idempotency = requireIdempotencyKey(idempotencyKey, requestIdHeader);
+    const params = parseRequestParams(TaskIdParamSchema, { taskId }, requestIdHeader);
     const reason = body.reason;
 
-    const existing = await this.tasksService.getByTaskId(taskId, { advance: false });
+    const existing = await this.tasksService.getByTaskId(params.taskId, { advance: false });
     if (!existing) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
 
-    const result = await this.tasksService.retry(existing.userId, taskId, idempotencyKey);
+    const result = await this.tasksService.retry(existing.userId, params.taskId, idempotency);
     if (result.kind === "NOT_FOUND") {
       notFound(40401, "资源不存在", requestIdHeader);
     }
@@ -156,7 +269,7 @@ export class AdminController {
     await this.complianceService.appendAdminAuditLog(existing.userId, {
       action: "admin.task.replay",
       resourceType: "task",
-      resourceId: taskId,
+      resourceId: params.taskId,
       role,
       reason,
       requestId: requestIdHeader,
@@ -192,11 +305,22 @@ export class AdminController {
       requestId: requestIdHeader
     });
 
+    const query = parseRequestQuery(
+      ListPlansQuerySchema,
+      {
+        keyword,
+        isActive: isActiveRaw,
+        page: pageRaw,
+        pageSize: pageSizeRaw
+      },
+      requestIdHeader
+    );
+
     const result = await this.plansService.listPlansForAdmin({
-      keyword: keyword || undefined,
-      isActive: parseBoolean(isActiveRaw, "isActive", requestIdHeader),
-      page: parsePositiveInt(pageRaw, 1, "page", requestIdHeader),
-      pageSize: parsePositiveInt(pageSizeRaw, 20, "pageSize", requestIdHeader)
+      keyword: query.keyword,
+      isActive: query.isActive,
+      page: query.page,
+      pageSize: query.pageSize
     });
 
     return ok(result, requestIdHeader);
@@ -226,22 +350,38 @@ export class AdminController {
       requestId: requestIdHeader
     });
 
+    const query = parseRequestQuery(
+      ListWebhookDeliveriesQuerySchema,
+      {
+        scopeType: scopeTypeRaw,
+        scopeId: scopeIdRaw,
+        userId: userIdRaw,
+        tenantId: tenantIdRaw,
+        endpointId,
+        eventType,
+        status,
+        page: pageRaw,
+        pageSize: pageSizeRaw
+      },
+      requestIdHeader
+    );
+
     const scope = resolveWebhookScope(
       {
-        scopeTypeRaw,
-        scopeIdRaw,
-        userIdRaw,
-        tenantIdRaw
+        scopeTypeRaw: query.scopeType,
+        scopeIdRaw: query.scopeId,
+        userIdRaw: query.userId,
+        tenantIdRaw: query.tenantId
       },
       requestIdHeader
     );
 
     const result = await this.webhooksService.listDeliveries(scope, {
-      endpointId: endpointId || undefined,
-      eventType: eventType || undefined,
-      status: parseDeliveryStatus(status, requestIdHeader),
-      page: parsePositiveInt(pageRaw, 1, "page", requestIdHeader),
-      pageSize: parsePositiveInt(pageSizeRaw, 20, "pageSize", requestIdHeader)
+      endpointId: query.endpointId,
+      eventType: query.eventType,
+      status: query.status,
+      page: query.page,
+      pageSize: query.pageSize
     });
 
     return ok(result, requestIdHeader);
@@ -270,20 +410,28 @@ export class AdminController {
       requestId: requestIdHeader
     });
 
-    if (!deliveryId) {
-      badRequest(40001, "参数非法：deliveryId", requestIdHeader);
-    }
-
-    const scope = resolveWebhookScope(
+    const params = parseRequestParams(DeliveryIdParamSchema, { deliveryId }, requestIdHeader);
+    const query = parseRequestQuery(
+      RetryWebhookDeliveryQuerySchema,
       {
-        scopeTypeRaw,
-        scopeIdRaw,
-        userIdRaw,
-        tenantIdRaw
+        scopeType: scopeTypeRaw,
+        scopeId: scopeIdRaw,
+        userId: userIdRaw,
+        tenantId: tenantIdRaw
       },
       requestIdHeader
     );
-    const retried = await this.webhooksService.retryDelivery(scope, deliveryId);
+
+    const scope = resolveWebhookScope(
+      {
+        scopeTypeRaw: query.scopeType,
+        scopeIdRaw: query.scopeId,
+        userIdRaw: query.userId,
+        tenantIdRaw: query.tenantId
+      },
+      requestIdHeader
+    );
+    const retried = await this.webhooksService.retryDelivery(scope, params.deliveryId);
 
     if (retried.kind === "NOT_FOUND") {
       notFound(40401, "资源不存在：delivery", requestIdHeader);
@@ -298,7 +446,7 @@ export class AdminController {
     await this.complianceService.appendAdminAuditLog(resolveAuditSubject(scope), {
       action: "admin.webhook.retry",
       resourceType: "webhook_delivery",
-      resourceId: deliveryId,
+      resourceId: params.deliveryId,
       role,
       reason: `retry ${deliveryId}`,
       requestId: requestIdHeader,
@@ -388,11 +536,9 @@ export class AdminController {
       requestId: requestIdHeader
     });
 
-    if (!planId) {
-      badRequest(40001, "参数非法：planId", requestIdHeader);
-    }
+    const params = parseRequestParams(PlanIdParamSchema, { planId }, requestIdHeader);
 
-    const result = await this.plansService.updatePlan(planId, body);
+    const result = await this.plansService.updatePlan(params.planId, body);
     if (result === undefined) {
       notFound(40401, "资源不存在", requestIdHeader);
     }
@@ -403,9 +549,9 @@ export class AdminController {
     await this.complianceService.appendAdminAuditLog("admin_console", {
       action: "admin.plan.update",
       resourceType: "plan",
-      resourceId: planId,
+      resourceId: params.planId,
       role,
-      reason: `update ${planId}`,
+      reason: `update ${params.planId}`,
       requestId: requestIdHeader,
       ip: parseForwardedIp(forwardedFor),
       userAgent,
@@ -414,50 +560,6 @@ export class AdminController {
 
     return ok(result, requestIdHeader);
   }
-}
-
-function parsePositiveInt(raw: string | undefined, fallback: number, field: string, requestIdHeader?: string): number {
-  if (!raw) {
-    return fallback;
-  }
-  const value = Number.parseInt(raw, 10);
-  if (!Number.isInteger(value) || value <= 0) {
-    badRequest(40001, `参数非法：${field}`, requestIdHeader);
-  }
-  return value;
-}
-
-function parseTaskStatus(raw: string | undefined, requestIdHeader?: string): TaskStatus | undefined {
-  if (!raw) {
-    return undefined;
-  }
-  if (!TASK_STATUS.includes(raw as TaskStatus)) {
-    badRequest(40001, "参数非法：status", requestIdHeader);
-  }
-  return raw as TaskStatus;
-}
-
-function parseBoolean(raw: string | undefined, field: string, requestIdHeader?: string): boolean | undefined {
-  if (!raw) {
-    return undefined;
-  }
-  if (raw === "true") {
-    return true;
-  }
-  if (raw === "false") {
-    return false;
-  }
-  badRequest(40001, `参数非法：${field}`, requestIdHeader);
-}
-
-function parseDeliveryStatus(raw: string | undefined, requestIdHeader?: string): "SUCCESS" | "FAILED" | undefined {
-  if (!raw) {
-    return undefined;
-  }
-  if (raw === "SUCCESS" || raw === "FAILED") {
-    return raw;
-  }
-  badRequest(40001, "参数非法：status", requestIdHeader);
 }
 
 function resolveWebhookScope(
@@ -521,22 +623,4 @@ function resolveAuditSubject(scope: WebhookScope) {
     return `tenant:${scope.scopeId}`;
   }
   return scope.scopeId;
-}
-
-function validateDateTime(field: string, raw: string | undefined, requestIdHeader?: string) {
-  if (!raw) {
-    return;
-  }
-  if (Number.isNaN(new Date(raw).getTime())) {
-    badRequest(40001, `参数非法：${field}`, requestIdHeader);
-  }
-}
-
-function parseForwardedIp(forwardedFor: string | undefined): string | undefined {
-  if (!forwardedFor) {
-    return undefined;
-  }
-
-  const first = forwardedFor.split(",")[0]?.trim();
-  return first && first.length > 0 ? first : undefined;
 }

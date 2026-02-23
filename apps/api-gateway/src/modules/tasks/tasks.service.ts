@@ -14,6 +14,13 @@ import {
   type TaskActionResult,
   type TaskActionType
 } from "./task-action.service";
+import {
+  buildDefaultResultArtifacts,
+  canTransit,
+  isTerminalTaskStatus,
+  planPostTransition,
+  planSimulationAdvance
+} from "./task-lifecycle.service";
 
 export interface CreateTaskInput {
   assetId: string;
@@ -162,7 +169,6 @@ type TaskMutationResult =
 type DbTransactionClient = Prisma.TransactionClient;
 
 const CANCELABLE_STATUS = new Set<TaskStatus>(["QUEUED", "PREPROCESSING", "DETECTING"]);
-const TERMINAL_STATUS = new Set<TaskStatus>(["SUCCEEDED", "FAILED", "CANCELED"]);
 const FREE_MONTHLY_QUOTA = 20;
 
 export class QuotaExceededError extends Error {
@@ -175,22 +181,6 @@ export class QuotaExceededError extends Error {
     this.quotaTotal = quotaTotal;
     this.usedUnits = usedUnits;
   }
-}
-
-const STATUS_TRANSITION_MAP: Record<TaskStatus, TaskStatus[]> = {
-  UPLOADED: ["QUEUED", "FAILED", "CANCELED"],
-  QUEUED: ["PREPROCESSING", "FAILED", "CANCELED"],
-  PREPROCESSING: ["DETECTING", "FAILED", "CANCELED"],
-  DETECTING: ["INPAINTING", "FAILED", "CANCELED"],
-  INPAINTING: ["PACKAGING", "FAILED"],
-  PACKAGING: ["SUCCEEDED", "FAILED"],
-  SUCCEEDED: [],
-  FAILED: ["QUEUED"],
-  CANCELED: []
-};
-
-function canTransit(from: TaskStatus, to: TaskStatus) {
-  return STATUS_TRANSITION_MAP[from].includes(to);
 }
 
 function parseBoolEnv(value: string | undefined, fallback: boolean): boolean {
@@ -515,7 +505,7 @@ export class TasksService {
         updatedAt: now
       });
 
-      if (!TERMINAL_STATUS.has(latestTask.status)) {
+      if (!isTerminalTaskStatus(latestTask.status)) {
         if (this.simulationEnabled) {
           if (latestTask.status === "QUEUED") {
             const transitionResult = this.transitionTaskUnsafe(taskId, "PREPROCESSING", latestTask.version, {
@@ -595,7 +585,7 @@ export class TasksService {
         updatedAt: now
       });
 
-      if (!TERMINAL_STATUS.has(latestTask.status)) {
+      if (!isTerminalTaskStatus(latestTask.status)) {
         if (this.simulationEnabled) {
           if (latestTask.status === "QUEUED") {
             const transitionResult = this.transitionTaskUnsafe(taskId, "PREPROCESSING", latestTask.version, {
@@ -1167,7 +1157,7 @@ export class TasksService {
         }
       });
 
-      if (!TERMINAL_STATUS.has(latestTask.status as TaskStatus)) {
+      if (!isTerminalTaskStatus(latestTask.status as TaskStatus)) {
         if (this.simulationEnabled) {
           if (latestTask.status === "QUEUED") {
             const transitionResult = await this.transitionTaskWithPrisma(tx, taskId, "PREPROCESSING", latestTask.version, {
@@ -1266,7 +1256,7 @@ export class TasksService {
         }
       });
 
-      if (!TERMINAL_STATUS.has(latestTask.status as TaskStatus)) {
+      if (!isTerminalTaskStatus(latestTask.status as TaskStatus)) {
         if (this.simulationEnabled) {
           if (latestTask.status === "QUEUED") {
             const transitionResult = await this.transitionTaskWithPrisma(tx, taskId, "PREPROCESSING", latestTask.version, {
@@ -1500,68 +1490,48 @@ export class TasksService {
       return;
     }
 
-    const hasDetectionInput = await this.hasDetectionInputWithPrisma(taskId, current.mediaType as TaskMediaType);
-    if ((current.status as TaskStatus) === "DETECTING" && !hasDetectionInput) {
-      return;
-    }
-
-    if (TERMINAL_STATUS.has(current.status as TaskStatus)) {
-      return;
-    }
-
-    let nextStatus: TaskStatus | undefined;
-    let progress = current.progress;
-    let resultUrl: string | undefined;
-
-    switch (current.status as TaskStatus) {
-      case "QUEUED":
-        nextStatus = "PREPROCESSING";
-        progress = 15;
-        break;
-      case "PREPROCESSING":
-        nextStatus = "DETECTING";
-        progress = 35;
-        break;
-      case "DETECTING":
-        nextStatus = "INPAINTING";
-        progress = 60;
-        break;
-      case "INPAINTING":
-        nextStatus = "PACKAGING";
-        progress = 85;
-        break;
-      case "PACKAGING":
-        nextStatus = "SUCCEEDED";
-        progress = 100;
-        resultUrl = this.buildDefaultResultUrl(taskId, current.mediaType as TaskMediaType, current.createdAt);
-        break;
-      default:
-        break;
-    }
-
-    if (!nextStatus) {
+    const initialHasDetectionInput = await this.hasDetectionInputWithPrisma(taskId, current.mediaType as TaskMediaType);
+    const initialPlan = planSimulationAdvance({
+      status: current.status as TaskStatus,
+      progress: current.progress,
+      hasDetectionInput: initialHasDetectionInput
+    });
+    if (!initialPlan) {
       return;
     }
 
     await prisma.$transaction(async (tx) => {
       const latest = await tx.task.findUnique({ where: { taskId } });
-      if (!latest || TERMINAL_STATUS.has(latest.status as TaskStatus)) {
+      if (!latest) {
         return;
       }
 
       const latestHasDetectionInput = await this.hasDetectionInputWithPrisma(taskId, latest.mediaType as TaskMediaType);
-      if ((latest.status as TaskStatus) === "DETECTING" && !latestHasDetectionInput) {
+      const plan = planSimulationAdvance({
+        status: latest.status as TaskStatus,
+        progress: latest.progress,
+        hasDetectionInput: latestHasDetectionInput
+      });
+      if (!plan) {
         return;
       }
 
       const fromStatus = latest.status as TaskStatus;
-      const transitionResult = await this.transitionTaskWithPrisma(tx, taskId, nextStatus as TaskStatus, latest.version, {
-        progress,
-        resultUrl
+      const transitionResult = await this.transitionTaskWithPrisma(tx, taskId, plan.nextStatus, latest.version, {
+        progress: plan.progress,
+        resultUrl: plan.needsResultUrl
+          ? this.buildDefaultResultUrl(taskId, latest.mediaType as TaskMediaType, latest.createdAt)
+          : undefined
       });
 
       if (transitionResult.ok) {
-        await this.handlePostTransitionWithPrisma(tx, transitionResult.task, transitionResult.task.userId, fromStatus, nextStatus as TaskStatus);
+        await this.handlePostTransitionWithPrisma(
+          tx,
+          transitionResult.task,
+          transitionResult.task.userId,
+          fromStatus,
+          plan.nextStatus
+        );
       }
     });
   }
@@ -1573,44 +1543,33 @@ export class TasksService {
     fromStatus: TaskStatus,
     toStatus: TaskStatus
   ) {
-    if (toStatus === "SUCCEEDED") {
-      const resultUrl = task.resultUrl || this.buildDefaultResultUrl(task.taskId, task.mediaType, task.createdAt);
-      const resultJson =
-        task.resultJson ||
-        ({
-          artifacts: [
-            {
-              type: task.mediaType === "VIDEO" ? "VIDEO" : "IMAGE",
-              url: resultUrl,
-              expireAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString()
-            }
-          ]
-        } satisfies NonNullable<TaskRecord["resultJson"]>);
-
-      if (!task.resultUrl || !task.resultJson) {
+    const postPlan = planPostTransition(fromStatus, toStatus);
+    if (postPlan.needsResultArtifacts) {
+      const ensuredResult = this.ensureTaskResultPayload(task);
+      if (ensuredResult.changed) {
         await tx.task.update({
           where: { taskId: task.taskId },
           data: {
-            resultUrl,
-            resultJson: resultJson as unknown as Prisma.InputJsonValue,
+            resultUrl: ensuredResult.resultUrl,
+            resultJson: ensuredResult.resultJson as unknown as Prisma.InputJsonValue,
             updatedAt: new Date()
           }
         });
       }
-
-      await this.appendUsageLedgerWithPrisma(tx, userId, task.taskId, "COMMITTED", "task_succeeded");
-      await this.appendOutboxEventWithPrisma(tx, task.taskId, "task.succeeded");
-      return;
     }
 
-    if (toStatus === "CANCELED") {
-      await this.appendUsageLedgerWithPrisma(tx, userId, task.taskId, "RELEASED", "task_canceled");
-      await this.appendOutboxEventWithPrisma(tx, task.taskId, "task.canceled");
-      return;
+    if (postPlan.usageLedger) {
+      await this.appendUsageLedgerWithPrisma(
+        tx,
+        userId,
+        task.taskId,
+        postPlan.usageLedger.status,
+        postPlan.usageLedger.source
+      );
     }
 
-    if (fromStatus === "FAILED" && toStatus === "QUEUED") {
-      await this.appendOutboxEventWithPrisma(tx, task.taskId, "task.retried");
+    if (postPlan.outboxEvent) {
+      await this.appendOutboxEventWithPrisma(tx, task.taskId, postPlan.outboxEvent);
     }
   }
 
@@ -1871,97 +1830,54 @@ export class TasksService {
       return;
     }
 
-    const hasDetectionInput = this.taskRegions.has(taskId) || (current.mediaType === "IMAGE" && this.taskMasks.has(taskId));
-    if (current.status === "DETECTING" && !hasDetectionInput) {
-      return;
-    }
-
-    if (TERMINAL_STATUS.has(current.status)) {
-      return;
-    }
-
-    let nextStatus: TaskStatus | undefined;
-    let progress = current.progress;
-    let resultUrl: string | undefined;
-
-    switch (current.status) {
-      case "QUEUED":
-        nextStatus = "PREPROCESSING";
-        progress = 15;
-        break;
-      case "PREPROCESSING":
-        nextStatus = "DETECTING";
-        progress = 35;
-        break;
-      case "DETECTING":
-        nextStatus = "INPAINTING";
-        progress = 60;
-        break;
-      case "INPAINTING":
-        nextStatus = "PACKAGING";
-        progress = 85;
-        break;
-      case "PACKAGING":
-        nextStatus = "SUCCEEDED";
-        progress = 100;
-        resultUrl = this.buildDefaultResultUrl(taskId, current.mediaType, current.createdAt);
-        break;
-      default:
-        break;
-    }
-
-    if (!nextStatus) {
+    const initialHasDetectionInput = this.taskRegions.has(taskId) || (current.mediaType === "IMAGE" && this.taskMasks.has(taskId));
+    const initialPlan = planSimulationAdvance({
+      status: current.status,
+      progress: current.progress,
+      hasDetectionInput: initialHasDetectionInput
+    });
+    if (!initialPlan) {
       return;
     }
 
     this.runInTransaction(() => {
       const latest = this.tasks.get(taskId);
       const latestHasDetectionInput = this.taskRegions.has(taskId) || (latest?.mediaType === "IMAGE" && this.taskMasks.has(taskId));
-      if (!latest || TERMINAL_STATUS.has(latest.status) || (latest.status === "DETECTING" && !latestHasDetectionInput)) {
+      if (!latest) {
+        return;
+      }
+
+      const plan = planSimulationAdvance({
+        status: latest.status,
+        progress: latest.progress,
+        hasDetectionInput: latestHasDetectionInput
+      });
+      if (!plan) {
         return;
       }
 
       const fromStatus = latest.status;
-      const transitionResult = this.transitionTaskUnsafe(taskId, nextStatus as TaskStatus, latest.version, {
-        progress,
-        resultUrl
+      const transitionResult = this.transitionTaskUnsafe(taskId, plan.nextStatus, latest.version, {
+        progress: plan.progress,
+        resultUrl: plan.needsResultUrl ? this.buildDefaultResultUrl(taskId, latest.mediaType, latest.createdAt) : undefined
       });
 
       if (transitionResult.ok) {
-        this.handlePostTransitionUnsafe(transitionResult.task, transitionResult.task.userId, fromStatus, nextStatus as TaskStatus);
+        this.handlePostTransitionUnsafe(transitionResult.task, transitionResult.task.userId, fromStatus, plan.nextStatus);
       }
     });
   }
 
   private handlePostTransitionUnsafe(task: TaskRecord, userId: string, fromStatus: TaskStatus, toStatus: TaskStatus) {
-    if (toStatus === "SUCCEEDED") {
-      const resultUrl = task.resultUrl || this.buildDefaultResultUrl(task.taskId, task.mediaType, task.createdAt);
-      task.resultUrl = resultUrl;
-      task.resultJson =
-        task.resultJson ||
-        ({
-          artifacts: [
-            {
-              type: task.mediaType === "VIDEO" ? "VIDEO" : "IMAGE",
-              url: resultUrl,
-              expireAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString()
-            }
-          ]
-        } satisfies NonNullable<TaskRecord["resultJson"]>);
-
-      this.appendUsageLedgerUnsafe(userId, task.taskId, "COMMITTED", "task_succeeded");
-      this.appendOutboxEventUnsafe(task.taskId, "task.succeeded");
-      return;
+    const postPlan = planPostTransition(fromStatus, toStatus);
+    if (postPlan.needsResultArtifacts) {
+      this.ensureTaskResultPayload(task);
     }
-
-    if (toStatus === "CANCELED") {
-      this.appendUsageLedgerUnsafe(userId, task.taskId, "RELEASED", "task_canceled");
-      this.appendOutboxEventUnsafe(task.taskId, "task.canceled");
-      return;
+    if (postPlan.usageLedger) {
+      this.appendUsageLedgerUnsafe(userId, task.taskId, postPlan.usageLedger.status, postPlan.usageLedger.source);
     }
-
-    if (fromStatus === "FAILED" && toStatus === "QUEUED") {
-      this.appendOutboxEventUnsafe(task.taskId, "task.retried");
+    if (postPlan.outboxEvent) {
+      this.appendOutboxEventUnsafe(task.taskId, postPlan.outboxEvent);
     }
   }
 
@@ -2083,6 +1999,24 @@ export class TasksService {
     const datePath = buildDatePathFromDate(createdAt);
     const ext = buildResultExt(mediaType);
     return `${this.minioPublicEndpoint}/${this.minioResultBucket}/${this.minioResultPrefix}/${datePath}/${taskId}.${ext}`;
+  }
+
+  private ensureTaskResultPayload(task: TaskRecord) {
+    const resultUrl = task.resultUrl || this.buildDefaultResultUrl(task.taskId, task.mediaType, task.createdAt);
+    const resultJson = task.resultJson || buildDefaultResultArtifacts(task.mediaType, resultUrl);
+    const changed = !task.resultUrl || !task.resultJson;
+    if (changed) {
+      task.resultUrl = resultUrl;
+      task.resultJson = {
+        artifacts: [...resultJson.artifacts]
+      };
+    }
+
+    return {
+      changed,
+      resultUrl,
+      resultJson
+    };
   }
 
   private runInTransaction<T>(runner: () => T): T {
