@@ -5,6 +5,15 @@ import type { TaskArtifactType, TaskMediaType, TaskPolicy, TaskStatus } from "@p
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../common/prisma.service";
 import { TaskQuotaService, type MemoryUsageLedgerRecord } from "./task-quota.service";
+import {
+  buildTaskActionPayloadHash,
+  parseTaskActionResult,
+  planTaskActionTransition,
+  resolveTaskActionIdempotencyReplay,
+  type TaskActionIdempotencyRecord,
+  type TaskActionResult,
+  type TaskActionType
+} from "./task-action.service";
 
 export interface CreateTaskInput {
   assetId: string;
@@ -111,20 +120,6 @@ export interface UpsertRegionsInput {
   schemaVersion: string;
   regions: Array<Record<string, unknown>>;
 }
-
-type TaskActionType = "CANCEL" | "RETRY";
-
-interface TaskActionIdempotencyRecord {
-  payloadHash: string;
-  result: TaskActionResult;
-  updatedAt: string;
-}
-
-type TaskActionResult =
-  | { kind: "SUCCESS"; taskId: string; status: TaskStatus; replayed: boolean }
-  | { kind: "NOT_FOUND" }
-  | { kind: "INVALID_TRANSITION"; status: TaskStatus }
-  | { kind: "IDEMPOTENCY_CONFLICT" };
 
 export interface AdvanceTaskStatusInput {
   fromStatus: TaskStatus;
@@ -825,14 +820,6 @@ export class TasksService {
     };
   }
 
-  private parseActionResult(value: Prisma.JsonValue): TaskActionResult | undefined {
-    if (!value || typeof value !== "object" || !("kind" in value)) {
-      return undefined;
-    }
-
-    return value as unknown as TaskActionResult;
-  }
-
   private async createTaskWithPrisma(
     userId: string,
     idempotencyKey: string,
@@ -1043,7 +1030,7 @@ export class TasksService {
     action: TaskActionType
   ): Promise<TaskActionResult> {
     const prisma = this.ensurePrismaService();
-    const payloadHash = `${action}:${taskId}`;
+    const payloadHash = buildTaskActionPayloadHash(action, taskId);
 
     const existing = await prisma.taskActionIdempotency.findUnique({
       where: {
@@ -1055,23 +1042,17 @@ export class TasksService {
     });
 
     if (existing) {
-      if (existing.payloadHash !== payloadHash) {
-        return { kind: "IDEMPOTENCY_CONFLICT" };
-      }
-
-      const parsed = this.parseActionResult(existing.resultJson);
+      const parsed = parseTaskActionResult(existing.resultJson);
       if (!parsed) {
         return { kind: "IDEMPOTENCY_CONFLICT" };
       }
-
-      if (parsed.kind === "SUCCESS") {
-        return {
-          ...parsed,
-          replayed: true
-        };
-      }
-
-      return parsed;
+      return resolveTaskActionIdempotencyReplay(
+        {
+          payloadHash: existing.payloadHash,
+          result: parsed
+        },
+        payloadHash
+      );
     }
 
     return prisma.$transaction(async (tx) => {
@@ -1087,30 +1068,23 @@ export class TasksService {
       }
 
       const fromStatus = task.status as TaskStatus;
-      let transitionResult: TaskMutationResult;
-
-      if (action === "CANCEL") {
-        if (!CANCELABLE_STATUS.has(fromStatus)) {
-          const invalid: TaskActionResult = { kind: "INVALID_TRANSITION", status: fromStatus };
-          await this.persistActionIdempotencyWithPrisma(tx, userId, idempotencyKey, payloadHash, invalid, now);
-          return invalid;
-        }
-
-        transitionResult = await this.transitionTaskWithPrisma(tx, taskId, "CANCELED", task.version, {
-          progress: 0
-        });
-      } else {
-        if (fromStatus !== "FAILED") {
-          const invalid: TaskActionResult = { kind: "INVALID_TRANSITION", status: fromStatus };
-          await this.persistActionIdempotencyWithPrisma(tx, userId, idempotencyKey, payloadHash, invalid, now);
-          return invalid;
-        }
-
-        transitionResult = await this.transitionTaskWithPrisma(tx, taskId, "QUEUED", task.version, {
-          progress: 0,
-          clearError: true
-        });
+      const actionPlan = planTaskActionTransition(action, fromStatus, CANCELABLE_STATUS);
+      if (actionPlan.kind === "INVALID") {
+        await this.persistActionIdempotencyWithPrisma(
+          tx,
+          userId,
+          idempotencyKey,
+          payloadHash,
+          actionPlan.result,
+          now
+        );
+        return actionPlan.result;
       }
+
+      const transitionResult = await this.transitionTaskWithPrisma(tx, taskId, actionPlan.nextStatus, task.version, {
+        progress: 0,
+        clearError: actionPlan.clearError
+      });
 
       if (!transitionResult.ok) {
         const latest = await tx.task.findUnique({ where: { taskId } });
@@ -1831,109 +1805,63 @@ export class TasksService {
     });
   }
 
+  private rememberActionIdempotency(
+    key: string,
+    payloadHash: string,
+    result: TaskActionResult,
+    updatedAt: string
+  ): TaskActionResult {
+    this.actionIdempotency.set(key, {
+      payloadHash,
+      result,
+      updatedAt
+    });
+    return result;
+  }
+
   private applyTaskAction(userId: string, taskId: string, idempotencyKey: string, action: TaskActionType): TaskActionResult {
     const key = `${userId}:${idempotencyKey}`;
-    const payloadHash = `${action}:${taskId}`;
+    const payloadHash = buildTaskActionPayloadHash(action, taskId);
     const existing = this.actionIdempotency.get(key);
 
     if (existing) {
-      if (existing.payloadHash !== payloadHash) {
-        return { kind: "IDEMPOTENCY_CONFLICT" };
-      }
-
-      if (existing.result.kind === "SUCCESS") {
-        return {
-          ...existing.result,
-          replayed: true
-        };
-      }
-
-      return existing.result;
+      return resolveTaskActionIdempotencyReplay(existing, payloadHash);
     }
 
     return this.runInTransaction(() => {
       const now = new Date().toISOString();
       const task = this.tasks.get(taskId);
       if (!task || task.userId !== userId) {
-        const result: TaskActionResult = { kind: "NOT_FOUND" };
-        this.actionIdempotency.set(key, {
-          payloadHash,
-          result,
-          updatedAt: now
-        });
-        return result;
+        return this.rememberActionIdempotency(key, payloadHash, { kind: "NOT_FOUND" }, now);
       }
 
-      let transitionResult: TaskMutationResult;
       const fromStatus = task.status;
-
-      if (action === "CANCEL") {
-        if (!CANCELABLE_STATUS.has(task.status)) {
-          const result: TaskActionResult = {
-            kind: "INVALID_TRANSITION",
-            status: task.status
-          };
-          this.actionIdempotency.set(key, {
-            payloadHash,
-            result,
-            updatedAt: now
-          });
-          return result;
-        }
-
-        transitionResult = this.transitionTaskUnsafe(taskId, "CANCELED", task.version, {
-          progress: 0
-        });
-      } else {
-        if (task.status !== "FAILED") {
-          const result: TaskActionResult = {
-            kind: "INVALID_TRANSITION",
-            status: task.status
-          };
-          this.actionIdempotency.set(key, {
-            payloadHash,
-            result,
-            updatedAt: now
-          });
-          return result;
-        }
-
-        transitionResult = this.transitionTaskUnsafe(taskId, "QUEUED", task.version, {
-          progress: 0,
-          clearError: true
-        });
+      const actionPlan = planTaskActionTransition(action, task.status, CANCELABLE_STATUS);
+      if (actionPlan.kind === "INVALID") {
+        return this.rememberActionIdempotency(key, payloadHash, actionPlan.result, now);
       }
+
+      const transitionResult = this.transitionTaskUnsafe(taskId, actionPlan.nextStatus, task.version, {
+        progress: 0,
+        clearError: actionPlan.clearError
+      });
 
       if (!transitionResult.ok) {
         const currentStatus = this.tasks.get(taskId)?.status || task.status;
-        const result: TaskActionResult = {
+        return this.rememberActionIdempotency(key, payloadHash, {
           kind: "INVALID_TRANSITION",
           status: currentStatus
-        };
-        this.actionIdempotency.set(key, {
-          payloadHash,
-          result,
-          updatedAt: now
-        });
-        return result;
+        }, now);
       }
 
       this.handlePostTransitionUnsafe(transitionResult.task, userId, fromStatus, transitionResult.task.status);
 
-      const result: TaskActionResult = {
+      return this.rememberActionIdempotency(key, payloadHash, {
         kind: "SUCCESS",
         taskId: transitionResult.task.taskId,
         status: transitionResult.task.status,
         replayed: false
-      };
-
-      this.actionIdempotency.set(key, {
-        payloadHash,
-        result,
-        updatedAt: now
-      });
-
-      return result;
+      }, now);
     });
   }
 
