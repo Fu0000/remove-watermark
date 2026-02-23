@@ -2,9 +2,11 @@ import { Body, Controller, Delete, Get, Headers, HttpCode, Inject, Param, Post }
 import { ensureAuthorization } from "../../common/auth";
 import { badRequest, conflict, forbidden, notFound, unprocessableEntity } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
+import { parseRequestBody } from "../../common/request-validation";
 import { InvalidTaskAssetError, QuotaExceededError, TasksService } from "./tasks.service";
 import type { TaskMediaType, TaskPolicy } from "@packages/contracts";
 import { ComplianceService } from "../compliance/compliance.service";
+import { z } from "zod";
 
 interface CreateTaskRequest {
   assetId: string;
@@ -27,6 +29,27 @@ interface UpsertRegionsRequest {
   regions: Array<Record<string, unknown>>;
 }
 
+const CreateTaskRequestSchema = z.object({
+  assetId: z.string().min(1),
+  mediaType: z.enum(["IMAGE", "VIDEO", "PDF", "PPT"]),
+  taskPolicy: z.enum(["FAST", "QUALITY"]).optional()
+});
+
+const UpsertMaskRequestSchema = z.object({
+  imageWidth: z.number().int().positive(),
+  imageHeight: z.number().int().positive(),
+  polygons: z.array(z.array(z.array(z.number()))).default([]),
+  brushStrokes: z.array(z.array(z.array(z.number()))).default([]),
+  version: z.number().int().nonnegative()
+});
+
+const UpsertRegionsRequestSchema = z.object({
+  version: z.number().int().nonnegative(),
+  mediaType: z.enum(["IMAGE", "VIDEO", "PDF", "PPT"]),
+  schemaVersion: z.string().min(1),
+  regions: z.array(z.record(z.unknown()))
+});
+
 @Controller("v1/tasks")
 export class TasksController {
   constructor(
@@ -40,16 +63,13 @@ export class TasksController {
     @Headers("authorization") authorization: string | undefined,
     @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined,
-    @Body() body: CreateTaskRequest
+    @Body() rawBody: CreateTaskRequest
   ) {
     const auth = ensureAuthorization(authorization, requestIdHeader);
+    const body = parseRequestBody(CreateTaskRequestSchema, rawBody, requestIdHeader);
 
     if (!idempotencyKey) {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
-    }
-
-    if (!body.assetId || !body.mediaType) {
-      badRequest(40001, "参数非法", requestIdHeader);
     }
 
     let result: Awaited<ReturnType<TasksService["createTask"]>>;
@@ -201,18 +221,15 @@ export class TasksController {
     @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Param("taskId") taskId: string,
-    @Body() body: UpsertMaskRequest
+    @Body() rawBody: UpsertMaskRequest
   ) {
     const auth = ensureAuthorization(authorization, requestIdHeader);
+    const body = parseRequestBody(UpsertMaskRequestSchema, rawBody, requestIdHeader);
     if (!idempotencyKey) {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
     if (await this.complianceService.isTaskDeleted(auth.userId, taskId)) {
       notFound(40401, "资源不存在", requestIdHeader);
-    }
-
-    if (!body.imageWidth || !body.imageHeight || body.version < 0) {
-      badRequest(40001, "参数非法", requestIdHeader);
     }
 
     const task = await this.tasksService.getByUser(auth.userId, taskId, { advance: false });
@@ -249,18 +266,15 @@ export class TasksController {
     @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Param("taskId") taskId: string,
-    @Body() body: UpsertRegionsRequest
+    @Body() rawBody: UpsertRegionsRequest
   ) {
     const auth = ensureAuthorization(authorization, requestIdHeader);
+    const body = parseRequestBody(UpsertRegionsRequestSchema, rawBody, requestIdHeader);
     if (!idempotencyKey) {
       badRequest(40001, "Idempotency-Key is required", requestIdHeader);
     }
     if (await this.complianceService.isTaskDeleted(auth.userId, taskId)) {
       notFound(40401, "资源不存在", requestIdHeader);
-    }
-
-    if (!body.schemaVersion || !Array.isArray(body.regions) || body.version < 0 || !body.mediaType) {
-      badRequest(40001, "参数非法", requestIdHeader);
     }
 
     const result = await this.tasksService.upsertRegions(auth.userId, taskId, body);

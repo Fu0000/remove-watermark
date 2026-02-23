@@ -188,6 +188,6 @@
 - P2-5：推理工作目录与结果目录增加 TTL 清理策略。
 
 ### 仍待完成
-- P2-1：DTO 校验体系统一（class-validator / zod 全面接管）。
+- P2-1：DTO 校验体系统一（已完成 `tasks/assets` 基线接入 zod，剩余控制器待覆盖）。
 - P2-3：`tasks.service` 职责拆分（生命周期/配额/幂等/模拟解耦）。
 - P2-4：全链路 traceId + Prometheus 指标体系补齐。

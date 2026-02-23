@@ -3,7 +3,9 @@ import { ensureAuthorization } from "../../common/auth";
 import { isSupportedMime, type UploadMediaType } from "../../common/media-mime";
 import { badRequest, conflict, notFound } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
+import { parseRequestBody } from "../../common/request-validation";
 import { ComplianceService } from "../compliance/compliance.service";
+import { z } from "zod";
 
 interface UploadPolicyRequest {
   fileName: string;
@@ -12,6 +14,14 @@ interface UploadPolicyRequest {
   mimeType: string;
   sha256?: string;
 }
+
+const UploadPolicyRequestSchema = z.object({
+  fileName: z.string().min(1),
+  fileSize: z.number().int().positive(),
+  mediaType: z.enum(["image", "video", "pdf", "ppt"]),
+  mimeType: z.string().min(1),
+  sha256: z.string().optional()
+});
 
 @Controller("v1/assets")
 export class AssetsController {
@@ -23,13 +33,10 @@ export class AssetsController {
     @Headers("x-request-id") requestIdHeader: string | undefined,
     @Headers("x-forwarded-for") forwardedFor: string | undefined,
     @Headers("user-agent") userAgent: string | undefined,
-    @Body() body: UploadPolicyRequest
+    @Body() rawBody: UploadPolicyRequest
   ) {
     const auth = ensureAuthorization(authorization, requestIdHeader);
-
-    if (!body.fileName || !body.fileSize || body.fileSize <= 0) {
-      badRequest(40001, "参数非法", requestIdHeader);
-    }
+    const body = parseRequestBody(UploadPolicyRequestSchema, rawBody, requestIdHeader);
 
     if (!isSupportedMime(body.mediaType, body.mimeType)) {
       badRequest(40001, "不支持的媒体类型或 MIME", requestIdHeader);
