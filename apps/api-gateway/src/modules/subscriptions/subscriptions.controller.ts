@@ -2,7 +2,7 @@ import { Body, Controller, Get, Headers, HttpCode, Inject, Post } from "@nestjs/
 import { ensureAuthorization } from "../../common/auth";
 import { badRequest, notFound, unauthorized } from "../../common/http-errors";
 import { ok } from "../../common/http-response";
-import { parseRequestBody } from "../../common/request-validation";
+import { parseRequestBody, parseRequestHeaders } from "../../common/request-validation";
 import {
   safeCompareSignature,
   signPaymentCallback,
@@ -26,8 +26,8 @@ interface PaymentCallbackRequest {
   orderId: string;
   paymentStatus: "PAID" | "REFUNDED";
   providerTradeNo?: string;
-  paidAt?: string;
-  refundedAt?: string;
+  paidAt?: Date;
+  refundedAt?: Date;
   refundReason?: string;
 }
 
@@ -47,24 +47,17 @@ const PaymentCallbackRequestSchema = z
     orderId: z.string().min(1),
     paymentStatus: z.enum(["PAID", "REFUNDED"]),
     providerTradeNo: z.string().optional(),
-    paidAt: z.string().optional(),
-    refundedAt: z.string().optional(),
+    paidAt: z.coerce.date().optional(),
+    refundedAt: z.coerce.date().optional(),
     refundReason: z.string().optional()
-  })
-  .superRefine((value, ctx) => {
-    if (value.paidAt !== undefined && Number.isNaN(new Date(value.paidAt).getTime())) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "paidAt"
-      });
-    }
-    if (value.refundedAt !== undefined && Number.isNaN(new Date(value.refundedAt).getTime())) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "refundedAt"
-      });
-    }
   });
+
+const PaymentCallbackHeaderSchema = z.object({
+  paymentTimestamp: z.string().optional(),
+  paymentSignature: z.string().optional()
+});
+
+const PaymentTimestampSchema = z.coerce.number().finite().positive();
 
 @Controller("v1/subscriptions")
 export class SubscriptionsController {
@@ -132,14 +125,20 @@ export class SubscriptionsController {
   ) {
     const body = parseRequestBody(PaymentCallbackRequestSchema, rawBody, requestIdHeader);
 
-    if (!paymentTimestampHeader || !paymentSignatureHeader) {
+    const callbackHeaders = parseRequestHeaders(
+      PaymentCallbackHeaderSchema,
+      {
+        paymentTimestamp: paymentTimestampHeader,
+        paymentSignature: paymentSignatureHeader
+      },
+      requestIdHeader
+    );
+
+    if (!callbackHeaders.paymentTimestamp || !callbackHeaders.paymentSignature) {
       unauthorized(40101, "鉴权失败：缺少支付回调签名", requestIdHeader);
     }
 
-    const timestampSeconds = Number(paymentTimestampHeader);
-    if (!Number.isFinite(timestampSeconds) || timestampSeconds <= 0) {
-      badRequest(40001, "参数非法：x-payment-timestamp", requestIdHeader);
-    }
+    const timestampSeconds = parseRequestBody(PaymentTimestampSchema, callbackHeaders.paymentTimestamp, requestIdHeader);
 
     const replayWindowMs = this.paymentCallbackReplayWindowSeconds * 1000;
     const callbackMs = Math.floor(timestampSeconds * 1000);
@@ -148,13 +147,13 @@ export class SubscriptionsController {
     }
 
     const signatureInput: PaymentCallbackSignatureInput = {
-      timestamp: paymentTimestampHeader,
+      timestamp: callbackHeaders.paymentTimestamp,
       eventId: body.eventId,
       orderId: body.orderId,
       paymentStatus: body.paymentStatus
     };
     const expectedSignature = signPaymentCallback(this.paymentCallbackSecret, signatureInput);
-    if (!safeCompareSignature(paymentSignatureHeader, expectedSignature)) {
+    if (!safeCompareSignature(callbackHeaders.paymentSignature, expectedSignature)) {
       unauthorized(40101, "鉴权失败：支付回调签名不匹配", requestIdHeader);
     }
 
@@ -163,8 +162,8 @@ export class SubscriptionsController {
       orderId: body.orderId,
       paymentStatus: body.paymentStatus,
       providerTradeNo: body.providerTradeNo,
-      paidAt: body.paidAt ? parseIsoDatetime(body.paidAt, "paidAt", requestIdHeader) : undefined,
-      refundedAt: body.refundedAt ? parseIsoDatetime(body.refundedAt, "refundedAt", requestIdHeader) : undefined,
+      paidAt: body.paidAt,
+      refundedAt: body.refundedAt,
       refundReason: body.refundReason
     });
 
@@ -174,14 +173,6 @@ export class SubscriptionsController {
 
     return ok(result, requestIdHeader);
   }
-}
-
-function parseIsoDatetime(value: string, fieldName: string, requestIdHeader: string | undefined) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    badRequest(40001, `参数非法：${fieldName}`, requestIdHeader);
-  }
-  return date;
 }
 
 function parsePositiveInt(value: string | undefined, fallback: number) {

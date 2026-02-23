@@ -409,6 +409,49 @@ test("POST /v1/subscriptions/payment-callback should reject invalid signature", 
   await app.close();
 });
 
+test("POST /v1/subscriptions/payment-callback should reject invalid timestamp", async () => {
+  const app = await setup();
+  const server = app.getHttpAdapter().getInstance();
+
+  const checkout = await server.inject({
+    method: "POST",
+    url: "/v1/subscriptions/checkout",
+    headers: {
+      authorization: "Bearer test-token",
+      "x-request-id": "req_contract_sub_callback_checkout_4",
+      "content-type": "application/json"
+    },
+    payload: {
+      planId: "pro_month",
+      channel: "wechat_pay",
+      clientReturnUrl: "https://app.example.com/pay/result"
+    }
+  });
+  assert.equal(checkout.statusCode, 200);
+  const orderId = checkout.json().data.orderId as string;
+
+  const callback = await server.inject({
+    method: "POST",
+    url: "/v1/subscriptions/payment-callback",
+    headers: {
+      "x-request-id": "req_contract_sub_callback_invalid_ts_4",
+      "x-payment-timestamp": "invalid",
+      "x-payment-signature": "v1=invalid",
+      "content-type": "application/json"
+    },
+    payload: {
+      eventId: "evt_contract_invalid_ts_4",
+      orderId,
+      paymentStatus: "PAID"
+    }
+  });
+
+  assert.equal(callback.statusCode, 400);
+  assert.equal(callback.json().code, 40001);
+
+  await app.close();
+});
+
 test("GET /v1/usage/me should return usage summary", async () => {
   const app = await setup();
   const server = app.getHttpAdapter().getInstance();

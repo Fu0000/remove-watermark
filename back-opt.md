@@ -189,7 +189,8 @@
 - P2-5：推理工作目录与结果目录增加 TTL 清理策略。
 - P0-3（补强）：鉴权默认策略改为显式开关（legacy/unsigned 默认关闭），`/v1/auth/wechat-login` 改为签发 HS256 JWT，移除固定 `u_1001` 登录回包。
 - P2（治理补强）：统一 `parseForwardedIp` 与 `requireIdempotencyKey` 公共工具，减少控制器重复校验/解析逻辑。
+- P2-1（推进）：新增 `parseRequestHeaders`，并将 `subscriptions/payment-callback` 的 headers/body 校验统一纳入 zod 管线，去除重复日期二次解析逻辑。
 
 ### 仍待完成
-- P2-1：DTO 校验体系统一（已完成全部含 `@Body` 控制器的 zod 接入，`Query/Param` 已覆盖 `webhooks`、`account`、`admin`、`tasks`，其余控制器逐步迁移中）。
+- P2-1：DTO 校验体系统一（已完成全部含 `@Body` 控制器的 zod 接入，`Query/Param` 已覆盖 `webhooks`、`account`、`admin`、`tasks`，`subscriptions` 的 payment-callback headers/body 也已收敛；其余控制器逐步迁移中）。
 - P2-3：`tasks.service` 职责拆分（已拆出 `TaskQuotaService`、`task-action` 幂等/动作判定模块、`task-lifecycle` 生命周期规划模块、`MemoryTransactionStore` 内存事务/磁盘持久化适配层；剩余跨存储编排边界继续收敛）。

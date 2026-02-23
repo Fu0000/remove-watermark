@@ -24,3 +24,7 @@ export function parseRequestQuery<TSchema extends ZodTypeAny>(schema: TSchema, p
 export function parseRequestParams<TSchema extends ZodTypeAny>(schema: TSchema, payload: unknown, requestId?: string) {
   return parseRequestPayload(schema, payload, requestId);
 }
+
+export function parseRequestHeaders<TSchema extends ZodTypeAny>(schema: TSchema, payload: unknown, requestId?: string) {
+  return parseRequestPayload(schema, payload, requestId);
+}
