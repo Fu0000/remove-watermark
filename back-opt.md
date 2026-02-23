@@ -192,4 +192,4 @@
 
 ### 仍待完成
 - P2-1：DTO 校验体系统一（已完成全部含 `@Body` 控制器的 zod 接入，`Query/Param` 已覆盖 `webhooks`、`account`、`admin`、`tasks`，其余控制器逐步迁移中）。
-- P2-3：`tasks.service` 职责拆分（已拆出 `TaskQuotaService`、`task-action` 幂等/动作判定模块、`task-lifecycle` 生命周期规划模块；剩余持久化编排与内存存储适配层待继续解耦）。
+- P2-3：`tasks.service` 职责拆分（已拆出 `TaskQuotaService`、`task-action` 幂等/动作判定模块、`task-lifecycle` 生命周期规划模块、`MemoryTransactionStore` 内存事务/磁盘持久化适配层；剩余跨存储编排边界继续收敛）。

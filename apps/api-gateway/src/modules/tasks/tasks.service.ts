@@ -1,10 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { Injectable } from "@nestjs/common";
 import type { TaskArtifactType, TaskMediaType, TaskPolicy, TaskStatus } from "@packages/contracts";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../common/prisma.service";
 import { TaskQuotaService, type MemoryUsageLedgerRecord } from "./task-quota.service";
+import { MemoryTransactionStore } from "./task-memory-transaction";
 import {
   buildTaskActionPayloadHash,
   parseTaskActionResult,
@@ -277,6 +277,7 @@ export class TasksService {
   private readonly prismaService?: PrismaService;
   private readonly usePrismaStore: boolean;
   private readonly simulationEnabled: boolean;
+  private readonly memoryTransactionStore: MemoryTransactionStore<PersistedTaskState>;
   private readonly quotaService = new TaskQuotaService(FREE_MONTHLY_QUOTA);
   private readonly minioPublicEndpoint = trimTrailingSlash(
     process.env.MINIO_PUBLIC_ENDPOINT || "http://127.0.0.1:9000"
@@ -300,9 +301,13 @@ export class TasksService {
 
     this.persistenceEnabled = options.disablePersistence !== true && process.env.NODE_ENV !== "test" && !this.usePrismaStore;
 
-    if (this.persistenceEnabled) {
-      this.hydrateFromDisk();
-    }
+    this.memoryTransactionStore = new MemoryTransactionStore<PersistedTaskState>({
+      persistenceEnabled: this.persistenceEnabled,
+      persistenceFilePath: this.persistenceFilePath,
+      snapshot: () => this.snapshotState(),
+      restore: (snapshot) => this.restoreState(snapshot),
+      revive: (raw) => this.revivePersistedState(raw)
+    });
   }
 
   async createTask(
@@ -2020,15 +2025,7 @@ export class TasksService {
   }
 
   private runInTransaction<T>(runner: () => T): T {
-    const snapshot = this.snapshotState();
-    try {
-      const result = runner();
-      this.flushToDisk();
-      return result;
-    } catch (error) {
-      this.restoreState(snapshot);
-      throw error;
-    }
+    return this.memoryTransactionStore.runInTransaction(runner);
   }
 
   private snapshotState(): PersistedTaskState {
@@ -2066,41 +2063,27 @@ export class TasksService {
     snapshot.outboxEvents.forEach((event) => this.outboxEvents.set(event.eventId, event));
   }
 
-  private hydrateFromDisk() {
-    if (!this.persistenceEnabled || !existsSync(this.persistenceFilePath)) {
-      return;
-    }
+  private revivePersistedState(raw: unknown): PersistedTaskState {
+    const parsed = raw && typeof raw === "object" ? (raw as Partial<PersistedTaskState>) : {};
+    const tasks = Array.isArray(parsed.tasks) ? parsed.tasks : [];
+    const idempotency = Array.isArray(parsed.idempotency) ? parsed.idempotency : [];
+    const actionIdempotency = Array.isArray(parsed.actionIdempotency) ? parsed.actionIdempotency : [];
+    const taskMasks = Array.isArray(parsed.taskMasks) ? parsed.taskMasks : [];
+    const taskRegions = Array.isArray(parsed.taskRegions) ? parsed.taskRegions : [];
+    const usageLedgers = Array.isArray(parsed.usageLedgers) ? parsed.usageLedgers : [];
+    const outboxEvents = Array.isArray(parsed.outboxEvents) ? parsed.outboxEvents : [];
 
-    const raw = readFileSync(this.persistenceFilePath, "utf8");
-    const parsed = JSON.parse(raw) as Partial<PersistedTaskState>;
-
-    const snapshot: PersistedTaskState = {
-      tasks: (parsed.tasks || []).map((task) => ({
-        ...task,
-        version: typeof task.version === "number" ? task.version : 0
-      })) as TaskRecord[],
-      idempotency: parsed.idempotency || [],
-      actionIdempotency: parsed.actionIdempotency || [],
-      taskMasks: parsed.taskMasks || [],
-      taskRegions: parsed.taskRegions || [],
-      usageLedgers: parsed.usageLedgers || [],
-      outboxEvents: parsed.outboxEvents || []
+    return {
+      tasks: tasks.map((task) => ({
+        ...(task as TaskRecord),
+        version: typeof (task as TaskRecord).version === "number" ? (task as TaskRecord).version : 0
+      })),
+      idempotency: idempotency as PersistedTaskState["idempotency"],
+      actionIdempotency: actionIdempotency as PersistedTaskState["actionIdempotency"],
+      taskMasks: taskMasks as PersistedTaskState["taskMasks"],
+      taskRegions: taskRegions as PersistedTaskState["taskRegions"],
+      usageLedgers: usageLedgers as PersistedTaskState["usageLedgers"],
+      outboxEvents: outboxEvents as PersistedTaskState["outboxEvents"]
     };
-
-    this.restoreState(snapshot);
-  }
-
-  private flushToDisk() {
-    if (!this.persistenceEnabled) {
-      return;
-    }
-
-    const payload = JSON.stringify(this.snapshotState(), null, 2);
-    const targetDir = dirname(this.persistenceFilePath);
-    mkdirSync(targetDir, { recursive: true });
-
-    const tempPath = `${this.persistenceFilePath}.tmp`;
-    writeFileSync(tempPath, payload, "utf8");
-    renameSync(tempPath, this.persistenceFilePath);
   }
 }

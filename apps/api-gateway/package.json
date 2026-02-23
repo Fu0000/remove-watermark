@@ -15,7 +15,7 @@
     "ops:account-delete:reconcile": "tsx scripts/account-delete-reconcile.ts",
     "ops:audit:retention": "tsx scripts/audit-retention.ts",
     "test:data-dedupe-index": "tsx scripts/data-dedupe-index-check.ts",
-    "test:unit": "NODE_ENV=test AUTH_ALLOW_LEGACY_BEARER=true AUTH_LEGACY_DEFAULT_USER_ID=u_1001 AUTH_LEGACY_DEFAULT_TENANT_ID=u_1001 node --test --import tsx test/tasks.service.spec.ts test/compliance.service.spec.ts test/metrics.spec.ts test/task-action.spec.ts test/auth.spec.ts",
+    "test:unit": "NODE_ENV=test AUTH_ALLOW_LEGACY_BEARER=true AUTH_LEGACY_DEFAULT_USER_ID=u_1001 AUTH_LEGACY_DEFAULT_TENANT_ID=u_1001 node --test --import tsx test/tasks.service.spec.ts test/compliance.service.spec.ts test/metrics.spec.ts test/task-action.spec.ts test/task-memory-transaction.spec.ts test/auth.spec.ts",
     "test:contract": "NODE_ENV=test AUTH_ALLOW_LEGACY_BEARER=true AUTH_LEGACY_DEFAULT_USER_ID=u_1001 AUTH_LEGACY_DEFAULT_TENANT_ID=u_1001 node --test --import tsx test/contract.spec.ts",
     "test:shared-smoke": "tsx scripts/shared-smoke.ts",
     "test:shared-smoke:reset-user": "tsx scripts/reset-local-smoke-user.ts",
