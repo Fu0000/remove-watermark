@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Taro from "@tarojs/taro";
 import { Button, Text, View } from "@tarojs/components";
 import { PageShell } from "@/modules/common/page-shell";
-import { getUploadPolicy } from "@/services/asset";
+import { getUploadPolicy, uploadFileToCOS } from "@/services/asset";
 import { createTask, upsertTaskMask } from "@/services/task";
 import { ApiError } from "@/services/http";
 import { buildIdempotencyKey } from "@/utils/idempotency";
@@ -12,8 +12,8 @@ import { useMediaStore } from "@/stores/media.store";
 import type { TaskStatus } from "@packages/contracts";
 import "./index.scss";
 
-const IMAGE_WIDTH = 1920;
-const IMAGE_HEIGHT = 1080;
+const DEFAULT_IMAGE_WIDTH = 1920;
+const DEFAULT_IMAGE_HEIGHT = 1080;
 
 type MaskMode = "POLYGON" | "BRUSH";
 type MaskPoint = [number, number];
@@ -68,6 +68,10 @@ export default function EditorPage() {
 
   // Connect to the new Media store
   const { selectedMedia, mediaType } = useMediaStore();
+
+  // Use actual image dimensions from store, or fall back to defaults
+  const IMAGE_WIDTH = selectedMedia?.imageWidth || DEFAULT_IMAGE_WIDTH;
+  const IMAGE_HEIGHT = selectedMedia?.imageHeight || DEFAULT_IMAGE_HEIGHT;
 
   useEffect(() => {
     // Return to home if no media selected
@@ -250,7 +254,7 @@ export default function EditorPage() {
     setErrorText("");
 
     try {
-      // 1. Get upload policy (in a real app, you'd upload the local file here to COS)
+      // 1. Get upload policy
       const uploadPolicy = await getUploadPolicy({
         fileName: selectedMedia.fileName,
         fileSize: selectedMedia.fileSize,
@@ -259,7 +263,15 @@ export default function EditorPage() {
       });
       const assetId = uploadPolicy.data.assetId;
 
-      // 2. Create orchestration task
+      // 2. Actually upload file bytes to COS/MinIO
+      const fileOrPath = selectedMedia.file || selectedMedia.sourcePath;
+      await uploadFileToCOS(
+        uploadPolicy.data.uploadUrl,
+        uploadPolicy.data.headers,
+        fileOrPath
+      );
+
+      // 3. Create orchestration task
       const task = await createTask(
         { assetId, mediaType, taskPolicy: "FAST" },
         buildIdempotencyKey()
@@ -269,7 +281,7 @@ export default function EditorPage() {
       // Update global store
       setTask(newTaskId, task.data.status as TaskStatus);
 
-      // 3. Submit drawn masks
+      // 4. Submit drawn masks
       await upsertTaskMask(
         newTaskId,
         {

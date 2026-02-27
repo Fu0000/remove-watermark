@@ -5,6 +5,9 @@ export interface SelectedMedia {
     fileSize: number;
     mimeType: string;
     sourcePath: string; // 本地选择的文件路径（临时地址）
+    file?: File;        // H5 模式下的 File 对象，用于上传到 COS
+    imageWidth?: number;  // 真实资源宽度
+    imageHeight?: number; // 真实资源高度
 }
 
 export type MediaType = "IMAGE" | "VIDEO";

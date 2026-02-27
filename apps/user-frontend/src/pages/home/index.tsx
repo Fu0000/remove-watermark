@@ -54,13 +54,32 @@ export default function HomePage() {
           return;
         }
         const url = URL.createObjectURL(file);
-        setMedia("IMAGE", {
-          fileName: file.name || "image.png",
-          fileSize: file.size || 1,
-          mimeType: file.type || "image/png",
-          sourcePath: url
-        });
-        resolve(true);
+
+        // Read actual image dimensions before storing
+        const img = new window.Image();
+        img.onload = () => {
+          setMedia("IMAGE", {
+            fileName: file.name || "image.png",
+            fileSize: file.size || 1,
+            mimeType: file.type || "image/png",
+            sourcePath: url,
+            file,
+            imageWidth: img.naturalWidth || 1920,
+            imageHeight: img.naturalHeight || 1080
+          });
+          resolve(true);
+        };
+        img.onerror = () => {
+          setMedia("IMAGE", {
+            fileName: file.name || "image.png",
+            fileSize: file.size || 1,
+            mimeType: file.type || "image/png",
+            sourcePath: url,
+            file
+          });
+          resolve(true);
+        };
+        img.src = url;
       };
       input.click();
     });
@@ -111,14 +130,6 @@ export default function HomePage() {
     }
   };
 
-  const handleGoSubscription = () => {
-    void Taro.navigateTo({ url: "/pages/subscription/index" });
-  };
-
-  const handleGoLab = () => {
-    void Taro.navigateTo({ url: "/pages/lab/index" });
-  };
-
   return (
     <PageShell title="超纯净去水印" subtitle="AI 像素级抹除 / 智能瑕疵修复">
       <View className="home-dashboard-container animate-slide-up" style={{ animationDelay: "0.1s" }}>
@@ -144,15 +155,6 @@ export default function HomePage() {
             <Text className="home-status-label">算力配额</Text>
             <Text className="home-status-value">{user ? String(user.quotaLeft) : "-"}</Text>
           </View>
-        </View>
-
-        <View className="home-nav-actions">
-          <Button className="home-btn home-btn-ghost" onClick={handleGoSubscription}>
-            了解订阅与高阶面源计划
-          </Button>
-          <Button className="home-btn home-btn-ghost" onClick={handleGoLab}>
-            多端联调实验室 🧪
-          </Button>
         </View>
 
         {errorText ? (
