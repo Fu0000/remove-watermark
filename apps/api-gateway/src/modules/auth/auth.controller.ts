@@ -1,11 +1,13 @@
-import { Body, Controller, Headers, Post } from "@nestjs/common";
+import { Body, Controller, Headers, HttpException, HttpStatus, Post } from "@nestjs/common";
 import { ok } from "../../common/http-response";
 import { unauthorized, badRequest, conflict, forbidden } from "../../common/http-errors";
 import { issueAccessToken } from "../../common/jwt";
-import { parseRequestBody } from "../../common/request-validation";
-import { PrismaService } from "../common/prisma.service";
+import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import * as bcrypt from "bcryptjs";
+
+// Module-level singleton — bypasses tsx/esbuild lack of emitDecoratorMetadata
+const prisma = new PrismaClient();
 
 // ────────────────────────────────────────────────────────────
 // Schemas
@@ -34,19 +36,33 @@ const RefreshRequestSchema = z.object({
 });
 
 // ────────────────────────────────────────────────────────────
+// Helper: Zod safe parse with proper error throwing
+// ────────────────────────────────────────────────────────────
+
+function parseBody<T extends z.ZodTypeAny>(schema: T, body: any, requestId?: string): z.infer<T> {
+  const result = schema.safeParse(body);
+  if (!result.success) {
+    throw new HttpException(
+      { code: 40001, message: "参数非法：" + result.error.issues.map(i => i.message).join(", "), requestId },
+      HttpStatus.BAD_REQUEST
+    );
+  }
+  return result.data;
+}
+
+// ────────────────────────────────────────────────────────────
 // Controller
 // ────────────────────────────────────────────────────────────
 
 @Controller("v1/auth")
 export class AuthController {
-  constructor(private readonly prisma: PrismaService) { }
 
   /** 手机号 + 密码 登录 */
   @Post("login")
-  async login(@Body() rawBody: unknown, @Headers("x-request-id") requestId?: string) {
-    const body = parseRequestBody(LoginRequestSchema, rawBody, requestId);
+  async login(@Body() rawBody: any, @Headers("x-request-id") requestId?: string) {
+    const body = parseBody(LoginRequestSchema, rawBody, requestId);
 
-    const user = await this.prisma.user.findUnique({ where: { phone: body.phone } });
+    const user = await prisma.user.findUnique({ where: { phone: body.phone } });
     if (!user) {
       unauthorized(401, "手机号或密码不正确", requestId);
     }
@@ -80,11 +96,11 @@ export class AuthController {
 
   /** 邀请码 + 手机号 + 密码 注册 */
   @Post("register")
-  async register(@Body() rawBody: unknown, @Headers("x-request-id") requestId?: string) {
-    const body = parseRequestBody(RegisterRequestSchema, rawBody, requestId);
+  async register(@Body() rawBody: any, @Headers("x-request-id") requestId?: string) {
+    const body = parseBody(RegisterRequestSchema, rawBody, requestId);
 
     // 验证邀请码
-    const invite = await this.prisma.inviteCode.findUnique({ where: { code: body.inviteCode } });
+    const invite = await prisma.inviteCode.findUnique({ where: { code: body.inviteCode } });
     if (!invite) {
       badRequest(400, "邀请码无效", requestId);
     }
@@ -96,7 +112,7 @@ export class AuthController {
     }
 
     // 手机号唯一性检查
-    const existing = await this.prisma.user.findUnique({ where: { phone: body.phone } });
+    const existing = await prisma.user.findUnique({ where: { phone: body.phone } });
     if (existing) {
       conflict(409, "该手机号已注册", requestId);
     }
@@ -105,7 +121,7 @@ export class AuthController {
     const passwordHash = await bcrypt.hash(body.password, 10);
     const userId = `u_${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
 
-    const user = await this.prisma.user.create({
+    const user = await prisma.user.create({
       data: {
         userId,
         phone: body.phone,
@@ -118,7 +134,7 @@ export class AuthController {
     });
 
     // 消耗邀请码使用次数
-    await this.prisma.inviteCode.update({
+    await prisma.inviteCode.update({
       where: { codeId: invite!.codeId },
       data: { usedCount: { increment: 1 } }
     });
@@ -143,8 +159,8 @@ export class AuthController {
 
   /** 微信登录 (mock，保留接口待后续接入真实微信) */
   @Post("wechat-login")
-  wechatLogin(@Body() rawBody: unknown, @Headers("x-request-id") requestId?: string) {
-    const body = parseRequestBody(WechatLoginRequestSchema, rawBody, requestId);
+  wechatLogin(@Body() rawBody: any, @Headers("x-request-id") requestId?: string) {
+    const body = parseBody(WechatLoginRequestSchema, rawBody, requestId);
     const userId = `u_wx_${body.code.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 20)}`;
     const accessToken = issueAccessToken({ userId, tenantId: userId });
     return ok(
@@ -160,8 +176,8 @@ export class AuthController {
 
   /** 刷新 token */
   @Post("refresh")
-  refreshToken(@Body() rawBody: unknown, @Headers("x-request-id") requestId?: string) {
-    parseRequestBody(RefreshRequestSchema, rawBody, requestId);
+  refreshToken(@Body() rawBody: any, @Headers("x-request-id") requestId?: string) {
+    parseBody(RefreshRequestSchema, rawBody, requestId);
     const userId = process.env.AUTH_LEGACY_DEFAULT_USER_ID || "u_refresh";
     const accessToken = issueAccessToken({ userId, tenantId: userId });
     return ok({ accessToken, expiresIn: 7200 }, requestId);

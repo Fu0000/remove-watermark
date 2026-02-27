@@ -39,7 +39,8 @@ export default function AccountPage() {
   };
 
   const goLogin = () => {
-    Taro.navigateTo({ url: "/pages/login/index" });
+    // navigateTo is forbidden from tabBar pages in Taro H5; reLaunch works everywhere
+    Taro.reLaunch({ url: "/pages/login/index" });
   };
 
   const menuItems = [

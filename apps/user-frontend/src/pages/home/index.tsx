@@ -16,7 +16,8 @@ export default function HomePage() {
   /** 如果未登录，跳转到登录页；已登录返回 true */
   const requireLogin = (): boolean => {
     if (user) return true;
-    Taro.navigateTo({ url: "/pages/login/index" });
+    // navigateTo forbidden from tabBar pages in Taro H5
+    Taro.reLaunch({ url: "/pages/login/index" });
     return false;
   };
 
