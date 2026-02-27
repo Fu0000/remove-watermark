@@ -311,7 +311,7 @@ export default function EditorPage() {
   }
 
   return (
-    <PageShell title="智能消除工作台" subtitle={`已加载: ${selectedMedia.fileName}`}>
+    <PageShell title="智能消除工作台" subtitle={`${mediaType === "VIDEO" ? "🎬 视频" : "🖼️ 图片"} · ${selectedMedia.fileName}`}>
 
       {/* 极简顶栏工具集 */}
       <View className="editor-nav-pills animate-fade-in">
