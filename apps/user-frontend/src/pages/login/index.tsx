@@ -36,12 +36,43 @@ export default function LoginPage() {
         }
     };
 
+    const goBack = () => {
+        const pages = Taro.getCurrentPages();
+        if (pages.length > 1) {
+            Taro.navigateBack();
+        } else {
+            Taro.reLaunch({ url: "/pages/home/index" });
+        }
+    };
+
     const goRegister = () => {
         Taro.navigateTo({ url: "/pages/register/index" });
     };
 
     return (
         <View className="login-page">
+            {/* 返回按钮 */}
+            <View
+                onClick={goBack}
+                style={{
+                    position: "absolute",
+                    top: "20px",
+                    left: "20px",
+                    width: "36px",
+                    height: "36px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderRadius: "50%",
+                    background: "rgba(255,255,255,0.15)",
+                    cursor: "pointer",
+                    fontSize: "20px",
+                    color: "#fff",
+                    zIndex: 10
+                }}
+            >
+                ‹
+            </View>
             {/* 顶部品牌区 */}
             <View className="login-hero">
                 <View className="login-logo">✨</View>
