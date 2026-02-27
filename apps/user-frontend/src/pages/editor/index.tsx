@@ -248,15 +248,16 @@ export default function EditorPage() {
   const handlePointerMove = (event: unknown) => {
     const pt = pointFromEvent(event);
     if (!pt) return;
-    const drag = dragRef.current;
-    if (!drag) return;
-
+    // BRUSH: independent of dragRef
     if (mode === "BRUSH") {
       if (!activeStrokeRef.current.length) return;
       activeStrokeRef.current = [...activeStrokeRef.current, pt];
       setActiveStroke([...activeStrokeRef.current]);
       return;
     }
+
+    const drag = dragRef.current;
+    if (!drag) return;
 
     if (drag.type === "draw") {
       setPreviewRect({ x1: drag.startPt[0], y1: drag.startPt[1], x2: pt[0], y2: pt[1] });
