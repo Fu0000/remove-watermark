@@ -42,4 +42,4 @@ import { AdminController } from "./admin/admin.controller";
     }
   ]
 })
-export class AppModule {}
+export class AppModule { }

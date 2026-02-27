@@ -37,11 +37,13 @@
     "@packages/contracts": "workspace:*",
     "@packages/shared": "workspace:*",
     "@prisma/client": "^5.22.0",
+    "bcryptjs": "^3.0.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^3.0.0",
     "prisma": "^5.22.0"
   }
 }

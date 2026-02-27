@@ -2,39 +2,22 @@ import { useState } from "react";
 import Taro from "@tarojs/taro";
 import { Button, Text, View } from "@tarojs/components";
 import { PageShell } from "@/modules/common/page-shell";
-import { wechatLogin } from "@/services/auth";
-import { ApiError } from "@/services/http";
 import { useAuthStore } from "@/stores/auth.store";
 import { useMediaStore } from "@/stores/media.store";
 import { isH5 } from "@/utils/platform";
-import { SHARED_AUTH_CODE, SHARED_PASSWORD, SHARED_USERNAME } from "@/config/runtime";
 import "./index.scss";
 
 export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState("");
   const user = useAuthStore((state: any) => state.user);
-  const setSession = useAuthStore((state: any) => state.setSession);
   const setMedia = useMediaStore((state: any) => state.setMedia);
 
-  const performLoginIfNeeded = async () => {
+  /** 如果未登录，跳转到登录页；已登录返回 true */
+  const requireLogin = (): boolean => {
     if (user) return true;
-    try {
-      const response = await wechatLogin({
-        code: SHARED_AUTH_CODE,
-        username: SHARED_USERNAME,
-        password: SHARED_PASSWORD
-      });
-      setSession(response.data);
-      return true;
-    } catch (error) {
-      if (error instanceof ApiError) {
-        setErrorText(`${error.code} ${error.message}`);
-      } else {
-        setErrorText("网络初始化失败，请稍后重试");
-      }
-      return false;
-    }
+    Taro.navigateTo({ url: "/pages/login/index" });
+    return false;
   };
 
   // 从视频文件抽取首帧作为画板背景
@@ -195,7 +178,7 @@ export default function HomePage() {
   const handlePickImage = async () => {
     setLoading(true);
     setErrorText("");
-    const loggedIn = await performLoginIfNeeded();
+    const loggedIn = requireLogin();
     if (!loggedIn) { setLoading(false); return; }
     const picked = isH5() ? await pickImageForH5() : await pickImageForTaro();
     setLoading(false);
@@ -205,7 +188,7 @@ export default function HomePage() {
   const handlePickVideo = async () => {
     setLoading(true);
     setErrorText("");
-    const loggedIn = await performLoginIfNeeded();
+    const loggedIn = requireLogin();
     if (!loggedIn) { setLoading(false); return; }
     const picked = isH5() ? await pickVideoForH5() : await pickVideoForTaro();
     setLoading(false);

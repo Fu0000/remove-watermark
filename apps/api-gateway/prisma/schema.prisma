@@ -7,6 +7,33 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  userId        String    @id @map("user_id") @db.VarChar(64)
+  phone         String    @unique @db.VarChar(20)
+  passwordHash  String    @map("password_hash")
+  displayName   String?   @map("display_name") @db.VarChar(64)
+  planId        String    @default("free") @map("plan_id") @db.VarChar(64)
+  quotaLeft     Int       @default(20) @map("quota_left")
+  status        String    @default("ACTIVE") @db.VarChar(16)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@index([phone], map: "idx_users_phone")
+  @@map("users")
+}
+
+model InviteCode {
+  codeId      String    @id @map("code_id") @db.VarChar(64)
+  code        String    @unique @db.VarChar(32)
+  maxUses     Int       @default(1) @map("max_uses")
+  usedCount   Int       @default(0) @map("used_count")
+  createdBy   String    @map("created_by") @db.VarChar(64)
+  expireAt    DateTime? @map("expire_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@map("invite_codes")
+}
+
 model Task {
   taskId       String   @id @map("task_id") @db.VarChar(64)
   userId       String   @map("user_id") @db.VarChar(64)

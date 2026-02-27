@@ -4,7 +4,9 @@ export default defineAppConfig({
     "pages/editor/index",
     "pages/tasks/index",
     "pages/result/index",
-    "pages/account/index"
+    "pages/account/index",
+    "pages/login/index",
+    "pages/register/index"
   ],
   window: {
     navigationBarTitleText: "去水印",
