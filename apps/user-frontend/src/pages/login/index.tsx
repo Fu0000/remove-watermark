@@ -56,19 +56,23 @@ export default function LoginPage() {
                 onClick={goBack}
                 style={{
                     position: "absolute",
-                    top: "20px",
-                    left: "20px",
-                    width: "36px",
-                    height: "36px",
+                    top: "env(safe-area-inset-top, 20px)",
+                    left: "16px",
+                    marginTop: "12px",
+                    width: "44px",
+                    height: "44px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     borderRadius: "50%",
-                    background: "rgba(255,255,255,0.15)",
+                    background: "rgba(255,255,255,0.25)",
+                    backdropFilter: "blur(8px)",
+                    WebkitBackdropFilter: "blur(8px)",
                     cursor: "pointer",
-                    fontSize: "20px",
+                    fontSize: "24px",
                     color: "#fff",
-                    zIndex: 10
+                    zIndex: 10,
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.2)"
                 }}
             >
                 ‹

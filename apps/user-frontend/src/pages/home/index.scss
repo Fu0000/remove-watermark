@@ -18,11 +18,16 @@
   display: flex;
   gap: 20rpx;
   width: 100%;
+
+  // On very narrow screens stack vertically
+  @media (max-width: 320px) {
+    flex-direction: column;
+  }
 }
 
 .home-btn-huge-start {
   flex: 1;
-  height: 200rpx;
+  height: 160rpx;
   border-radius: 40rpx;
   background: var(--rw-accent-gradient);
   box-shadow: 0 16rpx 48rpx var(--rw-accent-glow);
@@ -70,7 +75,7 @@
 }
 
 .home-btn-huge-icon {
-  font-size: 72rpx;
+  font-size: 56rpx;
   line-height: 1;
 }
 
@@ -84,17 +89,19 @@
 }
 
 .home-btn-huge-text {
-  font-size: 36rpx;
-  font-weight: 800;
+  font-size: 30rpx;
+  font-weight: 700;
   color: #ffffff;
-  letter-spacing: 2rpx;
+  letter-spacing: 1rpx;
   text-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.1);
 }
 
 .home-main-hint {
-  font-size: 24rpx;
+  font-size: 22rpx;
   color: var(--rw-text-secondary, #64748b);
   text-align: center;
+  line-height: 1.6;
+  padding: 0 8rpx;
 }
 
 /* 底部数据栅格 (玻璃态) */
@@ -103,6 +110,11 @@
   grid-template-columns: 1fr 1fr;
   gap: 20rpx;
   width: 100%;
+
+  // Stack on very narrow screens
+  @media (max-width: 320px) {
+    grid-template-columns: 1fr;
+  }
 }
 
 .home-stats-panel {
@@ -125,10 +137,17 @@
 }
 
 .home-status-value {
-  font-size: 28rpx;
+  font-size: 26rpx;
   font-weight: 700;
   color: var(--rw-text);
   word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  // User IDs are long — clamp to 2 lines
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 /* 孤立的底部导航按钮区域 */
