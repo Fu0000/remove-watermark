@@ -73,13 +73,8 @@ export default function EditorPage() {
   const IMAGE_WIDTH = selectedMedia?.imageWidth || DEFAULT_IMAGE_WIDTH;
   const IMAGE_HEIGHT = selectedMedia?.imageHeight || DEFAULT_IMAGE_HEIGHT;
 
-  useEffect(() => {
-    // Return to home if no media selected
-    if (!selectedMedia) {
-      Taro.showToast({ title: "请先选择媒体文件", icon: "none" });
-      setTimeout(() => Taro.navigateBack(), 1000);
-    }
-  }, [selectedMedia]);
+
+
 
   const snapshotCurrent = (): MaskSnapshot => ({
     polygons: deepClonePaths(polygons),
@@ -307,7 +302,19 @@ export default function EditorPage() {
   };
 
   if (!selectedMedia) {
-    return <PageShell title="超纯净去水印" subtitle="读取媒体流失败..." />;
+    return (
+      <PageShell title="智能消除工作台" subtitle="请先选择文件">
+        <View className="editor-empty-state">
+          <Text style={{ fontSize: "64px" }}>📂</Text>
+          <Text style={{ fontSize: "16px", fontWeight: "600", color: "var(--rw-text, #1e293b)", marginTop: "16px" }}>未检测到待处理文件</Text>
+          <Text style={{ fontSize: "13px", color: "var(--rw-text-secondary, #64748b)", marginTop: "8px" }}>请从首页选择图片或视频后进入编辑</Text>
+          <Button
+            style={{ marginTop: "24px", background: "var(--rw-accent-gradient, linear-gradient(135deg, #3b82f6, #8b5cf6))", color: "#fff", border: "none", borderRadius: "44px", height: "44px", width: "200px", fontSize: "15px", fontWeight: "600" }}
+            onClick={() => Taro.switchTab({ url: "/pages/home/index" })}
+          >返回首页</Button>
+        </View>
+      </PageShell>
+    );
   }
 
   return (

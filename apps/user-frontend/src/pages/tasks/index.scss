@@ -122,14 +122,19 @@
 
 .task-list-refresh {
     font-size: 24rpx;
-    padding: 6rpx 20rpx;
+    padding: 6rpx 24rpx;
     border-radius: 16rpx;
-    background: rgba(0, 0, 0, 0.03);
-    color: var(--rw-text-secondary, #64748b);
-    border: 1px solid rgba(0, 0, 0, 0.05);
+    background: rgba(59, 130, 246, 0.06);
+    color: var(--rw-accent, #3b82f6);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    font-weight: 600;
 
     &::after {
         display: none;
+    }
+
+    &:active {
+        background: rgba(59, 130, 246, 0.12);
     }
 }
 
