@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Taro from "@tarojs/taro";
 import { Button, Text, View } from "@tarojs/components";
 import { PageShell } from "@/modules/common/page-shell";
@@ -15,12 +15,19 @@ import "./index.scss";
 const DEFAULT_IMAGE_WIDTH = 1920;
 const DEFAULT_IMAGE_HEIGHT = 1080;
 
+// 角手柄名称
+type HandleKey = "TL" | "TR" | "BL" | "BR";
 type MaskMode = "RECTANGLE" | "BRUSH";
 type MaskPoint = [number, number];
 type MaskPath = MaskPoint[];
 
+// 内部矩形结构（存储归一化坐标）
+interface Rect {
+  x1: number; y1: number; x2: number; y2: number;
+}
+
 interface MaskSnapshot {
-  polygons: MaskPath[];
+  rects: Rect[];
   brushStrokes: MaskPath[];
 }
 
@@ -31,21 +38,54 @@ interface BoardRect {
   height: number;
 }
 
-function deepClonePath(path: MaskPath): MaskPath {
-  return path.map(([x, y]) => [x, y]);
+// 拖拽状态
+type DragAction =
+  | { type: "draw"; startPt: MaskPoint }
+  | { type: "move"; rectIdx: number; prevRect: Rect; startPt: MaskPoint }
+  | { type: "resize"; rectIdx: number; prevRect: Rect; handle: HandleKey; startPt: MaskPoint };
+
+function clamp(v: number, lo: number, hi: number) { return Math.min(hi, Math.max(lo, v)); }
+function asNum(v: unknown): number | undefined {
+  const n = Number(v); return Number.isFinite(n) ? n : undefined;
+}
+function ptInsideRect(pt: MaskPoint, r: Rect, pad = 0): boolean {
+  return pt[0] >= r.x1 - pad && pt[0] <= r.x2 + pad && pt[1] >= r.y1 - pad && pt[1] <= r.y2 + pad;
+}
+function normalizeRect(r: Rect): Rect {
+  return { x1: Math.min(r.x1, r.x2), y1: Math.min(r.y1, r.y2), x2: Math.max(r.x1, r.x2), y2: Math.max(r.y1, r.y2) };
+}
+function rectToPolygon(r: Rect): MaskPath {
+  return [[r.x1, r.y1], [r.x2, r.y1], [r.x2, r.y2], [r.x1, r.y2]];
 }
 
-function deepClonePaths(paths: MaskPath[]): MaskPath[] {
-  return paths.map((path) => deepClonePath(path));
+// Handle radius in image space units
+const HANDLE_R = 40;
+
+function getHandleCenter(r: Rect, h: HandleKey): MaskPoint {
+  switch (h) {
+    case "TL": return [r.x1, r.y1];
+    case "TR": return [r.x2, r.y1];
+    case "BL": return [r.x1, r.y2];
+    case "BR": return [r.x2, r.y2];
+  }
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
+function hitHandle(pt: MaskPoint, r: Rect): HandleKey | null {
+  const handles: HandleKey[] = ["TL", "TR", "BL", "BR"];
+  for (const h of handles) {
+    const [hx, hy] = getHandleCenter(r, h);
+    if (Math.abs(pt[0] - hx) < HANDLE_R && Math.abs(pt[1] - hy) < HANDLE_R) return h;
+  }
+  return null;
 }
 
-function asFiniteNumber(value: unknown): number | undefined {
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : undefined;
+function applyResize(original: Rect, handle: HandleKey, dx: number, dy: number, W: number, H: number): Rect {
+  let { x1, y1, x2, y2 } = original;
+  if (handle === "TL") { x1 = clamp(x1 + dx, 0, x2 - 10); y1 = clamp(y1 + dy, 0, y2 - 10); }
+  if (handle === "TR") { x2 = clamp(x2 + dx, x1 + 10, W); y1 = clamp(y1 + dy, 0, y2 - 10); }
+  if (handle === "BL") { x1 = clamp(x1 + dx, 0, x2 - 10); y2 = clamp(y2 + dy, y1 + 10, H); }
+  if (handle === "BR") { x2 = clamp(x2 + dx, x1 + 10, W); y2 = clamp(y2 + dy, y1 + 10, H); }
+  return { x1, y1, x2, y2 };
 }
 
 export default function EditorPage() {
@@ -53,32 +93,35 @@ export default function EditorPage() {
   const [errorText, setErrorText] = useState("");
 
   const [mode, setMode] = useState<MaskMode>("BRUSH");
-  const [polygons, setPolygons] = useState<MaskPath[]>([]);
+  const [rects, setRects] = useState<Rect[]>([]);
   const [brushStrokes, setBrushStrokes] = useState<MaskPath[]>([]);
-  const [draftRect, setDraftRect] = useState<[MaskPoint, MaskPoint] | null>(null);
-  const activeRectStartRef = useRef<MaskPoint | null>(null);
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+
+  // ongoing drag/draw preview (not yet committed)
+  const [previewRect, setPreviewRect] = useState<Rect | null>(null);
+
   const [activeStroke, setActiveStroke] = useState<MaskPath>([]);
   const activeStrokeRef = useRef<MaskPath>([]);
+  const dragRef = useRef<DragAction | null>(null);
+
   const [history, setHistory] = useState<MaskSnapshot[]>([]);
   const [future, setFuture] = useState<MaskSnapshot[]>([]);
   const [boardRect, setBoardRect] = useState<BoardRect | null>(null);
 
   const user = useAuthStore((state: any) => state.user);
   const { setTask } = useTaskStore();
-
-  // Connect to the new Media store
   const { selectedMedia: _selectedMedia, mediaType: _mediaType, setMedia } = useMediaStore();
 
-  // DEV ONLY: ?mock=1 injects a placeholder image so layout can be verified without backend
+  // DEV: mock=1
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.NODE_ENV !== "production") {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('mock') === '1' && !_selectedMedia) {
-        setMedia('IMAGE', {
-          sourcePath: 'https://picsum.photos/seed/watermark/800/600',
-          fileName: 'test-watermark.jpg',
+      if (params.get("mock") === "1" && !_selectedMedia) {
+        setMedia("IMAGE", {
+          sourcePath: "https://picsum.photos/seed/watermark/800/600",
+          fileName: "test-watermark.jpg",
           fileSize: 102400,
-          mimeType: 'image/jpeg',
+          mimeType: "image/jpeg",
           imageWidth: 800,
           imageHeight: 600,
         });
@@ -88,241 +131,286 @@ export default function EditorPage() {
 
   const selectedMedia = _selectedMedia;
   const mediaType = _mediaType;
-
-  // Use actual image dimensions from store, or fall back to defaults
   const IMAGE_WIDTH = selectedMedia?.imageWidth || DEFAULT_IMAGE_WIDTH;
   const IMAGE_HEIGHT = selectedMedia?.imageHeight || DEFAULT_IMAGE_HEIGHT;
 
-
-
-
-  const snapshotCurrent = (): MaskSnapshot => ({
-    polygons: deepClonePaths(polygons),
-    brushStrokes: deepClonePaths(brushStrokes)
+  // ── undo/redo ──
+  const snapshotNow = (): MaskSnapshot => ({
+    rects: rects.map(r => ({ ...r })),
+    brushStrokes: brushStrokes.map(s => s.map(([x, y]) => [x, y])),
   });
 
-  const applySnapshot = (snapshot: MaskSnapshot) => {
-    setPolygons(deepClonePaths(snapshot.polygons));
-    setBrushStrokes(deepClonePaths(snapshot.brushStrokes));
-    setDraftRect(null);
-    activeRectStartRef.current = null;
+  const applySnapshot = (snap: MaskSnapshot) => {
+    setRects(snap.rects.map(r => ({ ...r })));
+    setBrushStrokes(snap.brushStrokes.map(s => s.map(([x, y]) => [x, y])));
+    setPreviewRect(null);
+    dragRef.current = null;
     setActiveStroke([]);
     activeStrokeRef.current = [];
+    setSelectedIdx(null);
   };
 
-  const commitSnapshot = (snapshot: MaskSnapshot) => {
-    setHistory((previous) => [...previous, snapshotCurrent()].slice(-40));
+  const commit = (snap: MaskSnapshot) => {
+    setHistory(h => [...h, snapshotNow()].slice(-40));
     setFuture([]);
-    applySnapshot(snapshot);
+    applySnapshot(snap);
   };
 
+  // ── board rect ──
   const refreshBoardRect = () => {
     Taro.nextTick(() => {
       Taro.createSelectorQuery()
         .select(".mask-board")
         .boundingClientRect((rect: any) => {
-          const rectValue = Array.isArray(rect) ? rect[0] : rect;
-          if (!rectValue || typeof rectValue !== "object") return;
-          const rectRecord = rectValue as Record<string, unknown>;
-          const width = asFiniteNumber(rectRecord.width);
-          const height = asFiniteNumber(rectRecord.height);
-          const left = asFiniteNumber(rectRecord.left);
-          const top = asFiniteNumber(rectRecord.top);
-
-          if (!width || !height || left === undefined || top === undefined) return;
-          setBoardRect({ left, top, width, height });
+          const rv = Array.isArray(rect) ? rect[0] : rect;
+          if (!rv || typeof rv !== "object") return;
+          const r = rv as Record<string, unknown>;
+          const w = asNum(r.width), h = asNum(r.height), l = asNum(r.left), t = asNum(r.top);
+          if (!w || !h || l === undefined || t === undefined) return;
+          setBoardRect({ left: l, top: t, width: w, height: h });
         })
         .exec();
     });
   };
 
-  Taro.useDidShow(() => {
-    refreshBoardRect();
-  });
-
+  Taro.useDidShow(() => refreshBoardRect());
   useEffect(() => {
-    const timer = setTimeout(refreshBoardRect, 20);
-    const onResize = () => refreshBoardRect();
-    const canListenResize = typeof Taro.onWindowResize === "function" && typeof Taro.offWindowResize === "function";
-    if (canListenResize) Taro.onWindowResize(onResize);
-    return () => {
-      clearTimeout(timer);
-      if (canListenResize) Taro.offWindowResize(onResize);
-    };
+    const tm = setTimeout(refreshBoardRect, 20);
+    const onR = () => refreshBoardRect();
+    const ok = typeof Taro.onWindowResize === "function";
+    if (ok) Taro.onWindowResize(onR);
+    return () => { clearTimeout(tm); if (ok) Taro.offWindowResize(onR); };
   }, []);
 
+  // ── coordinate helpers ──
   const pointFromEvent = (event: unknown): MaskPoint | undefined => {
     if (!boardRect) return undefined;
-    const record = event as any;
-    const touched = record.touches?.[0] || record.changedTouches?.[0];
-    const rawX = asFiniteNumber(touched?.x) ?? asFiniteNumber(touched?.clientX) ?? asFiniteNumber(touched?.pageX) ?? asFiniteNumber(record.clientX) ?? asFiniteNumber(record.pageX) ?? asFiniteNumber(record.detail?.x) ?? asFiniteNumber(record.detail?.clientX);
-    const rawY = asFiniteNumber(touched?.y) ?? asFiniteNumber(touched?.clientY) ?? asFiniteNumber(touched?.pageY) ?? asFiniteNumber(record.clientY) ?? asFiniteNumber(record.pageY) ?? asFiniteNumber(record.detail?.y) ?? asFiniteNumber(record.detail?.clientY);
-    if (rawX === undefined || rawY === undefined) return undefined;
-
-    const localX = clamp(rawX - boardRect.left, 0, boardRect.width);
-    const localY = clamp(rawY - boardRect.top, 0, boardRect.height);
-    const normalizedX = Math.round((localX / boardRect.width) * IMAGE_WIDTH);
-    const normalizedY = Math.round((localY / boardRect.height) * IMAGE_HEIGHT);
-    return [normalizedX, normalizedY];
+    const ev = event as any;
+    const touch = ev.touches?.[0] || ev.changedTouches?.[0];
+    const rx = asNum(touch?.clientX) ?? asNum(touch?.x) ?? asNum(ev.clientX) ?? asNum(ev.detail?.clientX);
+    const ry = asNum(touch?.clientY) ?? asNum(touch?.y) ?? asNum(ev.clientY) ?? asNum(ev.detail?.clientY);
+    if (rx === undefined || ry === undefined) return undefined;
+    const lx = clamp(rx - boardRect.left, 0, boardRect.width);
+    const ly = clamp(ry - boardRect.top, 0, boardRect.height);
+    return [
+      Math.round((lx / boardRect.width) * IMAGE_WIDTH),
+      Math.round((ly / boardRect.height) * IMAGE_HEIGHT),
+    ];
   };
 
-  const handleBoardTouchStart = (event: unknown) => {
-    const point = pointFromEvent(event);
-    if (!point) return;
+  // ── pointer down ──
+  const handlePointerDown = (event: unknown) => {
+    const pt = pointFromEvent(event);
+    if (!pt) return;
+
     if (mode === "BRUSH") {
-      activeStrokeRef.current = [point];
-      setActiveStroke([point]);
-    } else if (mode === "RECTANGLE") {
-      activeRectStartRef.current = point;
-      setDraftRect([point, point]);
+      setSelectedIdx(null);
+      activeStrokeRef.current = [pt];
+      setActiveStroke([pt]);
+      return;
     }
+
+    // RECTANGLE mode: hit-test handles of selected rect first
+    if (selectedIdx !== null && selectedIdx < rects.length) {
+      const selRect = rects[selectedIdx];
+      const h = hitHandle(pt, selRect);
+      if (h) {
+        dragRef.current = { type: "resize", rectIdx: selectedIdx, prevRect: { ...selRect }, handle: h, startPt: pt };
+        setPreviewRect({ ...selRect });
+        return;
+      }
+      // inside selected rect → move
+      if (ptInsideRect(pt, selRect, HANDLE_R / 2)) {
+        dragRef.current = { type: "move", rectIdx: selectedIdx, prevRect: { ...selRect }, startPt: pt };
+        setPreviewRect({ ...selRect });
+        return;
+      }
+    }
+
+    // Check if clicking any other rect (select it)
+    for (let i = rects.length - 1; i >= 0; i--) {
+      if (i === selectedIdx) continue;
+      if (ptInsideRect(pt, rects[i])) {
+        setSelectedIdx(i);
+        dragRef.current = { type: "move", rectIdx: i, prevRect: { ...rects[i] }, startPt: pt };
+        setPreviewRect({ ...rects[i] });
+        return;
+      }
+    }
+
+    // draw new rect
+    setSelectedIdx(null);
+    dragRef.current = { type: "draw", startPt: pt };
+    setPreviewRect({ x1: pt[0], y1: pt[1], x2: pt[0], y2: pt[1] });
   };
 
-  const handleBoardTouchMove = (event: unknown) => {
-    const point = pointFromEvent(event);
-    if (!point) return;
-    if (mode === "BRUSH" && activeStrokeRef.current.length) {
-      activeStrokeRef.current = [...activeStrokeRef.current, point];
+  // ── pointer move ──
+  const handlePointerMove = (event: unknown) => {
+    const pt = pointFromEvent(event);
+    if (!pt) return;
+    const drag = dragRef.current;
+    if (!drag) return;
+
+    if (mode === "BRUSH") {
+      if (!activeStrokeRef.current.length) return;
+      activeStrokeRef.current = [...activeStrokeRef.current, pt];
       setActiveStroke([...activeStrokeRef.current]);
-    } else if (mode === "RECTANGLE" && activeRectStartRef.current) {
-      setDraftRect([activeRectStartRef.current, point]);
+      return;
+    }
+
+    if (drag.type === "draw") {
+      setPreviewRect({ x1: drag.startPt[0], y1: drag.startPt[1], x2: pt[0], y2: pt[1] });
+    } else if (drag.type === "move") {
+      const dx = pt[0] - drag.startPt[0];
+      const dy = pt[1] - drag.startPt[1];
+      const pr = drag.prevRect;
+      const w = pr.x2 - pr.x1, h = pr.y2 - pr.y1;
+      const nx1 = clamp(pr.x1 + dx, 0, IMAGE_WIDTH - w);
+      const ny1 = clamp(pr.y1 + dy, 0, IMAGE_HEIGHT - h);
+      setPreviewRect({ x1: nx1, y1: ny1, x2: nx1 + w, y2: ny1 + h });
+    } else if (drag.type === "resize") {
+      const dx = pt[0] - drag.startPt[0];
+      const dy = pt[1] - drag.startPt[1];
+      const updated = applyResize(drag.prevRect, drag.handle, dx, dy, IMAGE_WIDTH, IMAGE_HEIGHT);
+      setPreviewRect(updated);
     }
   };
 
-  const handleBoardTouchEnd = () => {
+  // ── pointer up ──
+  const handlePointerUp = () => {
+    const drag = dragRef.current;
+
     if (mode === "BRUSH") {
-      if (activeStrokeRef.current.length < 2) {
-        setActiveStroke([]);
-        activeStrokeRef.current = [];
-        return;
-      }
-      commitSnapshot({
-        polygons: deepClonePaths(polygons),
-        brushStrokes: [...deepClonePaths(brushStrokes), deepClonePath(activeStrokeRef.current)],
-      });
-      setActiveStroke([]);
-      activeStrokeRef.current = [];
-    } else if (mode === "RECTANGLE") {
-      if (!activeRectStartRef.current || !draftRect) {
-        setDraftRect(null);
-        activeRectStartRef.current = null;
-        return;
-      }
-      const [start, end] = draftRect;
-      const rectPolygon: MaskPath = [
-        [start[0], start[1]],
-        [end[0], start[1]],
-        [end[0], end[1]],
-        [start[0], end[1]]
-      ];
-      // Only commit if rect has minimum dimension
-      if (Math.abs(start[0] - end[0]) > 5 && Math.abs(start[1] - end[1]) > 5) {
-        commitSnapshot({
-          polygons: [...deepClonePaths(polygons), rectPolygon],
-          brushStrokes: deepClonePaths(brushStrokes)
+      if (activeStrokeRef.current.length >= 2) {
+        commit({
+          rects: rects.map(r => ({ ...r })),
+          brushStrokes: [...brushStrokes.map(s => s.map(([x, y]) => [x, y] as MaskPoint)), [...activeStrokeRef.current]],
         });
       }
-      setDraftRect(null);
-      activeRectStartRef.current = null;
+      setActiveStroke([]);
+      activeStrokeRef.current = [];
+      dragRef.current = null;
+      return;
     }
+
+    if (!drag || !previewRect) {
+      setPreviewRect(null);
+      dragRef.current = null;
+      return;
+    }
+
+    if (drag.type === "draw") {
+      const nr = normalizeRect(previewRect);
+      if (nr.x2 - nr.x1 > 5 && nr.y2 - nr.y1 > 5) {
+        const newRects = [...rects.map(r => ({ ...r })), nr];
+        const newIdx = newRects.length - 1;
+        commit({ rects: newRects, brushStrokes: brushStrokes.map(s => s.map(([x, y]) => [x, y])) });
+        setSelectedIdx(newIdx);
+      }
+    } else if (drag.type === "move" || drag.type === "resize") {
+      const nr = normalizeRect(previewRect);
+      const newRects = rects.map((r, i) => i === drag.rectIdx ? nr : { ...r });
+      commit({ rects: newRects, brushStrokes: brushStrokes.map(s => s.map(([x, y]) => [x, y])) });
+      setSelectedIdx(drag.rectIdx);
+    }
+
+    setPreviewRect(null);
+    dragRef.current = null;
   };
 
-  const handleClearMask = () => {
-    commitSnapshot({ polygons: [], brushStrokes: [] });
-  };
-
+  // ── undo / redo ──
   const handleUndo = () => {
     if (!history.length) return;
-    const previous = history[history.length - 1];
-    setHistory(history.slice(0, -1));
-    setFuture([snapshotCurrent(), ...future].slice(0, 40));
-    applySnapshot(previous);
+    const prev = history[history.length - 1];
+    setHistory(h => h.slice(0, -1));
+    setFuture(f => [snapshotNow(), ...f].slice(0, 40));
+    applySnapshot(prev);
   };
-
   const handleRedo = () => {
     if (!future.length) return;
     const next = future[0];
-    setFuture(future.slice(1));
-    setHistory([...history, snapshotCurrent()].slice(-40));
+    setFuture(f => f.slice(1));
+    setHistory(h => [...h, snapshotNow()].slice(-40));
     applySnapshot(next);
   };
 
-  const hasMaskData = polygons.length > 0 || brushStrokes.length > 0;
+  const handleDeleteSelected = () => {
+    if (selectedIdx === null) return;
+    const newRects = rects.filter((_, i) => i !== selectedIdx);
+    commit({ rects: newRects, brushStrokes: brushStrokes.map(s => s.map(([x, y]) => [x, y])) });
+    setSelectedIdx(null);
+  };
 
-  // ====核心集成动作：一键消除====
+  const handleClearMask = () => {
+    commit({ rects: [], brushStrokes: [] });
+    setSelectedIdx(null);
+  };
+
+  const hasMaskData = rects.length > 0 || brushStrokes.length > 0;
+
+  // ── api submit ──
   const handleStartErase = async () => {
-    if (!user) {
-      setErrorText("登录状态失效，请返回重新连接");
-      return;
-    }
-    if (typeof user.quotaLeft === "number" && user.quotaLeft <= 0) {
-      setErrorText("当前配额已用完，请升级套餐后再继续");
-      return;
-    }
-    if (!selectedMedia) {
-      setErrorText("未找到待处理文件缓存");
-      return;
-    }
-    if (!hasMaskData) {
-      setErrorText("请在画面上圈择要擦除的水印区域");
-      return;
-    }
+    if (!user) { setErrorText("登录状态失效，请返回重新连接"); return; }
+    if (typeof user.quotaLeft === "number" && user.quotaLeft <= 0) { setErrorText("当前配额已用完，请升级套餐后再继续"); return; }
+    if (!selectedMedia) { setErrorText("未找到待处理文件缓存"); return; }
+    if (!hasMaskData) { setErrorText("请在画面上圈择要擦除的水印区域"); return; }
 
     setLoading(true);
     setErrorText("");
-
     try {
-      // 1. Get upload policy
       const uploadPolicy = await getUploadPolicy({
         fileName: selectedMedia.fileName,
         fileSize: selectedMedia.fileSize,
         mediaType: mediaType === "IMAGE" ? "image" : "video",
-        mimeType: selectedMedia.mimeType
+        mimeType: selectedMedia.mimeType,
       });
       const assetId = uploadPolicy.data.assetId;
+      await uploadFileToCOS(uploadPolicy.data.uploadUrl, uploadPolicy.data.headers, selectedMedia.file || selectedMedia.sourcePath);
 
-      // 2. Actually upload file bytes to COS/MinIO
-      const fileOrPath = selectedMedia.file || selectedMedia.sourcePath;
-      await uploadFileToCOS(
-        uploadPolicy.data.uploadUrl,
-        uploadPolicy.data.headers,
-        fileOrPath
-      );
-
-      // 3. Create orchestration task
-      const task = await createTask(
-        { assetId, mediaType, taskPolicy: "FAST" },
-        buildIdempotencyKey()
-      );
+      const task = await createTask({ assetId, mediaType, taskPolicy: "FAST" }, buildIdempotencyKey());
       const newTaskId = task.data.taskId;
-
-      // Update global store
       setTask(newTaskId, task.data.status as TaskStatus);
 
-      // 4. Submit drawn masks
-      await upsertTaskMask(
-        newTaskId,
-        {
-          imageWidth: IMAGE_WIDTH,
-          imageHeight: IMAGE_HEIGHT,
-          polygons: polygons,
-          brushStrokes,
-          version: 0
-        },
-        buildIdempotencyKey()
-      );
+      await upsertTaskMask(newTaskId, {
+        imageWidth: IMAGE_WIDTH,
+        imageHeight: IMAGE_HEIGHT,
+        polygons: rects.map(r => rectToPolygon(normalizeRect(r))),
+        brushStrokes,
+        version: 0,
+      }, buildIdempotencyKey());
 
-      // Successfully processed all atomic steps, now entering monitoring state
       Taro.switchTab({ url: "/pages/tasks/index" });
     } catch (error) {
-      if (error instanceof ApiError) {
-        setErrorText(`[网络请求错误] ${error.code} ${error.message}`);
-      } else {
-        setErrorText("处理启动异常，请检查网络后重试");
-      }
+      setErrorText(error instanceof ApiError ? `[网络请求错误] ${error.code} ${error.message}` : "处理启动异常，请检查网络后重试");
       setLoading(false);
     }
   };
+
+  // ── render helpers ──
+  function pct(v: number, total: number) { return `${(v / total) * 100}%`; }
+
+  function renderHandle(key: HandleKey, r: Rect) {
+    const [cx, cy] = getHandleCenter(r, key);
+    const size = 14;
+    return (
+      <View
+        key={key}
+        style={{
+          position: "absolute",
+          width: `${size}px`,
+          height: `${size}px`,
+          borderRadius: "3px",
+          background: "#fff",
+          border: "2px solid #3b82f6",
+          left: `calc(${pct(cx, IMAGE_WIDTH)} - ${size / 2}px)`,
+          top: `calc(${pct(cy, IMAGE_HEIGHT)} - ${size / 2}px)`,
+          zIndex: 20,
+          cursor: key === "TL" || key === "BR" ? "nwse-resize" : "nesw-resize",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.4)",
+        }}
+      />
+    );
+  }
 
   if (!selectedMedia) {
     return (
@@ -343,161 +431,173 @@ export default function EditorPage() {
   return (
     <PageShell title="智能消除工作台" subtitle={`${mediaType === "VIDEO" ? "🎬 视频" : "🖼️ 图片"} · ${selectedMedia.fileName}`}>
 
-      {/* 极简顶栏工具集 */}
-      <View className="editor-nav-pills animate-fade-in" style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0' }}>
-        <View className="editor-pill-group" style={{ display: 'flex', gap: '8px' }}>
+      {/* 顶栏工具集 */}
+      <View className="editor-nav-pills animate-fade-in" style={{ display: "flex", justifyContent: "space-between", padding: "12px 0" }}>
+        <View className="editor-pill-group" style={{ display: "flex", gap: "8px" }}>
           <View
             className={`editor-pill ${mode === "BRUSH" ? "editor-pill-active" : ""}`}
-            onClick={() => setMode("BRUSH")}
-            style={{ padding: '8px 16px', borderRadius: '20px', fontSize: '14px', background: mode === "BRUSH" ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)' : 'transparent', color: mode === "BRUSH" ? '#fff' : '#64748b' }}
+            onClick={() => { setMode("BRUSH"); setSelectedIdx(null); }}
+            style={{ padding: "8px 16px", borderRadius: "20px", fontSize: "14px", background: mode === "BRUSH" ? "linear-gradient(135deg, #3b82f6, #8b5cf6)" : "transparent", color: mode === "BRUSH" ? "#fff" : "#64748b" }}
           >🖌️ 手绘涂抹</View>
           <View
             className={`editor-pill ${mode === "RECTANGLE" ? "editor-pill-active" : ""}`}
             onClick={() => setMode("RECTANGLE")}
-            style={{ padding: '8px 16px', borderRadius: '20px', fontSize: '14px', background: mode === "RECTANGLE" ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)' : 'transparent', color: mode === "RECTANGLE" ? '#fff' : '#64748b' }}
+            style={{ padding: "8px 16px", borderRadius: "20px", fontSize: "14px", background: mode === "RECTANGLE" ? "linear-gradient(135deg, #3b82f6, #8b5cf6)" : "transparent", color: mode === "RECTANGLE" ? "#fff" : "#64748b" }}
           >⬡ 图形框选</View>
         </View>
-        <View className="editor-pill-group" style={{ display: 'flex', gap: '8px' }}>
-          <View
-            className="editor-pill"
-            onClick={history.length ? handleUndo : undefined}
-            style={{ padding: '8px 12px', borderRadius: '20px', fontSize: '14px', opacity: history.length ? 1 : 0.4 }}
-          >↩️ 撤回</View>
-          <View
-            className="editor-pill"
-            onClick={future.length ? handleRedo : undefined}
-            style={{ padding: '8px 12px', borderRadius: '20px', fontSize: '14px', opacity: future.length ? 1 : 0.4 }}
-          >↪️ 重做</View>
-          <View
-            className="editor-pill"
-            onClick={hasMaskData ? handleClearMask : undefined}
-            style={{ padding: '8px 12px', borderRadius: '20px', fontSize: '14px', opacity: hasMaskData ? 1 : 0.4 }}
-          >🗑️ 清除</View>
+        <View className="editor-pill-group" style={{ display: "flex", gap: "8px" }}>
+          {selectedIdx !== null && mode === "RECTANGLE" && (
+            <View
+              className="editor-pill"
+              onClick={handleDeleteSelected}
+              style={{ padding: "8px 12px", borderRadius: "20px", fontSize: "14px", color: "#f87171" }}
+            >🗑️ 删除</View>
+          )}
+          <View className="editor-pill" onClick={history.length ? handleUndo : undefined} style={{ padding: "8px 12px", borderRadius: "20px", fontSize: "14px", opacity: history.length ? 1 : 0.4 }}>↩️ 撤回</View>
+          <View className="editor-pill" onClick={future.length ? handleRedo : undefined} style={{ padding: "8px 12px", borderRadius: "20px", fontSize: "14px", opacity: future.length ? 1 : 0.4 }}>↪️ 重做</View>
+          <View className="editor-pill" onClick={hasMaskData ? handleClearMask : undefined} style={{ padding: "8px 12px", borderRadius: "20px", fontSize: "14px", opacity: hasMaskData ? 1 : 0.4 }}>🗑️ 清除</View>
         </View>
       </View>
 
-      {/* 主力暗黑画板 */}
+      {/* 操作提示 */}
+      {mode === "RECTANGLE" && (
+        <View style={{ padding: "4px 0 8px", fontSize: "12px", color: "#64748b" }}>
+          {selectedIdx !== null ? "拖动矩形移动 · 拖动角点缩放 · 点击空白取消选中" : "拖拽画框框选水印区域"}
+        </View>
+      )}
+
+      {/* 画板 */}
       <View
         className="editor-workspace"
         style={{
-          width: '100%',
-          height: 'calc(100vh - 220px)', // 留出顶栏(~120px) + 底部按钮栏(~100px) 的空间
-          minHeight: '300px',
-          background: '#0f172a',
-          borderRadius: '16px',
-          overflow: 'hidden',
-          marginTop: '12px',
-          marginBottom: '80px', // 底部按钮 position:fixed 需要留出 margin
+          width: "100%",
+          height: "calc(100vh - 220px)",
+          minHeight: "300px",
+          background: "#0f172a",
+          borderRadius: "16px",
+          overflow: "hidden",
+          marginTop: "12px",
+          marginBottom: "80px",
         }}
       >
         <View
           className="mask-board"
-          // @ts-ignore - Taro ViewProps lacks mouse events but they work in H5
-          onMouseDown={handleBoardTouchStart}
           // @ts-ignore
-          onMouseMove={handleBoardTouchMove}
+          onMouseDown={handlePointerDown}
           // @ts-ignore
-          onMouseUp={handleBoardTouchEnd}
+          onMouseMove={handlePointerMove}
           // @ts-ignore
-          onMouseLeave={handleBoardTouchEnd}
-          onTouchStart={handleBoardTouchStart}
-          onTouchMove={handleBoardTouchMove}
-          onTouchEnd={handleBoardTouchEnd}
-          style={selectedMedia.sourcePath ? { backgroundImage: `url(${selectedMedia.sourcePath})`, backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center', touchAction: 'none' } : { touchAction: 'none' }}
+          onMouseUp={handlePointerUp}
+          // @ts-ignore
+          onMouseLeave={handlePointerUp}
+          onTouchStart={handlePointerDown}
+          onTouchMove={handlePointerMove}
+          onTouchEnd={handlePointerUp}
+          style={selectedMedia.sourcePath
+            ? { backgroundImage: `url(${selectedMedia.sourcePath})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center", touchAction: "none" }
+            : { touchAction: "none" }}
         >
-          {/* 渲染已提交的矩形框（多边形） */}
-          {polygons.map((polygon, polygonIndex) => {
-            const xs = polygon.map(p => p[0]);
-            const ys = polygon.map(p => p[1]);
-            const minX = Math.min(...xs);
-            const maxX = Math.max(...xs);
-            const minY = Math.min(...ys);
-            const maxY = Math.max(...ys);
+          {/* 已提交的矩形 */}
+          {rects.map((rect, i) => {
+            const r = normalizeRect(rect);
+            const isSelected = i === selectedIdx;
+            // If currently dragging this rect, use previewRect instead
+            const display = dragRef.current && (dragRef.current as any).rectIdx === i && previewRect
+              ? normalizeRect(previewRect)
+              : r;
+            return (
+              <View key={`rect-${i}`}>
+                <View
+                  style={{
+                    position: "absolute",
+                    left: pct(display.x1, IMAGE_WIDTH),
+                    top: pct(display.y1, IMAGE_HEIGHT),
+                    width: pct(display.x2 - display.x1, IMAGE_WIDTH),
+                    height: pct(display.y2 - display.y1, IMAGE_HEIGHT),
+                    backgroundColor: isSelected ? "rgba(59, 130, 246, 0.35)" : "rgba(59, 130, 246, 0.25)",
+                    border: isSelected ? "2px solid #3b82f6" : "2px solid rgba(59, 130, 246, 0.6)",
+                    zIndex: 5,
+                    cursor: mode === "RECTANGLE" ? "move" : "default",
+                    boxSizing: "border-box",
+                  }}
+                />
+                {/* 角手柄 — 仅选中时显示 */}
+                {isSelected && mode === "RECTANGLE" && (["TL", "TR", "BL", "BR"] as HandleKey[]).map(h => renderHandle(h, display))}
+              </View>
+            );
+          })}
+
+          {/* 绘制中的新矩形预览 */}
+          {dragRef.current?.type === "draw" && previewRect && (() => {
+            const pr = normalizeRect(previewRect);
             return (
               <View
-                key={`rect-${polygonIndex}`}
                 style={{
-                  position: 'absolute',
-                  backgroundColor: 'rgba(59, 130, 246, 0.4)',
-                  border: '2px solid rgba(59, 130, 246, 0.8)',
-                  left: `${(minX / IMAGE_WIDTH) * 100}%`,
-                  top: `${(minY / IMAGE_HEIGHT) * 100}%`,
-                  width: `${((maxX - minX) / IMAGE_WIDTH) * 100}%`,
-                  height: `${((maxY - minY) / IMAGE_HEIGHT) * 100}%`,
-                  zIndex: 5
+                  position: "absolute",
+                  left: pct(pr.x1, IMAGE_WIDTH),
+                  top: pct(pr.y1, IMAGE_HEIGHT),
+                  width: pct(pr.x2 - pr.x1, IMAGE_WIDTH),
+                  height: pct(pr.y2 - pr.y1, IMAGE_HEIGHT),
+                  border: "2px dashed #3b82f6",
+                  backgroundColor: "rgba(59, 130, 246, 0.2)",
+                  zIndex: 10,
+                  boxSizing: "border-box",
                 }}
               />
             );
-          })}
-          {/* 渲染绘制中的矩形预览 */}
-          {draftRect && (
-            <View
-              style={{
-                position: 'absolute',
-                border: '2px dashed #3b82f6',
-                backgroundColor: 'rgba(59, 130, 246, 0.2)',
-                left: `${(Math.min(draftRect[0][0], draftRect[1][0]) / IMAGE_WIDTH) * 100}%`,
-                top: `${(Math.min(draftRect[0][1], draftRect[1][1]) / IMAGE_HEIGHT) * 100}%`,
-                width: `${(Math.abs(draftRect[0][0] - draftRect[1][0]) / IMAGE_WIDTH) * 100}%`,
-                height: `${(Math.abs(draftRect[0][1] - draftRect[1][1]) / IMAGE_HEIGHT) * 100}%`,
-                zIndex: 10
-              }}
-            />
-          )}
+          })()}
 
-          {/* 手绘涂抹保留原来的点阵 */}
+          {/* 手绘涂抹 */}
           {brushStrokes.map((stroke, strokeIndex) =>
-            stroke.filter((_, pointIndex) => pointIndex % 2 === 0).map((point, pointIndex) => (
+            stroke.filter((_, i) => i % 2 === 0).map((point, i) => (
               <View
-                key={`stroke-${strokeIndex}-${pointIndex}-${point[0]}-${point[1]}`}
+                key={`stroke-${strokeIndex}-${i}`}
                 className="mask-point mask-point-brush"
-                style={{ left: `${(point[0] / IMAGE_WIDTH) * 100}%`, top: `${(point[1] / IMAGE_HEIGHT) * 100}%` }}
+                style={{ left: pct(point[0], IMAGE_WIDTH), top: pct(point[1], IMAGE_HEIGHT) }}
               />
             ))
           )}
-          {activeStroke.filter((_, pointIndex) => pointIndex % 2 === 0).map((point, pointIndex) => (
+          {activeStroke.filter((_, i) => i % 2 === 0).map((point, i) => (
             <View
-              key={`active-${pointIndex}-${point[0]}-${point[1]}`}
+              key={`active-${i}`}
               className="mask-point mask-point-active"
-              style={{ left: `${(point[0] / IMAGE_WIDTH) * 100}%`, top: `${(point[1] / IMAGE_HEIGHT) * 100}%` }}
+              style={{ left: pct(point[0], IMAGE_WIDTH), top: pct(point[1], IMAGE_HEIGHT) }}
             />
           ))}
         </View>
       </View>
 
-      {/* 报错小横幅 */}
-      {
-        errorText && (
-          <View className="editor-error-banner animate-slide-up">
-            <Text>{errorText}</Text>
-          </View>
-        )
-      }
+      {/* 报错横幅 */}
+      {errorText && (
+        <View className="editor-error-banner animate-slide-up">
+          <Text>{errorText}</Text>
+        </View>
+      )}
 
-      {/* 底部悬浮核心一键执行 Button */}
-      <View className="editor-bottom-bar animate-slide-up" style={{ animationDelay: "0.2s", padding: '16px', position: 'fixed', bottom: 0, left: 0, width: '100%', boxSizing: 'border-box', background: 'linear-gradient(to top, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.7) 50%, transparent 100%)' }}>
+      {/* 底部悬浮按钮 */}
+      <View className="editor-bottom-bar animate-slide-up" style={{ animationDelay: "0.2s", padding: "16px", position: "fixed", bottom: 0, left: 0, width: "100%", boxSizing: "border-box", background: "linear-gradient(to top, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.7) 50%, transparent 100%)" }}>
         <View
-          className={`editor-start-btn ${!hasMaskData ? 'editor-start-btn-disabled' : ''}`}
+          className={`editor-start-btn ${!hasMaskData ? "editor-start-btn-disabled" : ""}`}
           onClick={!loading && hasMaskData ? handleStartErase : undefined}
           style={{
-            width: '100%',
-            height: '52px',
-            borderRadius: '26px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '17px',
-            fontWeight: 'bold',
-            background: hasMaskData ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)' : 'rgba(100, 116, 139, 0.3)',
-            color: hasMaskData ? '#fff' : 'rgba(255, 255, 255, 0.4)',
-            boxShadow: hasMaskData ? '0 4px 20px rgba(59, 130, 246, 0.5)' : 'none',
-            opacity: loading ? 0.7 : 1
+            width: "100%",
+            height: "52px",
+            borderRadius: "26px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "17px",
+            fontWeight: "bold",
+            background: hasMaskData ? "linear-gradient(135deg, #3b82f6, #8b5cf6)" : "rgba(100, 116, 139, 0.3)",
+            color: hasMaskData ? "#fff" : "rgba(255, 255, 255, 0.4)",
+            boxShadow: hasMaskData ? "0 4px 20px rgba(59, 130, 246, 0.5)" : "none",
+            opacity: loading ? 0.7 : 1,
           }}
         >
           {loading ? "处理中..." : "开始智能抹除 ✨"}
         </View>
       </View>
 
-    </PageShell >
+    </PageShell>
   );
 }
