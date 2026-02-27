@@ -1,45 +1,95 @@
-.processing-container {
+/* ═══ 活跃任务处理中条 ═══ */
+.active-task-banner {
+    display: flex;
+    align-items: center;
+    gap: 20rpx;
+    padding: 24rpx 32rpx;
+    margin: 0 0 24rpx 0;
+    background: linear-gradient(135deg, #eff6ff, #f0f4ff);
+    border: 1px solid rgba(59, 130, 246, 0.15);
+    border-radius: 20rpx;
+    box-shadow: 0 4rpx 16rpx rgba(59, 130, 246, 0.08);
+}
+
+.active-task-banner-error {
+    background: linear-gradient(135deg, #fef2f2, #fff5f5);
+    border-color: rgba(239, 68, 68, 0.15);
+    box-shadow: 0 4rpx 16rpx rgba(239, 68, 68, 0.08);
+}
+
+.active-task-spinner {
+    width: 56rpx;
+    height: 56rpx;
+    border-radius: 50%;
+    border: 4rpx solid rgba(59, 130, 246, 0.15);
+    border-top-color: var(--rw-accent, #3b82f6);
+    animation: spin 1s linear infinite;
+    flex-shrink: 0;
+}
+
+.active-task-error-icon {
+    width: 56rpx;
+    height: 56rpx;
+    border-radius: 50%;
+    border: 3rpx solid #ef4444;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32rpx;
+    font-weight: 700;
+    color: #ef4444;
+    flex-shrink: 0;
+}
+
+.active-task-info {
+    flex: 1;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: calc(100vh - 200rpx);
-    padding: 40rpx;
-    gap: 60rpx;
+    gap: 4rpx;
+    min-width: 0;
 }
 
-/* 发光转盘外环 */
-.processing-spinner-ring {
-    position: relative;
-    width: 200rpx;
-    height: 200rpx;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+.active-task-title {
+    font-size: 28rpx;
+    font-weight: 600;
+    color: var(--rw-text, #1e293b);
 }
 
-.processing-spinner-active {
-    width: 160rpx;
-    height: 160rpx;
-    border-radius: 50%;
-    border: 4rpx solid rgba(0, 0, 0, 0.05);
-    border-top-color: var(--rw-accent);
-    border-left-color: var(--rw-accent);
-    animation: spin 1s linear infinite;
-    box-shadow: 0 0 40rpx var(--rw-accent-glow);
-}
-
-.processing-spinner-error {
-    width: 160rpx;
-    height: 160rpx;
-    border-radius: 50%;
-    border: 4rpx solid #ef4444;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 80rpx;
+.active-task-title-error {
     color: #ef4444;
-    box-shadow: 0 0 40rpx rgba(239, 68, 68, 0.15);
+}
+
+.active-task-status {
+    font-size: 24rpx;
+    color: var(--rw-text-secondary, #64748b);
+}
+
+.active-task-cancel-btn {
+    flex-shrink: 0;
+    font-size: 24rpx;
+    padding: 8rpx 24rpx;
+    border-radius: 20rpx;
+    background: rgba(0, 0, 0, 0.04);
+    color: var(--rw-text-secondary, #64748b);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+
+    &::after {
+        display: none;
+    }
+}
+
+.tasks-btn-primary-sm {
+    flex-shrink: 0;
+    font-size: 24rpx;
+    padding: 8rpx 24rpx;
+    border-radius: 20rpx;
+    background: var(--rw-accent-gradient, linear-gradient(135deg, #3b82f6, #8b5cf6));
+    color: #fff;
+    border: none;
+
+    &::after {
+        display: none;
+    }
 }
 
 @keyframes spin {
@@ -52,41 +102,170 @@
     }
 }
 
-/* 文字提示区 */
-.processing-text-group {
+/* ═══ 任务列表头 ═══ */
+.task-list-section {
+    margin-top: 8rpx;
+}
+
+.task-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16rpx;
+}
+
+.task-list-title {
+    font-size: 30rpx;
+    font-weight: 700;
+    color: var(--rw-text, #1e293b);
+}
+
+.task-list-refresh {
+    font-size: 24rpx;
+    padding: 6rpx 20rpx;
+    border-radius: 16rpx;
+    background: rgba(0, 0, 0, 0.03);
+    color: var(--rw-text-secondary, #64748b);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+
+    &::after {
+        display: none;
+    }
+}
+
+/* ═══ 列表滚动容器 ═══ */
+.task-list-scroll {
+    max-height: calc(100vh - 520rpx);
+}
+
+/* ═══ 空态 ═══ */
+.task-list-empty {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 16rpx;
-    text-align: center;
+    justify-content: center;
+    padding: 80rpx 40rpx;
+    gap: 20rpx;
 }
 
-.processing-title {
-    font-size: 36rpx;
-    font-weight: 700;
-    color: var(--rw-text);
-    letter-spacing: 2rpx;
+.task-list-empty-icon {
+    font-size: 80rpx;
 }
 
-.processing-title-failed {
-    color: #ef4444;
-}
-
-.processing-subtitle {
+.task-list-empty-text {
     font-size: 28rpx;
-    color: var(--rw-text-secondary);
+    color: var(--rw-text-secondary, #64748b);
 }
 
-/* 操作面板 */
-.processing-actions {
+/* ═══ 任务卡片 ═══ */
+.task-card {
+    display: flex;
+    align-items: center;
+    gap: 20rpx;
+    padding: 24rpx 28rpx;
+    margin-bottom: 16rpx;
+    background: var(--rw-card-bg, #fff);
+    border: 1px solid var(--rw-card-border, rgba(0, 0, 0, 0.06));
+    border-radius: 16rpx;
+    box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.02);
+    transition: all 0.2s ease;
+
+    &:active {
+        transform: scale(0.99);
+        box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.06);
+    }
+}
+
+.task-card-active {
+    border-color: var(--rw-accent, #3b82f6);
+    box-shadow: 0 2rpx 12rpx rgba(59, 130, 246, 0.1);
+}
+
+.task-card-left {
+    flex-shrink: 0;
+}
+
+.task-card-icon {
+    font-size: 40rpx;
+}
+
+.task-card-body {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    width: 100%;
-    max-width: 480rpx;
-    gap: 20rpx;
-    margin-top: 40rpx;
+    gap: 8rpx;
 }
 
+.task-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12rpx;
+}
+
+.task-card-id {
+    font-size: 26rpx;
+    font-weight: 500;
+    color: var(--rw-text, #1e293b);
+    font-family: "SF Mono", "Menlo", monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.task-card-status {
+    font-size: 24rpx;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.task-card-bottom {
+    display: flex;
+    align-items: center;
+    gap: 16rpx;
+}
+
+.task-card-time {
+    font-size: 22rpx;
+    color: var(--rw-text-secondary, #94a3b8);
+}
+
+.task-card-policy {
+    font-size: 20rpx;
+    padding: 2rpx 12rpx;
+    border-radius: 8rpx;
+    background: rgba(59, 130, 246, 0.08);
+    color: var(--rw-accent, #3b82f6);
+    font-weight: 500;
+}
+
+.task-card-actions {
+    flex-shrink: 0;
+}
+
+.task-card-action-link {
+    font-size: 24rpx;
+    font-weight: 600;
+    color: var(--rw-accent, #3b82f6);
+    padding: 8rpx 16rpx;
+    border-radius: 12rpx;
+    transition: background 0.2s;
+
+    &:active {
+        background: rgba(59, 130, 246, 0.08);
+    }
+}
+
+.task-card-action-retry {
+    color: #f59e0b;
+
+    &:active {
+        background: rgba(245, 158, 11, 0.08);
+    }
+}
+
+/* ═══ 复用按钮基础样式 ═══ */
 .tasks-btn {
     height: 88rpx;
     border-radius: 44rpx;
@@ -95,9 +274,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--rw-card-bg);
-    color: var(--rw-text-secondary);
-    border: 1px solid var(--rw-card-border);
+    background: var(--rw-card-bg, #fff);
+    color: var(--rw-text-secondary, #64748b);
+    border: 1px solid var(--rw-card-border, rgba(0, 0, 0, 0.06));
     box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.02);
     transition: all 0.2s;
 
@@ -107,7 +286,7 @@
 
     &:hover {
         background: rgba(0, 0, 0, 0.02);
-        color: var(--rw-text);
+        color: var(--rw-text, #1e293b);
     }
 
     &:active {
@@ -116,23 +295,22 @@
 }
 
 .tasks-btn-primary {
-    background: var(--rw-accent-gradient);
+    background: var(--rw-accent-gradient, linear-gradient(135deg, #3b82f6, #8b5cf6));
     color: #fff;
     border: none;
-    box-shadow: 0 8rpx 24rpx var(--rw-accent-glow);
+    box-shadow: 0 8rpx 24rpx var(--rw-accent-glow, rgba(59, 130, 246, 0.2));
 
     &:hover {
-        background: var(--rw-accent-hover);
+        background: var(--rw-accent-hover, #2563eb);
         color: #fff;
     }
 }
 
-/* 错误 Banner */
+/* ═══ 错误 Banner ═══ */
 .processing-error-banner {
-    margin-top: auto;
+    margin-bottom: 16rpx;
     padding: 24rpx;
     background: rgba(239, 68, 68, 0.08);
-    /* 淡红适应白底 */
     border: 1px solid rgba(239, 68, 68, 0.2);
     border-radius: 16rpx;
     color: #ef4444;
