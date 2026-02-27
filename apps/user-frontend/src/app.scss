@@ -1,25 +1,106 @@
 :root {
-  --rw-bg: #edf2f9;
-  --rw-card-bg: #ffffff;
-  --rw-text: #152536;
+  /* 明亮且高对比度的主题色 (Light High-Contrast Theme) */
+  --rw-bg: #f8fafc;
+  /* 清爽淡灰蓝背景 */
+  --rw-card-bg: rgba(255, 255, 255, 0.85);
+  /* 亮色卡片底色，带微透明感 */
+  --rw-card-border: rgba(0, 0, 0, 0.05);
+  /* 卡片极细轮廓描边 */
+
+  /* 文本颜色 - 确保 WCAG AA 级别以上可用性 */
+  --rw-text: #0f172a;
+  /* 极深灰，主标题/强调文字 */
+  --rw-text-secondary: #475569;
+  /* 深灰，正文与辅助描述，完全克服此前的看不清问题 */
+  --rw-text-tertiary: #94a3b8;
+  /* 次要的占位符/未激活文字 */
+
+  /* 品牌渐变色与强调色 (Vivid Blue/Purple Accents) - 取代暗红色，代表科技与高效 */
+  --rw-accent: #3b82f6;
+  /* 亮蓝色 */
+  --rw-accent-gradient: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  --rw-accent-hover: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+  --rw-accent-glow: rgba(59, 130, 246, 0.4);
+
+  /* 功能色 */
+  --rw-success: #10b981;
+  --rw-warning: #f59e0b;
+  --rw-error: #ef4444;
+
+  /* 动画缓动 */
+  --rw-transition-smooth: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  --rw-transition-bounce: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 page {
   background: var(--rw-bg);
   color: var(--rw-text);
   min-height: 100%;
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  transition: background-color 0.4s ease;
 }
 
 .container {
   box-sizing: border-box;
-  padding: 22rpx;
+  padding: 24rpx;
 }
 
+/* 卡片容器：替代以前死板的黑底，使用柔和阴影浮层 */
 .card {
   background: var(--rw-card-bg);
-  border-radius: 18rpx;
-  padding: 20rpx;
-  box-shadow: 0 12rpx 28rpx rgba(28, 54, 89, 0.08);
+  border: 1px solid var(--rw-card-border);
+  border-radius: 24rpx;
+  padding: 24rpx;
+  /* 极致高级感的磨砂玻璃面板效果 */
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  /* 多重柔和投影，营造纵深立体感 */
+  box-shadow:
+    0 4rpx 12rpx rgba(0, 0, 0, 0.02),
+    0 16rpx 48rpx rgba(0, 0, 0, 0.06);
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+/* 动画工具类 */
+.animate-fade-in {
+  animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+  transform: translateY(30rpx);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30rpx);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .platform-h5 {

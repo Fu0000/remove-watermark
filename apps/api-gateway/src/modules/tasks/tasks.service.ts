@@ -310,15 +310,144 @@ export class TasksService {
     });
   }
 
+  private runOnStore<T>(handlers: { prisma: () => Promise<T>; memory: () => Promise<T> }): Promise<T> {
+    return this.usePrismaStore ? handlers.prisma() : handlers.memory();
+  }
+
+  private runOnStoreSync<T>(handlers: { prisma: () => T; memory: () => T }): T {
+    return this.usePrismaStore ? handlers.prisma() : handlers.memory();
+  }
+
   async createTask(
     userId: string,
     idempotencyKey: string,
     input: CreateTaskInput
   ): Promise<{ task: TaskRecord; created: boolean }> {
-    if (this.usePrismaStore) {
-      return this.createTaskWithPrisma(userId, idempotencyKey, input);
+    return this.runOnStore({
+      prisma: () => this.createTaskWithPrisma(userId, idempotencyKey, input),
+      memory: () => this.createTaskInMemory(userId, idempotencyKey, input)
+    });
+  }
+
+  async listByUser(userId: string): Promise<TaskRecord[]> {
+    return this.runOnStore({
+      prisma: () => this.listByUserWithPrisma(userId),
+      memory: () => this.listByUserInMemory(userId)
+    });
+  }
+
+  async getByTaskId(taskId: string, options: GetTaskOptions = {}): Promise<TaskRecord | undefined> {
+    return this.runOnStore({
+      prisma: () => this.getByTaskIdWithPrisma(taskId, options),
+      memory: () => this.getByTaskIdInMemory(taskId, options)
+    });
+  }
+
+  async listForAdmin(input: AdminListTasksInput): Promise<AdminListTasksResult> {
+    return this.runOnStore({
+      prisma: () => this.listForAdminWithPrisma(input),
+      memory: () => this.listForAdminInMemory(input)
+    });
+  }
+
+  async getByUser(userId: string, taskId: string, options: GetTaskOptions = {}): Promise<TaskRecord | undefined> {
+    return this.runOnStore({
+      prisma: () => this.getByUserWithPrisma(userId, taskId, options),
+      memory: () => this.getByUserInMemory(userId, taskId, options)
+    });
+  }
+
+  async cancel(userId: string, taskId: string, idempotencyKey: string): Promise<TaskActionResult> {
+    return this.runOnStore({
+      prisma: () => this.applyTaskActionWithPrisma(userId, taskId, idempotencyKey, "CANCEL"),
+      memory: () => this.cancelInMemory(userId, taskId, idempotencyKey)
+    });
+  }
+
+  async retry(userId: string, taskId: string, idempotencyKey: string): Promise<TaskActionResult> {
+    return this.runOnStore({
+      prisma: () => this.applyTaskActionWithPrisma(userId, taskId, idempotencyKey, "RETRY"),
+      memory: () => this.retryInMemory(userId, taskId, idempotencyKey)
+    });
+  }
+
+  async upsertMask(
+    userId: string,
+    taskId: string,
+    input: UpsertMaskInput
+  ): Promise<{ conflict: false; maskId: string; version: number } | { conflict: true; version: number } | undefined> {
+    return this.runOnStore({
+      prisma: () => this.upsertMaskWithPrisma(userId, taskId, input),
+      memory: () => this.upsertMaskInMemory(userId, taskId, input)
+    });
+  }
+
+  async upsertRegions(
+    userId: string,
+    taskId: string,
+    input: UpsertRegionsInput
+  ): Promise<{ conflict: false; regionId: string; version: number } | { conflict: true; version: number } | undefined> {
+    return this.runOnStore({
+      prisma: () => this.upsertRegionsWithPrisma(userId, taskId, input),
+      memory: () => this.upsertRegionsInMemory(userId, taskId, input)
+    });
+  }
+
+  async isWaitingForRegions(userId: string, taskId: string): Promise<boolean> {
+    const task = await this.getByUser(userId, taskId, { advance: false });
+    if (!task || task.status !== "DETECTING") {
+      return false;
     }
 
+    const hasInput = await this.hasDetectionInput(taskId, task.mediaType);
+    return !hasInput;
+  }
+
+  async findTasksWaitingForRegions(userId: string, taskIds: string[]): Promise<Set<string>> {
+    if (taskIds.length === 0) {
+      return new Set();
+    }
+
+    return this.runOnStore({
+      prisma: () => this.findTasksWaitingForRegionsWithPrisma(userId, taskIds),
+      memory: () => this.findTasksWaitingForRegionsInMemory(userId, taskIds)
+    });
+  }
+
+  async advanceTaskStatus(userId: string, taskId: string, input: AdvanceTaskStatusInput): Promise<AdvanceTaskStatusResult> {
+    return this.runOnStore({
+      prisma: () => this.advanceTaskStatusWithPrisma(userId, taskId, input),
+      memory: () => this.advanceTaskStatusInMemory(userId, taskId, input)
+    });
+  }
+
+  async seedFailedTask(userId: string, taskId: string): Promise<void> {
+    return this.runOnStore({
+      prisma: () => this.seedFailedTaskWithPrisma(userId, taskId),
+      memory: () => this.seedFailedTaskInMemory(userId, taskId)
+    });
+  }
+
+  getDebugSnapshot() {
+    return this.runOnStoreSync({
+      prisma: () => ({
+        taskCount: 0,
+        idempotencyCount: 0,
+        actionIdempotencyCount: 0,
+        taskMaskCount: 0,
+        taskRegionCount: 0,
+        usageLedgerCount: 0,
+        outboxEventCount: 0
+      }),
+      memory: () => this.getDebugSnapshotInMemory()
+    });
+  }
+
+  private async createTaskInMemory(
+    userId: string,
+    idempotencyKey: string,
+    input: CreateTaskInput
+  ): Promise<{ task: TaskRecord; created: boolean }> {
     const payloadHash = JSON.stringify(input);
     const existing = this.idempotency.get(`${userId}:${idempotencyKey}`);
 
@@ -365,11 +494,7 @@ export class TasksService {
     });
   }
 
-  async listByUser(userId: string): Promise<TaskRecord[]> {
-    if (this.usePrismaStore) {
-      return this.listByUserWithPrisma(userId);
-    }
-
+  private async listByUserInMemory(userId: string): Promise<TaskRecord[]> {
     const tasks = [...this.tasks.values()]
       .filter((task) => task.userId === userId)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
@@ -383,11 +508,7 @@ export class TasksService {
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
-  async getByTaskId(taskId: string, options: GetTaskOptions = {}): Promise<TaskRecord | undefined> {
-    if (this.usePrismaStore) {
-      return this.getByTaskIdWithPrisma(taskId, options);
-    }
-
+  private async getByTaskIdInMemory(taskId: string, options: GetTaskOptions = {}): Promise<TaskRecord | undefined> {
     const task = this.tasks.get(taskId);
     if (!task) {
       return undefined;
@@ -400,11 +521,7 @@ export class TasksService {
     return this.tasks.get(taskId);
   }
 
-  async listForAdmin(input: AdminListTasksInput): Promise<AdminListTasksResult> {
-    if (this.usePrismaStore) {
-      return this.listForAdminWithPrisma(input);
-    }
-
+  private async listForAdminInMemory(input: AdminListTasksInput): Promise<AdminListTasksResult> {
     const page = Math.max(1, input.page);
     const pageSize = Math.min(100, Math.max(1, input.pageSize));
     const fromTime = input.from ? new Date(input.from).getTime() : undefined;
@@ -435,11 +552,11 @@ export class TasksService {
     };
   }
 
-  async getByUser(userId: string, taskId: string, options: GetTaskOptions = {}): Promise<TaskRecord | undefined> {
-    if (this.usePrismaStore) {
-      return this.getByUserWithPrisma(userId, taskId, options);
-    }
-
+  private async getByUserInMemory(
+    userId: string,
+    taskId: string,
+    options: GetTaskOptions = {}
+  ): Promise<TaskRecord | undefined> {
     const task = this.tasks.get(taskId);
     if (!task || task.userId !== userId) {
       return undefined;
@@ -452,31 +569,19 @@ export class TasksService {
     return this.tasks.get(taskId);
   }
 
-  async cancel(userId: string, taskId: string, idempotencyKey: string): Promise<TaskActionResult> {
-    if (this.usePrismaStore) {
-      return this.applyTaskActionWithPrisma(userId, taskId, idempotencyKey, "CANCEL");
-    }
-
+  private cancelInMemory(userId: string, taskId: string, idempotencyKey: string): TaskActionResult {
     return this.applyTaskAction(userId, taskId, idempotencyKey, "CANCEL");
   }
 
-  async retry(userId: string, taskId: string, idempotencyKey: string): Promise<TaskActionResult> {
-    if (this.usePrismaStore) {
-      return this.applyTaskActionWithPrisma(userId, taskId, idempotencyKey, "RETRY");
-    }
-
+  private retryInMemory(userId: string, taskId: string, idempotencyKey: string): TaskActionResult {
     return this.applyTaskAction(userId, taskId, idempotencyKey, "RETRY");
   }
 
-  async upsertMask(
+  private async upsertMaskInMemory(
     userId: string,
     taskId: string,
     input: UpsertMaskInput
   ): Promise<{ conflict: false; maskId: string; version: number } | { conflict: true; version: number } | undefined> {
-    if (this.usePrismaStore) {
-      return this.upsertMaskWithPrisma(userId, taskId, input);
-    }
-
     const task = this.tasks.get(taskId);
     if (!task || task.userId !== userId) {
       return undefined;
@@ -541,15 +646,11 @@ export class TasksService {
     });
   }
 
-  async upsertRegions(
+  private async upsertRegionsInMemory(
     userId: string,
     taskId: string,
     input: UpsertRegionsInput
   ): Promise<{ conflict: false; regionId: string; version: number } | { conflict: true; version: number } | undefined> {
-    if (this.usePrismaStore) {
-      return this.upsertRegionsWithPrisma(userId, taskId, input);
-    }
-
     const task = this.tasks.get(taskId);
     if (!task || task.userId !== userId) {
       return undefined;
@@ -621,25 +722,7 @@ export class TasksService {
     });
   }
 
-  async isWaitingForRegions(userId: string, taskId: string): Promise<boolean> {
-    const task = await this.getByUser(userId, taskId, { advance: false });
-    if (!task || task.status !== "DETECTING") {
-      return false;
-    }
-
-    const hasInput = await this.hasDetectionInput(taskId, task.mediaType);
-    return !hasInput;
-  }
-
-  async findTasksWaitingForRegions(userId: string, taskIds: string[]): Promise<Set<string>> {
-    if (taskIds.length === 0) {
-      return new Set();
-    }
-
-    if (this.usePrismaStore) {
-      return this.findTasksWaitingForRegionsWithPrisma(userId, taskIds);
-    }
-
+  private async findTasksWaitingForRegionsInMemory(userId: string, taskIds: string[]): Promise<Set<string>> {
     const waiting = new Set<string>();
     for (const taskId of taskIds) {
       const task = this.tasks.get(taskId);
@@ -652,15 +735,14 @@ export class TasksService {
         waiting.add(taskId);
       }
     }
-
     return waiting;
   }
 
-  async advanceTaskStatus(userId: string, taskId: string, input: AdvanceTaskStatusInput): Promise<AdvanceTaskStatusResult> {
-    if (this.usePrismaStore) {
-      return this.advanceTaskStatusWithPrisma(userId, taskId, input);
-    }
-
+  private async advanceTaskStatusInMemory(
+    userId: string,
+    taskId: string,
+    input: AdvanceTaskStatusInput
+  ): Promise<AdvanceTaskStatusResult> {
     return this.runInTransaction(() => {
       const task = this.tasks.get(taskId);
       if (!task) {
@@ -719,12 +801,7 @@ export class TasksService {
     });
   }
 
-  async seedFailedTask(userId: string, taskId: string): Promise<void> {
-    if (this.usePrismaStore) {
-      await this.seedFailedTaskWithPrisma(userId, taskId);
-      return;
-    }
-
+  private async seedFailedTaskInMemory(userId: string, taskId: string): Promise<void> {
     this.runInTransaction(() => {
       const now = new Date().toISOString();
       this.tasks.set(taskId, {
@@ -744,19 +821,7 @@ export class TasksService {
     });
   }
 
-  getDebugSnapshot() {
-    if (this.usePrismaStore) {
-      return {
-        taskCount: 0,
-        idempotencyCount: 0,
-        actionIdempotencyCount: 0,
-        taskMaskCount: 0,
-        taskRegionCount: 0,
-        usageLedgerCount: 0,
-        outboxEventCount: 0
-      };
-    }
-
+  private getDebugSnapshotInMemory() {
     return {
       taskCount: this.tasks.size,
       idempotencyCount: this.idempotency.size,

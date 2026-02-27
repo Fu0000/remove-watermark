@@ -18,9 +18,7 @@ export function PageShell({ title, subtitle, children }: PropsWithChildren<PageS
             <Text className="page-shell__subtitle">{subtitle}</Text>
           </View>
         ) : null}
-        <View>
-          <Text className="page-shell__meta">当前端：{platformLabel()}</Text>
-        </View>
+
       </View>
       <View className="page-shell__body card">{children}</View>
     </View>

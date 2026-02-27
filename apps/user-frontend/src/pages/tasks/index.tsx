@@ -8,15 +8,14 @@ import { ApiError } from "@/services/http";
 import { buildIdempotencyKey } from "@/utils/idempotency";
 import { useTaskStore } from "@/stores/task.store";
 import type { TaskStatus } from "@packages/contracts";
+import "./index.scss";
 
 const TERMINAL_STATUS = new Set<TaskStatus>(["SUCCEEDED", "FAILED", "CANCELED"]);
-const CANCELABLE_STATUS = new Set<TaskStatus>(["QUEUED", "PREPROCESSING", "DETECTING"]);
 
 function resolveErrorText(error: unknown, fallback: string) {
   if (error instanceof ApiError) {
     return `${error.code} ${error.message}`;
   }
-
   return fallback;
 }
 
@@ -24,7 +23,6 @@ export default function TasksPage() {
   const { taskId, status, setStatus, reset } = useTaskStore();
   const queryClient = useQueryClient();
   const [actionErrorText, setActionErrorText] = useState("");
-  const [actionText, setActionText] = useState("");
   const [navigatedTaskId, setNavigatedTaskId] = useState<string | undefined>();
 
   useEffect(() => {
@@ -35,11 +33,10 @@ export default function TasksPage() {
     queryKey: ["tasks", taskId],
     queryFn: listTasks,
     enabled: Boolean(taskId),
-    refetchInterval: (query) => {
+    refetchInterval: (query: any) => {
       if (!taskId || TERMINAL_STATUS.has(status)) {
         return false;
       }
-
       const failures = query.state.fetchFailureCount;
       const backoffFactor = Math.max(1, 2 ** failures);
       return Math.min(3000 * backoffFactor, 15000);
@@ -48,20 +45,17 @@ export default function TasksPage() {
   });
 
   useEffect(() => {
-    if (!taskId || !tasksQuery.data) {
-      return;
-    }
+    if (!taskId || !tasksQuery.data) return;
 
-    const found = tasksQuery.data.data.items.find((item) => item.taskId === taskId);
-    if (!found) {
-      return;
-    }
+    const found = tasksQuery.data.data.items.find((item: any) => item.taskId === taskId);
+    if (!found) return;
 
     const nextStatus = found.status as TaskStatus;
     if (nextStatus !== status) {
       setStatus(nextStatus);
     }
 
+    // 成功后自动推入 Result，这是用户视角的核心无缝流转点
     if (nextStatus === "SUCCEEDED" && navigatedTaskId !== taskId) {
       setNavigatedTaskId(taskId);
       Taro.navigateTo({ url: `/pages/result/index?taskId=${taskId}` });
@@ -70,176 +64,109 @@ export default function TasksPage() {
 
   const cancelMutation = useMutation({
     mutationFn: async () => cancelTask(taskId as string, buildIdempotencyKey()),
-    onSuccess: (response) => {
+    onSuccess: (response: any) => {
       setActionErrorText("");
-      setActionText("");
       setStatus(response.data.status as TaskStatus);
       void queryClient.invalidateQueries({ queryKey: ["tasks", taskId] });
+      Taro.navigateBack(); // 返回前一页
     },
-    onError: (error) => {
+    onError: (error: any) => {
       setActionErrorText(resolveErrorText(error, "取消任务失败"));
     }
   });
 
   const retryMutation = useMutation({
     mutationFn: async () => retryTask(taskId as string, buildIdempotencyKey()),
-    onSuccess: (response) => {
+    onSuccess: (response: any) => {
       setActionErrorText("");
-      setActionText("");
       setStatus(response.data.status as TaskStatus);
       void queryClient.invalidateQueries({ queryKey: ["tasks", taskId] });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       setActionErrorText(resolveErrorText(error, "重试任务失败"));
     }
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: async () => deleteTask(taskId as string, buildIdempotencyKey()),
-    onSuccess: () => {
-      setActionErrorText("");
-      setActionText("当前任务已删除（展示已隐藏）");
-      reset();
-      void queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      void Taro.showToast({
-        title: "任务删除成功",
-        icon: "success"
-      });
-    },
-    onError: (error) => {
-      setActionText("");
-      setActionErrorText(resolveErrorText(error, "删除任务失败"));
-    }
-  });
-
   const queryErrorText = useMemo(() => {
-    if (!tasksQuery.error) {
-      return "";
-    }
-
-    return resolveErrorText(tasksQuery.error, "任务刷新失败");
+    if (!tasksQuery.error) return "";
+    return resolveErrorText(tasksQuery.error, "状态刷新异常");
   }, [tasksQuery.error]);
 
-  const handleRefresh = async () => {
-    setActionErrorText("");
-    setActionText("");
-    await tasksQuery.refetch();
-  };
-
   const handleCancel = () => {
-    if (!taskId) {
-      setActionErrorText("当前无可取消任务");
-      return;
-    }
-
-    setActionText("");
+    if (!taskId) return;
     cancelMutation.mutate();
   };
 
   const handleRetry = () => {
-    if (!taskId) {
-      setActionErrorText("当前无可重试任务");
-      return;
-    }
-
-    setActionText("");
+    if (!taskId) return;
     retryMutation.mutate();
   };
 
-  const handleDelete = async () => {
-    if (deleteMutation.isPending) {
-      return;
-    }
-
-    if (!taskId) {
-      setActionErrorText("当前无可删除任务");
-      return;
-    }
-
-    const modal = await Taro.showModal({
-      title: "确认删除任务",
-      content: "删除后该任务将从任务中心隐藏，是否继续？",
-      confirmText: "确认删除",
-      cancelText: "取消"
-    });
-    if (!modal.confirm) {
-      return;
-    }
-
-    setActionText("");
-    deleteMutation.mutate();
-  };
-
-  const handleGoResult = () => {
-    if (!taskId) {
-      return;
-    }
-
-    Taro.navigateTo({ url: `/pages/result/index?taskId=${taskId}` });
-  };
+  const isFailed = status === "FAILED" || status === "CANCELED";
 
   return (
-    <PageShell title="任务中心" subtitle="轮询 3s，失败退避至 15s，支持取消/重试与结果跳转">
-      <View>
-        <Text>taskId: {taskId || "-"}</Text>
-      </View>
-      <View>
-        <Text>status: {status}</Text>
-      </View>
-      <View>
-        <Text>任务总数: {tasksQuery.data?.data.total || 0}</Text>
-      </View>
-      <View>
-        <Text>轮询失败次数: {tasksQuery.failureCount}</Text>
-      </View>
-      <View>
-        <Button loading={tasksQuery.isFetching} onClick={handleRefresh}>
-          刷新任务
-        </Button>
-      </View>
-      <View>
-        <Button
-          loading={cancelMutation.isPending}
-          disabled={!taskId || !CANCELABLE_STATUS.has(status)}
-          onClick={handleCancel}
-        >
-          取消当前任务
-        </Button>
-      </View>
-      <View>
-        <Button
-          loading={retryMutation.isPending}
-          disabled={!taskId || status !== "FAILED"}
-          onClick={handleRetry}
-        >
-          重试当前任务
-        </Button>
-      </View>
-      <View>
-        <Button disabled={!taskId || status !== "SUCCEEDED"} onClick={handleGoResult}>
-          查看结果页
-        </Button>
-      </View>
-      <View>
-        <Button loading={deleteMutation.isPending} disabled={!taskId} onClick={handleDelete}>
-          删除当前任务（FR-010）
-        </Button>
-      </View>
-      {actionText ? (
-        <View>
-          <Text>{actionText}</Text>
+    <PageShell title="超纯净去水印" subtitle="AI 处理中心">
+      <View className="processing-container animate-fade-in">
+
+        {/* 核心发光转盘区 */}
+        <View className="processing-spinner-ring">
+          {!isFailed ? (
+            <View className="processing-spinner-active" />
+          ) : (
+            <View className="processing-spinner-error">!</View>
+          )}
         </View>
-      ) : null}
-      {actionErrorText ? (
-        <View>
-          <Text>{actionErrorText}</Text>
+
+        {/* 状态文案提示区 */}
+        <View className="processing-text-group">
+          {!taskId ? (
+            <Text className="processing-title">暂无活跃任务</Text>
+          ) : status === "SUCCEEDED" ? (
+            <Text className="processing-title">处理完成，正在带您前往结果页...</Text>
+          ) : isFailed ? (
+            <Text className="processing-title processing-title-failed">处理遇到异常</Text>
+          ) : (
+            <Text className="processing-title">AI 正在精准擦除，请稍候...</Text>
+          )}
+
+          {(!isFailed && taskId && status !== "SUCCEEDED") && (
+            <Text className="processing-subtitle">云端算力全开，保持屏幕亮起可加速</Text>
+          )}
         </View>
-      ) : null}
-      {queryErrorText ? (
-        <View>
-          <Text>{queryErrorText}</Text>
+
+        {/* 出错或兜底动作区域 */}
+        <View className="processing-actions">
+          {isFailed && (
+            <Button
+              className="tasks-btn tasks-btn-primary"
+              loading={retryMutation.isPending}
+              onClick={handleRetry}
+            >
+              🔄 重新尝试
+            </Button>
+          )}
+          {(!isFailed && taskId && status !== "SUCCEEDED") && (
+            <Button
+              className="tasks-btn"
+              loading={cancelMutation.isPending}
+              onClick={handleCancel}
+            >
+              取消当前处理
+            </Button>
+          )}
+          {(!taskId || isFailed) && (
+            <Button className="tasks-btn" onClick={() => Taro.switchTab({ url: "/pages/home/index" })}>返回首页</Button>
+          )}
         </View>
-      ) : null}
+
+        {/* 异常提示小喇叭 */}
+        {(actionErrorText || queryErrorText) && (
+          <View className="processing-error-banner animate-slide-up">
+            <Text>{actionErrorText || queryErrorText}</Text>
+          </View>
+        )}
+
+      </View>
     </PageShell>
   );
 }

@@ -1,0 +1,129 @@
+.result-section {
+    display: flex;
+    flex-direction: column;
+    gap: 32rpx;
+    animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    padding-bottom: 40rpx;
+}
+
+/* 成品大图容器 */
+.result-preview-container {
+    position: relative;
+    width: 100%;
+    border-radius: 24rpx;
+    overflow: hidden;
+    box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.08);
+    border: 1px solid var(--rw-card-border);
+    background: var(--rw-card-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.result-preview-image {
+    width: 100%;
+    display: block;
+}
+
+/* 有效期防盗链徽章 */
+.result-shield-badge {
+    position: absolute;
+    top: 20rpx;
+    right: 20rpx;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    padding: 8rpx 20rpx;
+    border-radius: 30rpx;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    font-size: 20rpx;
+    color: #10b981;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8rpx;
+    box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.05);
+}
+
+.result-skeleton {
+    width: 100%;
+    height: 500rpx;
+    background: rgba(0, 0, 0, 0.02);
+    border-radius: 24rpx;
+}
+
+/* 操作区域 */
+.result-actions {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 20rpx;
+    margin-top: 16rpx;
+}
+
+.tasks-btn {
+    height: 88rpx;
+    border-radius: 12rpx;
+    font-size: 30rpx;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--rw-card-bg);
+    color: var(--rw-text);
+    border: 1px solid var(--rw-card-border);
+    transition: all 0.2s;
+    box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.02);
+
+    &::after {
+        display: none;
+    }
+
+    &:hover {
+        background: rgba(0, 0, 0, 0.02);
+    }
+
+    &:active {
+        transform: scale(0.98);
+    }
+}
+
+.tasks-btn-primary {
+    background: var(--rw-accent-gradient);
+    color: #fff;
+    border: none;
+    box-shadow: 0 8rpx 24rpx var(--rw-accent-glow);
+
+    &:hover {
+        background: var(--rw-accent-hover);
+        color: #fff;
+    }
+}
+
+/* 异常状态提示 */
+.result-warning {
+    padding: 40rpx;
+    background: rgba(24, 24, 27, 0.02);
+    border-radius: 20rpx;
+    border: 1px dashed rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.result-warning-text {
+    color: var(--rw-text-secondary);
+    font-size: 28rpx;
+    text-align: center;
+}
+
+.result-error-banner {
+    padding: 24rpx;
+    background: rgba(239, 68, 68, 0.08);
+    /* 淡红适配白底 */
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 16rpx;
+    color: #ef4444;
+    font-size: 26rpx;
+    text-align: center;
+}

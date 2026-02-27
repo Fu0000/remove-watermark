@@ -1,18 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Taro from "@tarojs/taro";
-import { Button, Picker, Text, View } from "@tarojs/components";
+import { Button, Text, View } from "@tarojs/components";
 import { PageShell } from "@/modules/common/page-shell";
-import { deleteAsset, getUploadPolicy } from "@/services/asset";
+import { getUploadPolicy } from "@/services/asset";
 import { createTask, upsertTaskMask } from "@/services/task";
 import { ApiError } from "@/services/http";
 import { buildIdempotencyKey } from "@/utils/idempotency";
-import { isH5 } from "@/utils/platform";
 import { useTaskStore } from "@/stores/task.store";
 import { useAuthStore } from "@/stores/auth.store";
+import { useMediaStore } from "@/stores/media.store";
 import type { TaskStatus } from "@packages/contracts";
 import "./index.scss";
-
-const mediaOptions: Array<"IMAGE" | "VIDEO"> = ["IMAGE", "VIDEO"];
 
 const IMAGE_WIDTH = 1920;
 const IMAGE_HEIGHT = 1080;
@@ -34,12 +32,6 @@ interface BoardRect {
   height: number;
 }
 
-interface SelectedMedia {
-  fileName: string;
-  fileSize: number;
-  mimeType: string;
-}
-
 function deepClonePath(path: MaskPath): MaskPath {
   return path.map(([x, y]) => [x, y]);
 }
@@ -57,29 +49,11 @@ function asFiniteNumber(value: unknown): number | undefined {
   return Number.isFinite(numberValue) ? numberValue : undefined;
 }
 
-function extractVersion(message: string) {
-  const matched = message.match(/(\d+)/);
-  if (!matched) {
-    return undefined;
-  }
-
-  const parsed = Number(matched[1]);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
 export default function EditorPage() {
-  const [agreement, setAgreement] = useState(false);
-  const [mediaType, setMediaType] = useState<"IMAGE" | "VIDEO">("IMAGE");
   const [loading, setLoading] = useState(false);
-  const [assetDeleting, setAssetDeleting] = useState(false);
-  const [maskLoading, setMaskLoading] = useState(false);
   const [errorText, setErrorText] = useState("");
-  const [maskVersion, setMaskVersion] = useState(0);
-  const [maskId, setMaskId] = useState("");
-  const [assetId, setAssetId] = useState("");
-  const [selectedMedia, setSelectedMedia] = useState<SelectedMedia>();
 
-  const [mode, setMode] = useState<MaskMode>("POLYGON");
+  const [mode, setMode] = useState<MaskMode>("BRUSH");
   const [polygons, setPolygons] = useState<MaskPath[]>([]);
   const [brushStrokes, setBrushStrokes] = useState<MaskPath[]>([]);
   const [draftPolygon, setDraftPolygon] = useState<MaskPath>([]);
@@ -89,8 +63,19 @@ export default function EditorPage() {
   const [future, setFuture] = useState<MaskSnapshot[]>([]);
   const [boardRect, setBoardRect] = useState<BoardRect | null>(null);
 
-  const user = useAuthStore((state) => state.user);
-  const { taskId, setTask, reset } = useTaskStore();
+  const user = useAuthStore((state: any) => state.user);
+  const { setTask } = useTaskStore();
+
+  // Connect to the new Media store
+  const { selectedMedia, mediaType } = useMediaStore();
+
+  useEffect(() => {
+    // Return to home if no media selected
+    if (!selectedMedia) {
+      Taro.showToast({ title: "请先选择媒体文件", icon: "none" });
+      setTimeout(() => Taro.navigateBack(), 1000);
+    }
+  }, [selectedMedia]);
 
   const snapshotCurrent = (): MaskSnapshot => ({
     polygons: deepClonePaths(polygons),
@@ -116,28 +101,16 @@ export default function EditorPage() {
     Taro.nextTick(() => {
       Taro.createSelectorQuery()
         .select(".mask-board")
-        .boundingClientRect((rect) => {
+        .boundingClientRect((rect: any) => {
           const rectValue = Array.isArray(rect) ? rect[0] : rect;
-          if (!rectValue || typeof rectValue !== "object") {
-            return;
-          }
-
-          const rectRecord = rectValue as {
-            width?: unknown;
-            height?: unknown;
-            left?: unknown;
-            top?: unknown;
-          };
-
+          if (!rectValue || typeof rectValue !== "object") return;
+          const rectRecord = rectValue as Record<string, unknown>;
           const width = asFiniteNumber(rectRecord.width);
           const height = asFiniteNumber(rectRecord.height);
           const left = asFiniteNumber(rectRecord.left);
           const top = asFiniteNumber(rectRecord.top);
 
-          if (!width || !height || left === undefined || top === undefined) {
-            return;
-          }
-
+          if (!width || !height || left === undefined || top === undefined) return;
           setBoardRect({ left, top, width, height });
         })
         .exec();
@@ -151,69 +124,33 @@ export default function EditorPage() {
   useEffect(() => {
     const timer = setTimeout(refreshBoardRect, 20);
     const onResize = () => refreshBoardRect();
-    const canListenResize =
-      typeof Taro.onWindowResize === "function" && typeof Taro.offWindowResize === "function";
-
-    if (canListenResize) {
-      Taro.onWindowResize(onResize);
-    }
-
+    const canListenResize = typeof Taro.onWindowResize === "function" && typeof Taro.offWindowResize === "function";
+    if (canListenResize) Taro.onWindowResize(onResize);
     return () => {
       clearTimeout(timer);
-      if (canListenResize) {
-        Taro.offWindowResize(onResize);
-      }
+      if (canListenResize) Taro.offWindowResize(onResize);
     };
   }, []);
 
   const pointFromEvent = (event: unknown): MaskPoint | undefined => {
-    if (!boardRect) {
-      return undefined;
-    }
-
-    const record = event as {
-      touches?: Array<Record<string, unknown>>;
-      changedTouches?: Array<Record<string, unknown>>;
-      detail?: Record<string, unknown>;
-    };
-
+    if (!boardRect) return undefined;
+    const record = event as { touches?: any[]; changedTouches?: any[]; detail?: any };
     const touched = record.touches?.[0] || record.changedTouches?.[0];
-    const rawX =
-      asFiniteNumber(touched?.x) ??
-      asFiniteNumber(touched?.clientX) ??
-      asFiniteNumber(touched?.pageX) ??
-      asFiniteNumber(record.detail?.x) ??
-      asFiniteNumber(record.detail?.clientX);
-    const rawY =
-      asFiniteNumber(touched?.y) ??
-      asFiniteNumber(touched?.clientY) ??
-      asFiniteNumber(touched?.pageY) ??
-      asFiniteNumber(record.detail?.y) ??
-      asFiniteNumber(record.detail?.clientY);
-
-    if (rawX === undefined || rawY === undefined) {
-      return undefined;
-    }
+    const rawX = asFiniteNumber(touched?.x) ?? asFiniteNumber(touched?.clientX) ?? asFiniteNumber(touched?.pageX) ?? asFiniteNumber(record.detail?.x) ?? asFiniteNumber(record.detail?.clientX);
+    const rawY = asFiniteNumber(touched?.y) ?? asFiniteNumber(touched?.clientY) ?? asFiniteNumber(touched?.pageY) ?? asFiniteNumber(record.detail?.y) ?? asFiniteNumber(record.detail?.clientY);
+    if (rawX === undefined || rawY === undefined) return undefined;
 
     const localX = clamp(rawX - boardRect.left, 0, boardRect.width);
     const localY = clamp(rawY - boardRect.top, 0, boardRect.height);
-
     const normalizedX = Math.round((localX / boardRect.width) * IMAGE_WIDTH);
     const normalizedY = Math.round((localY / boardRect.height) * IMAGE_HEIGHT);
-
     return [normalizedX, normalizedY];
   };
 
   const handlePolygonTap = (event: unknown) => {
-    if (mode !== "POLYGON") {
-      return;
-    }
-
+    if (mode !== "POLYGON") return;
     const point = pointFromEvent(event);
-    if (!point) {
-      return;
-    }
-
+    if (!point) return;
     commitSnapshot({
       polygons: deepClonePaths(polygons),
       brushStrokes: deepClonePaths(brushStrokes),
@@ -222,64 +159,43 @@ export default function EditorPage() {
   };
 
   const handleBoardTouchStart = (event: unknown) => {
-    if (mode !== "BRUSH") {
-      return;
-    }
-
+    if (mode !== "BRUSH") return;
     const point = pointFromEvent(event);
-    if (!point) {
-      return;
-    }
-
+    if (!point) return;
     activeStrokeRef.current = [point];
     setActiveStroke([point]);
   };
 
   const handleBoardTouchMove = (event: unknown) => {
-    if (mode !== "BRUSH") {
-      return;
-    }
-
-    if (!activeStrokeRef.current.length) {
-      return;
-    }
-
+    if (mode !== "BRUSH" || !activeStrokeRef.current.length) return;
     const point = pointFromEvent(event);
-    if (!point) {
-      return;
-    }
-
+    if (!point) return;
     activeStrokeRef.current = [...activeStrokeRef.current, point];
     setActiveStroke([...activeStrokeRef.current]);
   };
 
   const handleBoardTouchEnd = () => {
-    if (mode !== "BRUSH") {
-      return;
-    }
-
+    if (mode !== "BRUSH") return;
     if (activeStrokeRef.current.length < 2) {
       setActiveStroke([]);
       activeStrokeRef.current = [];
       return;
     }
-
     commitSnapshot({
       polygons: deepClonePaths(polygons),
       brushStrokes: [...deepClonePaths(brushStrokes), deepClonePath(activeStrokeRef.current)],
       draftPolygon: deepClonePath(draftPolygon)
     });
-
     setActiveStroke([]);
     activeStrokeRef.current = [];
   };
 
   const handleClosePolygon = () => {
     if (draftPolygon.length < 3) {
-      setErrorText("多边形至少需要 3 个点才能闭合");
+      setErrorText("提示：多边形至少需要 3 个点才能闭合");
+      setTimeout(() => setErrorText(""), 2000);
       return;
     }
-
     setErrorText("");
     commitSnapshot({
       polygons: [...deepClonePaths(polygons), deepClonePath(draftPolygon)],
@@ -289,18 +205,11 @@ export default function EditorPage() {
   };
 
   const handleClearMask = () => {
-    commitSnapshot({
-      polygons: [],
-      brushStrokes: [],
-      draftPolygon: []
-    });
+    commitSnapshot({ polygons: [], brushStrokes: [], draftPolygon: [] });
   };
 
   const handleUndo = () => {
-    if (!history.length) {
-      return;
-    }
-
+    if (!history.length) return;
     const previous = history[history.length - 1];
     setHistory(history.slice(0, -1));
     setFuture([snapshotCurrent(), ...future].slice(0, 40));
@@ -308,10 +217,7 @@ export default function EditorPage() {
   };
 
   const handleRedo = () => {
-    if (!future.length) {
-      return;
-    }
-
+    if (!future.length) return;
     const next = future[0];
     setFuture(future.slice(1));
     setHistory([...history, snapshotCurrent()].slice(-40));
@@ -319,320 +225,119 @@ export default function EditorPage() {
   };
 
   const submitPolygons = useMemo(() => {
-    if (draftPolygon.length >= 3) {
-      return [...polygons, draftPolygon];
-    }
-
+    if (draftPolygon.length >= 3) return [...polygons, draftPolygon];
     return polygons;
   }, [polygons, draftPolygon]);
 
   const hasMaskData = submitPolygons.length > 0 || brushStrokes.length > 0;
 
-  const pickMediaForH5 = (accept: string) =>
-    new Promise<SelectedMedia>((resolve, reject) => {
-      if (typeof document === "undefined") {
-        reject(new Error("当前环境不支持文件选择"));
-        return;
-      }
-
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = accept;
-      input.style.display = "none";
-      input.onchange = () => {
-        const file = input.files?.[0];
-        if (!file) {
-          reject(new Error("未选择文件"));
-          return;
-        }
-
-        resolve({
-          fileName: file.name || (mediaType === "IMAGE" ? "image.png" : "video.mp4"),
-          fileSize: file.size || 1,
-          mimeType: file.type || (mediaType === "IMAGE" ? "image/png" : "video/mp4")
-        });
-      };
-      input.click();
-    });
-
-  const pickMediaForTaro = async (): Promise<SelectedMedia> => {
-    if (mediaType === "IMAGE") {
-      const result = await Taro.chooseImage({
-        count: 1,
-        sizeType: ["compressed", "original"],
-        sourceType: ["album", "camera"]
-      });
-
-      const path = result.tempFilePaths?.[0] || "image.png";
-      const fileRecord = result.tempFiles?.[0] as { size?: number; type?: string } | undefined;
-      const fallbackName = path.split("/").pop() || "image.png";
-      return {
-        fileName: fallbackName,
-        fileSize: fileRecord?.size || 1,
-        mimeType: fileRecord?.type || "image/png"
-      };
-    }
-
-    const video = await Taro.chooseVideo({
-      sourceType: ["album", "camera"],
-      maxDuration: 60
-    });
-
-    const path = video.tempFilePath || "video.mp4";
-    const fallbackName = path.split("/").pop() || "video.mp4";
-    return {
-      fileName: fallbackName,
-      fileSize: video.size || 1,
-      mimeType: "video/mp4"
-    };
-  };
-
-  const handlePickMedia = async () => {
-    setErrorText("");
-
-    try {
-      const nextMedia = isH5()
-        ? await pickMediaForH5(mediaType === "IMAGE" ? "image/*" : "video/*")
-        : await pickMediaForTaro();
-
-      setSelectedMedia(nextMedia);
-      setAssetId("");
-      setMaskId("");
-      setMaskVersion(0);
-      reset();
-    } catch (error) {
-      if (error instanceof Error && error.message === "未选择文件") {
-        return;
-      }
-      setErrorText("素材选择失败，请重试");
-    }
-  };
-
-  const handleCreateTask = async () => {
-    if (!agreement) {
-      setErrorText("请先勾选授权声明");
-      return;
-    }
-
+  // ====核心集成动作：一键消除====
+  const handleStartErase = async () => {
     if (!user) {
-      setErrorText("当前未登录，请先返回首页登录");
+      setErrorText("登录状态失效，请返回重新连接");
       return;
     }
-
     if (!selectedMedia) {
-      setErrorText("请先选择要上传的素材文件");
+      setErrorText("未找到待处理文件缓存");
+      return;
+    }
+    if (!hasMaskData) {
+      setErrorText("请在画面上圈择要擦除的水印区域");
       return;
     }
 
     setLoading(true);
     setErrorText("");
+
     try {
+      // 1. Get upload policy (in a real app, you'd upload the local file here to COS)
       const uploadPolicy = await getUploadPolicy({
         fileName: selectedMedia.fileName,
         fileSize: selectedMedia.fileSize,
         mediaType: mediaType === "IMAGE" ? "image" : "video",
         mimeType: selectedMedia.mimeType
       });
-      setAssetId(uploadPolicy.data.assetId);
+      const assetId = uploadPolicy.data.assetId;
 
+      // 2. Create orchestration task
       const task = await createTask(
-        {
-          assetId: uploadPolicy.data.assetId,
-          mediaType,
-          taskPolicy: "FAST"
-        },
+        { assetId, mediaType, taskPolicy: "FAST" },
         buildIdempotencyKey()
       );
+      const newTaskId = task.data.taskId;
 
-      setTask(task.data.taskId, task.data.status as TaskStatus);
-    } catch (error) {
-      if (error instanceof ApiError) {
-        setErrorText(`${error.code} ${error.message}`);
-      } else {
-        setErrorText("任务创建失败，请稍后重试");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+      // Update global store
+      setTask(newTaskId, task.data.status as TaskStatus);
 
-  const handleDeleteAsset = async () => {
-    if (assetDeleting) {
-      return;
-    }
-
-    if (!assetId) {
-      setErrorText("当前没有可删除的素材");
-      return;
-    }
-
-    const modal = await Taro.showModal({
-      title: "确认删除素材",
-      content: "删除后该素材将不可在任务链路中继续使用，是否继续？",
-      confirmText: "确认删除",
-      cancelText: "取消"
-    });
-    if (!modal.confirm) {
-      return;
-    }
-
-    setAssetDeleting(true);
-    setErrorText("");
-    try {
-      await deleteAsset(assetId, buildIdempotencyKey());
-      setAssetId("");
-      Taro.showToast({
-        title: "素材删除成功",
-        icon: "success"
-      });
-    } catch (error) {
-      if (error instanceof ApiError) {
-        setErrorText(`${error.code} ${error.message}`);
-      } else {
-        setErrorText("素材删除失败，请稍后重试");
-      }
-    } finally {
-      setAssetDeleting(false);
-    }
-  };
-
-  const handleSubmitMask = async () => {
-    if (!taskId) {
-      setErrorText("请先创建任务再提交蒙版");
-      return;
-    }
-
-    if (!hasMaskData) {
-      setErrorText("请先绘制蒙版后再提交");
-      return;
-    }
-
-    setMaskLoading(true);
-    setErrorText("");
-    try {
-      const response = await upsertTaskMask(
-        taskId,
+      // 3. Submit drawn masks
+      await upsertTaskMask(
+        newTaskId,
         {
           imageWidth: IMAGE_WIDTH,
           imageHeight: IMAGE_HEIGHT,
           polygons: submitPolygons,
           brushStrokes,
-          version: maskVersion
+          version: 0
         },
         buildIdempotencyKey()
       );
 
-      setMaskVersion(response.data.version);
-      setMaskId(response.data.maskId);
+      // Successfully processed all atomic steps, now entering monitoring state
       Taro.switchTab({ url: "/pages/tasks/index" });
     } catch (error) {
-      if (error instanceof ApiError && error.code === 40901) {
-        const latest = extractVersion(error.message);
-        if (latest !== undefined) {
-          setMaskVersion(latest);
-          setErrorText(`蒙版版本冲突，已同步到 v${latest}，请再次提交。`);
-        } else {
-          setErrorText(`${error.code} ${error.message}`);
-        }
-      } else if (error instanceof ApiError) {
-        setErrorText(`${error.code} ${error.message}`);
+      if (error instanceof ApiError) {
+        setErrorText(`[网络请求错误] ${error.code} ${error.message}`);
       } else {
-        setErrorText("蒙版提交失败，请稍后重试");
+        setErrorText("处理启动异常，请检查网络后重试");
       }
-    } finally {
-      setMaskLoading(false);
+      setLoading(false);
     }
   };
 
+  if (!selectedMedia) {
+    return <PageShell title="超纯净去水印" subtitle="读取媒体流失败..." />;
+  }
+
   return (
-    <PageShell title="上传与编辑" subtitle="支持真实蒙版绘制、撤销重做、版本冲突处理">
-      <View className="editor-section">
-        <Text>上传前请确认素材权属授权。</Text>
-      </View>
-      <View className="editor-section">
-        <Picker
-          mode="selector"
-          range={mediaOptions}
-          onChange={(event) => {
-            const index = Number(event.detail.value);
-            setMediaType(mediaOptions[index] || "IMAGE");
-          }}
-        >
-          <Button>当前类型：{mediaType}</Button>
-        </Picker>
-      </View>
-      <View className="editor-section">
-        <Button onClick={() => setAgreement((value) => !value)}>
-          {agreement ? "已勾选授权声明" : "勾选授权声明"}
-        </Button>
-      </View>
-      <View className="editor-section">
-        <Button onClick={handlePickMedia}>选择素材文件（上传）</Button>
-      </View>
-      <View className="editor-section">
-        <Text>
-          已选素材：
-          {selectedMedia ? `${selectedMedia.fileName}（${Math.max(1, Math.ceil(selectedMedia.fileSize / 1024))} KB）` : "-"}
-        </Text>
-      </View>
-      <View className="editor-section">
-        <Button type="primary" loading={loading} onClick={handleCreateTask}>
-          上传素材并创建任务（步骤 1）
-        </Button>
-      </View>
-      <View className="editor-section">
-        <Text>当前 assetId：{assetId || "-"}</Text>
-      </View>
-      <View className="editor-section">
-        <Button loading={assetDeleting} disabled={!assetId} onClick={handleDeleteAsset}>
-          删除当前素材（FR-010）
-        </Button>
-      </View>
+    <PageShell title="智能消除工作台" subtitle={`已加载: ${selectedMedia.fileName}`}>
 
-      <View className="editor-section">
-        <Text>蒙版模式：</Text>
-      </View>
-      <View className="mask-toolbar">
-        <View className="mask-toolbar-item">
-          <Button type={mode === "POLYGON" ? "primary" : "default"} onClick={() => setMode("POLYGON")}>多边形</Button>
+      {/* 极简顶栏工具集 */}
+      <View className="editor-nav-pills animate-fade-in">
+        <View className="editor-pill-group">
+          <Button className={`editor-pill ${mode === "BRUSH" ? "editor-pill-active" : ""}`} onClick={() => setMode("BRUSH")}>🖌️ 手绘涂抹</Button>
+          <Button className={`editor-pill ${mode === "POLYGON" ? "editor-pill-active" : ""}`} onClick={() => setMode("POLYGON")}>⬡ 多边套索</Button>
         </View>
-        <View className="mask-toolbar-item">
-          <Button type={mode === "BRUSH" ? "primary" : "default"} onClick={() => setMode("BRUSH")}>画笔</Button>
-        </View>
-        <View className="mask-toolbar-item">
-          <Button onClick={handleClosePolygon} disabled={draftPolygon.length < 3}>闭合多边形</Button>
-        </View>
-        <View className="mask-toolbar-item">
-          <Button onClick={handleUndo} disabled={!history.length}>撤销</Button>
-        </View>
-        <View className="mask-toolbar-item">
-          <Button onClick={handleRedo} disabled={!future.length}>重做</Button>
-        </View>
-        <View className="mask-toolbar-item">
-          <Button onClick={handleClearMask} disabled={!hasMaskData && draftPolygon.length === 0}>清空</Button>
+        <View className="editor-pill-group">
+          <Button className="editor-pill" onClick={handleUndo} disabled={!history.length}>↩️ 撤回</Button>
+          <Button className="editor-pill" onClick={handleRedo} disabled={!future.length}>↪️ 重做</Button>
+          <Button className="editor-pill" onClick={handleClearMask} disabled={!hasMaskData && draftPolygon.length === 0}>🗑️ 清除</Button>
         </View>
       </View>
 
-      <View className="editor-section">
+      {/* 当处于多边形模式下，且存在顶点，给出闭合提示 */}
+      {mode === "POLYGON" && draftPolygon.length > 0 && (
+        <View className="editor-tip-float">
+          <Button className="editor-tip-btn" onClick={handleClosePolygon}>点此闭合当前多边形</Button>
+        </View>
+      )}
+
+      {/* 主力暗黑画板 */}
+      <View className="editor-workspace">
         <View
           className="mask-board"
           onClick={handlePolygonTap}
           onTouchStart={handleBoardTouchStart}
           onTouchMove={handleBoardTouchMove}
           onTouchEnd={handleBoardTouchEnd}
+          style={selectedMedia.sourcePath ? { backgroundImage: `url(${selectedMedia.sourcePath})`, backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' } : {}}
         >
-          <View className="mask-board-tip">
-            <Text>{mode === "POLYGON" ? "点击添加点，完成后点击“闭合多边形”" : "按住拖动进行画笔绘制"}</Text>
-          </View>
+          {/* 画板绘制点位阵列 */}
           {submitPolygons.map((polygon, polygonIndex) =>
             polygon.map((point, pointIndex) => (
               <View
                 key={`poly-${polygonIndex}-${pointIndex}-${point[0]}-${point[1]}`}
                 className="mask-point mask-point-polygon"
-                style={{
-                  left: `${(point[0] / IMAGE_WIDTH) * 100}%`,
-                  top: `${(point[1] / IMAGE_HEIGHT) * 100}%`
-                }}
+                style={{ left: `${(point[0] / IMAGE_WIDTH) * 100}%`, top: `${(point[1] / IMAGE_HEIGHT) * 100}%` }}
               />
             ))
           )}
@@ -640,10 +345,7 @@ export default function EditorPage() {
             <View
               key={`draft-${pointIndex}-${point[0]}-${point[1]}`}
               className="mask-point mask-point-draft"
-              style={{
-                left: `${(point[0] / IMAGE_WIDTH) * 100}%`,
-                top: `${(point[1] / IMAGE_HEIGHT) * 100}%`
-              }}
+              style={{ left: `${(point[0] / IMAGE_WIDTH) * 100}%`, top: `${(point[1] / IMAGE_HEIGHT) * 100}%` }}
             />
           ))}
           {brushStrokes.map((stroke, strokeIndex) =>
@@ -651,10 +353,7 @@ export default function EditorPage() {
               <View
                 key={`stroke-${strokeIndex}-${pointIndex}-${point[0]}-${point[1]}`}
                 className="mask-point mask-point-brush"
-                style={{
-                  left: `${(point[0] / IMAGE_WIDTH) * 100}%`,
-                  top: `${(point[1] / IMAGE_HEIGHT) * 100}%`
-                }}
+                style={{ left: `${(point[0] / IMAGE_WIDTH) * 100}%`, top: `${(point[1] / IMAGE_HEIGHT) * 100}%` }}
               />
             ))
           )}
@@ -662,36 +361,30 @@ export default function EditorPage() {
             <View
               key={`active-${pointIndex}-${point[0]}-${point[1]}`}
               className="mask-point mask-point-active"
-              style={{
-                left: `${(point[0] / IMAGE_WIDTH) * 100}%`,
-                top: `${(point[1] / IMAGE_HEIGHT) * 100}%`
-              }}
+              style={{ left: `${(point[0] / IMAGE_WIDTH) * 100}%`, top: `${(point[1] / IMAGE_HEIGHT) * 100}%` }}
             />
           ))}
         </View>
       </View>
 
-      <View className="editor-section">
-        <Text>
-          蒙版统计：polygons={submitPolygons.length}（draft={draftPolygon.length} 点） / brushStrokes={brushStrokes.length}
-        </Text>
-      </View>
-      <View className="editor-section">
-        <Button type="primary" loading={maskLoading} onClick={handleSubmitMask}>
-          提交蒙版并进入任务中心（步骤 2）
-        </Button>
-      </View>
-      <View className="editor-section">
-        <Text>当前 taskId：{taskId || "-"}</Text>
-      </View>
-      <View className="editor-section">
-        <Text>maskId/version：{maskId ? `${maskId} / v${maskVersion}` : `- / v${maskVersion}`}</Text>
-      </View>
-      {errorText ? (
-        <View className="editor-section">
+      {/* 报错小横幅 */}
+      {errorText && (
+        <View className="editor-error-banner animate-slide-up">
           <Text>{errorText}</Text>
         </View>
-      ) : null}
+      )}
+
+      {/* 底部悬浮核心一键执行 Button */}
+      <View className="editor-bottom-bar animate-slide-up" style={{ animationDelay: "0.2s" }}>
+        <Button
+          className={`editor-start-btn ${!hasMaskData ? 'editor-start-btn-disabled' : ''}`}
+          loading={loading}
+          onClick={handleStartErase}
+        >
+          开始智能抹除 ✨
+        </Button>
+      </View>
+
     </PageShell>
   );
 }

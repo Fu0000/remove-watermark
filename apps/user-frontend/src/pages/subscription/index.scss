@@ -2,7 +2,8 @@
   margin-top: 16rpx;
   display: flex;
   flex-direction: column;
-  gap: 10rpx;
+  gap: 16rpx;
+  animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .subscription-head {
@@ -13,29 +14,42 @@
 
 .subscription-title {
   font-size: 30rpx;
-  font-weight: 600;
-  color: #1f2d3d;
+  font-weight: 700;
+  color: var(--rw-text);
 }
 
 .subscription-kv {
   font-size: 24rpx;
-  color: #52606d;
+  color: var(--rw-text-secondary);
   word-break: break-all;
 }
 
+/* 玻璃质感套餐卡片 */
 .subscription-plan-card {
-  border: 1px solid #e5ecf4;
-  border-radius: 12rpx;
-  background: #ffffff;
-  padding: 14rpx;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16rpx;
+  background: rgba(24, 24, 27, 0.4);
+  backdrop-filter: blur(8px);
+  padding: 20rpx;
   display: flex;
   flex-direction: column;
-  gap: 6rpx;
+  gap: 8rpx;
+  transition: var(--rw-transition-smooth);
+  cursor: pointer;
 }
 
+.subscription-plan-card:hover {
+  background: rgba(24, 24, 27, 0.6);
+  transform: translateY(-2rpx);
+}
+
+/* 渐变辉光选中态 */
 .subscription-plan-card-active {
-  border-color: #1a73e8;
-  box-shadow: 0 0 0 2rpx rgba(26, 115, 232, 0.15);
+  border-color: rgba(225, 29, 72, 0.5);
+  /* Brand Accent */
+  background: rgba(225, 29, 72, 0.05);
+  /* Brand Transparent */
+  box-shadow: 0 0 20rpx var(--rw-accent-glow);
 }
 
 .subscription-plan-head {
@@ -46,61 +60,82 @@
 
 .subscription-plan-name {
   font-size: 28rpx;
-  font-weight: 600;
-  color: #1f2d3d;
+  font-weight: 700;
+  color: var(--rw-text);
 }
 
 .subscription-plan-price {
-  font-size: 26rpx;
-  font-weight: 600;
-  color: #1a73e8;
+  font-size: 32rpx;
+  font-weight: 800;
+  background: var(--rw-accent-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .subscription-plan-meta {
   font-size: 22rpx;
-  color: #52606d;
+  color: var(--rw-text-secondary);
   word-break: break-all;
 }
 
+/* 暗黑系输入框 */
 .subscription-input {
   box-sizing: border-box;
   width: 100%;
-  height: 68rpx;
-  border: 2rpx solid #d9e1ec;
+  height: 72rpx;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12rpx;
-  padding: 0 16rpx;
-  background: #ffffff;
+  padding: 0 20rpx;
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--rw-text);
+  font-size: 26rpx;
+  transition: var(--rw-transition-smooth);
+}
+
+.subscription-input:focus {
+  border-color: rgba(225, 29, 72, 0.5);
+  box-shadow: 0 0 0 4rpx rgba(225, 29, 72, 0.1);
 }
 
 .subscription-hint {
-  margin-top: 8rpx;
-  color: #1a73e8;
+  margin-top: 12rpx;
+  color: #38bdf8;
+  /* Soft blue hint */
   font-size: 24rpx;
 }
 
 .subscription-error {
-  margin-top: 8rpx;
-  color: #d93025;
+  margin-top: 12rpx;
+  color: #fca5a5;
   font-size: 24rpx;
 }
 
 .subscription-empty {
-  margin-top: 8rpx;
-  color: #7a8796;
+  margin-top: 24rpx;
+  color: var(--rw-text-secondary);
   font-size: 24rpx;
+  text-align: center;
+  font-style: italic;
 }
 
 .subscription-ledger-scroll {
-  max-height: 360rpx;
-  padding-right: 4rpx;
+  max-height: 480rpx;
+  padding-right: 8rpx;
 }
 
+/* 幽灵面板式列表项 */
 .subscription-ledger-item {
-  margin-top: 10rpx;
-  border: 1px solid #e5ecf4;
+  margin-top: 12rpx;
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 12rpx;
-  background: #ffffff;
-  padding: 12rpx;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 16rpx;
+  transition: background 0.2s ease;
+}
+
+.subscription-ledger-item:hover {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .subscription-ledger-head {
@@ -112,8 +147,9 @@
 
 .subscription-ledger-id {
   font-size: 22rpx;
-  color: #2b3a4b;
+  color: #a1a1aa;
   word-break: break-all;
+  font-family: monospace;
 }
 
 .platform-h5 .subscription-title {
@@ -133,13 +169,14 @@
 }
 
 .platform-h5 .subscription-plan-price {
-  font-size: 15px;
+  font-size: 18px;
 }
 
 .platform-h5 .subscription-input {
-  height: 40px;
+  height: 44px;
+  font-size: 15px;
 }
 
 .platform-h5 .subscription-ledger-scroll {
-  max-height: 220px;
+  max-height: 280px;
 }

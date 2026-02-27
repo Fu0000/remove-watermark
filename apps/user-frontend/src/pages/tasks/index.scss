@@ -1,0 +1,141 @@
+.processing-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: calc(100vh - 200rpx);
+    padding: 40rpx;
+    gap: 60rpx;
+}
+
+/* 发光转盘外环 */
+.processing-spinner-ring {
+    position: relative;
+    width: 200rpx;
+    height: 200rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.processing-spinner-active {
+    width: 160rpx;
+    height: 160rpx;
+    border-radius: 50%;
+    border: 4rpx solid rgba(0, 0, 0, 0.05);
+    border-top-color: var(--rw-accent);
+    border-left-color: var(--rw-accent);
+    animation: spin 1s linear infinite;
+    box-shadow: 0 0 40rpx var(--rw-accent-glow);
+}
+
+.processing-spinner-error {
+    width: 160rpx;
+    height: 160rpx;
+    border-radius: 50%;
+    border: 4rpx solid #ef4444;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 80rpx;
+    color: #ef4444;
+    box-shadow: 0 0 40rpx rgba(239, 68, 68, 0.15);
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* 文字提示区 */
+.processing-text-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16rpx;
+    text-align: center;
+}
+
+.processing-title {
+    font-size: 36rpx;
+    font-weight: 700;
+    color: var(--rw-text);
+    letter-spacing: 2rpx;
+}
+
+.processing-title-failed {
+    color: #ef4444;
+}
+
+.processing-subtitle {
+    font-size: 28rpx;
+    color: var(--rw-text-secondary);
+}
+
+/* 操作面板 */
+.processing-actions {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 480rpx;
+    gap: 20rpx;
+    margin-top: 40rpx;
+}
+
+.tasks-btn {
+    height: 88rpx;
+    border-radius: 44rpx;
+    font-size: 30rpx;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--rw-card-bg);
+    color: var(--rw-text-secondary);
+    border: 1px solid var(--rw-card-border);
+    box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.02);
+    transition: all 0.2s;
+
+    &::after {
+        display: none;
+    }
+
+    &:hover {
+        background: rgba(0, 0, 0, 0.02);
+        color: var(--rw-text);
+    }
+
+    &:active {
+        transform: scale(0.98);
+    }
+}
+
+.tasks-btn-primary {
+    background: var(--rw-accent-gradient);
+    color: #fff;
+    border: none;
+    box-shadow: 0 8rpx 24rpx var(--rw-accent-glow);
+
+    &:hover {
+        background: var(--rw-accent-hover);
+        color: #fff;
+    }
+}
+
+/* 错误 Banner */
+.processing-error-banner {
+    margin-top: auto;
+    padding: 24rpx;
+    background: rgba(239, 68, 68, 0.08);
+    /* 淡红适应白底 */
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 16rpx;
+    color: #ef4444;
+    font-size: 26rpx;
+    text-align: center;
+}

@@ -15,6 +15,7 @@ import {
 } from "@/services/subscription";
 import { useAuthStore } from "@/stores/auth.store";
 import { buildIdempotencyKey } from "@/utils/idempotency";
+import "../tasks/index.scss"; /* 复用 action 基础深色按钮设计 */
 import "./index.scss";
 
 function resolveErrorText(error: unknown, fallback: string) {
@@ -27,62 +28,37 @@ function resolveErrorText(error: unknown, fallback: string) {
   return fallback;
 }
 
+// ... (省略未变更的格式化函数，保留原貌需要全部包裹)
 function formatPrice(price: number) {
-  if (price <= 0) {
-    return "免费";
-  }
-
+  if (price <= 0) return "免费";
   return `¥${(price / 100).toFixed(2)}`;
 }
 
 function formatTime(iso: string | null | undefined) {
-  if (!iso) {
-    return "-";
-  }
-
+  if (!iso) return "-";
   return iso.replace("T", " ").replace(".000Z", "Z");
 }
 
 function statusLabel(status: string) {
-  if (status === "ACTIVE") {
-    return "生效中";
-  }
-  if (status === "PENDING") {
-    return "待生效";
-  }
-  if (status === "PAST_DUE") {
-    return "待续费";
-  }
-  if (status === "CANCELED") {
-    return "已取消";
-  }
-  if (status === "EXPIRED") {
-    return "已过期";
-  }
-  if (status === "REFUNDED") {
-    return "已退款";
-  }
+  if (status === "ACTIVE") return "生效中";
+  if (status === "PENDING") return "待生效";
+  if (status === "PAST_DUE") return "待续费";
+  if (status === "CANCELED") return "已取消";
+  if (status === "EXPIRED") return "已过期";
+  if (status === "REFUNDED") return "已退款";
   return status;
 }
 
 function statusColor(status: string) {
-  if (status === "ACTIVE") {
-    return "#13a05f";
-  }
-  if (status === "PENDING") {
-    return "#fa8c16";
-  }
-  if (status === "PAST_DUE" || status === "EXPIRED") {
-    return "#d93025";
-  }
-  return "#4b5f72";
+  if (status === "ACTIVE") return "#10b981";
+  if (status === "PENDING") return "#f59e0b";
+  if (status === "PAST_DUE" || status === "EXPIRED") return "#ef4444";
+  return "#71717a";
 }
 
 function sortPlansByPriority(plans: PlanView[]) {
   return [...plans].sort((left, right) => {
-    if (left.sortOrder !== right.sortOrder) {
-      return left.sortOrder - right.sortOrder;
-    }
+    if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder;
     return left.planId.localeCompare(right.planId);
   });
 }
@@ -116,9 +92,7 @@ export default function SubscriptionPage() {
   });
 
   useEffect(() => {
-    if (selectedPlanId) {
-      return;
-    }
+    if (selectedPlanId) return;
 
     const currentPlan = subscriptionQuery.data?.data.planId;
     if (currentPlan) {
@@ -127,17 +101,12 @@ export default function SubscriptionPage() {
     }
 
     const firstPlan = plansQuery.data?.data[0];
-    if (firstPlan) {
-      setSelectedPlanId(firstPlan.planId);
-    }
+    if (firstPlan) setSelectedPlanId(firstPlan.planId);
   }, [selectedPlanId, subscriptionQuery.data, plansQuery.data]);
 
   const checkoutMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedPlanId) {
-        throw new Error("请先选择套餐");
-      }
-
+      if (!selectedPlanId) throw new Error("请先选择套餐");
       return checkoutSubscription(
         {
           planId: selectedPlanId,
@@ -162,10 +131,7 @@ export default function SubscriptionPage() {
   const confirmMutation = useMutation({
     mutationFn: async () => {
       const normalized = orderId.trim();
-      if (!normalized) {
-        throw new Error("请先填写订单号");
-      }
-
+      if (!normalized) throw new Error("请先填写订单号");
       return mockConfirmSubscription(normalized, buildIdempotencyKey());
     },
     onSuccess: (response) => {
@@ -188,9 +154,7 @@ export default function SubscriptionPage() {
 
   const queryErrorText = useMemo(() => {
     const firstError = plansQuery.error || subscriptionQuery.error || usageQuery.error;
-    if (!firstError) {
-      return "";
-    }
+    if (!firstError) return "";
     return resolveErrorText(firstError, "查询订阅信息失败");
   }, [plansQuery.error, subscriptionQuery.error, usageQuery.error]);
 
@@ -217,20 +181,20 @@ export default function SubscriptionPage() {
   };
 
   return (
-    <PageShell title="套餐与订阅" subtitle="套餐、订阅状态与配额账单（FE-006）">
+    <PageShell title="套餐组合" subtitle="暗能量源泉，探索更多算力边界（FE-006）">
       {!accessToken ? (
         <View className="subscription-section">
-          <Text className="subscription-empty">当前未登录，请先登录后查看订阅信息。</Text>
-          <Button onClick={handleGoLogin}>去首页登录</Button>
+          <Text className="subscription-empty">当前未开启节点连接，请至入口端重置验证域。</Text>
+          <Button className="tasks-btn tasks-btn-primary" onClick={handleGoLogin}>重新挂载主域节点</Button>
         </View>
       ) : null}
 
       {accessToken ? (
         <View className="subscription-section">
           <View className="subscription-head">
-            <Text className="subscription-title">当前订阅</Text>
+            <Text className="subscription-title">基础面源记录</Text>
             <Button size="mini" loading={loadingAny} onClick={handleRefresh}>
-              刷新
+              刷新拓扑
             </Button>
           </View>
           <Text className="subscription-kv">用户：{user?.userId || "u_1001"}</Text>
@@ -275,6 +239,7 @@ export default function SubscriptionPage() {
         <View className="subscription-section">
           <Text className="subscription-title">订阅动作（本地联调）</Text>
           <Button
+            className="tasks-btn tasks-btn-primary"
             loading={checkoutMutation.isPending}
             disabled={!selectedPlanId}
             onClick={handleCheckout}
@@ -287,9 +252,15 @@ export default function SubscriptionPage() {
             maxlength={64}
             placeholder="输入 orderId 后可执行 mock-confirm"
             onInput={(event) => setOrderId(event.detail.value)}
+            placeholderTextColor="#71717a"
           />
-          <Button loading={confirmMutation.isPending} disabled={!orderId.trim()} onClick={handleMockConfirm}>
-            本地确认支付（mock-confirm）
+          <Button
+            className="tasks-btn"
+            loading={confirmMutation.isPending}
+            disabled={!orderId.trim()}
+            onClick={handleMockConfirm}
+          >
+            模拟确认支付（mock-confirm）
           </Button>
           <Text className="subscription-kv">returnUrl：{SUBSCRIPTION_RETURN_URL}</Text>
           {actionHint ? <Text className="subscription-hint">{actionHint}</Text> : null}
@@ -313,7 +284,7 @@ export default function SubscriptionPage() {
                   <Text className="subscription-ledger-id">{item.ledgerId}</Text>
                   <Text style={{ color: statusColor(item.status), fontWeight: 600 }}>{item.status}</Text>
                 </View>
-                <Text className="subscription-plan-meta">taskId：{item.taskId}</Text>
+                <Text className="subscription-plan-meta" style={{ marginTop: "8rpx" }}>taskId：{item.taskId}</Text>
                 <Text className="subscription-plan-meta">consumeUnit：{item.consumeUnit}</Text>
                 <Text className="subscription-plan-meta">source：{item.source}</Text>
                 <Text className="subscription-plan-meta">consumeAt：{formatTime(item.consumeAt)}</Text>

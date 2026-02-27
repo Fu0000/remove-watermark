@@ -15,20 +15,28 @@ export default defineAppConfig({
     backgroundTextStyle: "light"
   },
   tabBar: {
-    color: "#666666",
-    selectedColor: "#1a73e8",
+    color: "#94a3b8",
+    selectedColor: "#3b82f6",
+    backgroundColor: "#ffffff",
+    borderStyle: "white",
     list: [
       {
         pagePath: "pages/home/index",
-        text: "首页"
+        text: "首页",
+        iconPath: "./assets/tabbar/home.png",
+        selectedIconPath: "./assets/tabbar/home-active.png"
       },
       {
         pagePath: "pages/tasks/index",
-        text: "任务"
+        text: "任务",
+        iconPath: "./assets/tabbar/tasks.png",
+        selectedIconPath: "./assets/tabbar/tasks-active.png"
       },
       {
         pagePath: "pages/account/index",
-        text: "我的"
+        text: "我的",
+        iconPath: "./assets/tabbar/user.png",
+        selectedIconPath: "./assets/tabbar/user-active.png"
       }
     ]
   }

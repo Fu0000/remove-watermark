@@ -1,48 +1,76 @@
 .page-shell__hero {
-  border: 1px solid #d6e3f4;
+  /* 采用与全局卡片一致但带有品牌高光的明亮浅色渐变背景 */
+  border: 1px solid var(--rw-card-border);
+  position: relative;
+  overflow: hidden;
   background:
-    radial-gradient(circle at right top, rgba(58, 132, 255, 0.12), transparent 55%),
-    linear-gradient(180deg, #fdfefe 0%, #f4f8ff 100%);
+    radial-gradient(circle at 100% 0%, rgba(139, 92, 246, 0.12), transparent 40%),
+    radial-gradient(circle at 0% 100%, rgba(59, 130, 246, 0.08), transparent 40%),
+    var(--rw-card-bg);
+}
+
+/* 顶部点阵纹理改为更淡的灰色以适配白底 */
+.page-shell__hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: radial-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+  background-size: 8px 8px;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .page-shell__title {
+  position: relative;
+  z-index: 1;
   display: block;
-  font-size: 40rpx;
-  font-weight: 700;
-  color: #13233a;
-  letter-spacing: 0.4rpx;
+  font-size: 52rpx;
+  font-weight: 800;
+  letter-spacing: 0.8rpx;
+  color: var(--rw-text);
 }
 
 .page-shell__subtitle {
+  position: relative;
+  z-index: 1;
   display: block;
-  margin-top: 8rpx;
-  font-size: 24rpx;
-  color: #4b617d;
+  margin-top: 12rpx;
+  font-size: 26rpx;
+  font-weight: 400;
+  color: var(--rw-text-secondary);
 }
 
 .page-shell__meta {
+  position: relative;
+  z-index: 1;
   display: inline-block;
-  margin-top: 14rpx;
-  padding: 6rpx 14rpx;
-  border: 1px solid #d1def2;
+  margin-top: 20rpx;
+  padding: 8rpx 20rpx;
+  border: 1px solid rgba(0, 0, 0, 0.05);
   border-radius: 999rpx;
   font-size: 22rpx;
-  color: #2f4f77;
-  background: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+  color: var(--rw-text-secondary);
+  background: rgba(0, 0, 0, 0.02);
+  backdrop-filter: blur(8px);
 }
 
 .page-shell__body {
-  margin-top: 14rpx;
+  margin-top: 24rpx;
+  animation-delay: 0.1s;
 }
 
 .platform-h5 .page-shell__title {
-  font-size: 24px;
+  font-size: 32px;
 }
 
 .platform-h5 .page-shell__subtitle {
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .platform-h5 .page-shell__meta {
-  font-size: 12px;
+  font-size: 13px;
 }
