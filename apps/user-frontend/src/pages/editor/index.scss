@@ -1,3 +1,8 @@
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   编辑器 — 完全重构版
+   修复 Taro H5 Button 样式覆盖和布局问题
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
 /* 编辑器空态 */
 .editor-empty-state {
   display: flex;
@@ -8,17 +13,79 @@
   gap: 0;
 }
 
-/* 编辑器外围容器 */
+/* ═══ 顶部工具栏 ═══ */
+.editor-nav-pills {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.editor-pill-group {
+  display: flex;
+  gap: 6px;
+  background: var(--rw-card-bg, #fff);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 20px;
+  padding: 4px;
+  border: 1px solid var(--rw-card-border, rgba(0, 0, 0, 0.06));
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  flex-shrink: 0;
+}
+
+/* 工具胶囊按钮 — 覆盖 Taro Button 所有默认样式 */
+.editor-pill {
+  height: 36px !important;
+  line-height: 36px !important;
+  min-height: 36px !important;
+  border-radius: 18px !important;
+  padding: 0 16px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  background: transparent !important;
+  color: var(--rw-text-secondary, #64748b) !important;
+  border: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
+  transition: all 0.2s;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+
+  &::after {
+    display: none !important;
+  }
+
+  &:disabled {
+    opacity: 0.35;
+  }
+
+  &.editor-pill-active {
+    background: var(--rw-accent-gradient, linear-gradient(135deg, #3b82f6, #8b5cf6)) !important;
+    color: #fff !important;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  }
+}
+
+/* ═══ 编辑器主画板区域 ═══ */
 .editor-workspace {
   position: relative;
   width: 100%;
-  height: calc(100vh - 360rpx);
-  background: #000;
-  border-radius: 24rpx;
+  aspect-ratio: 4 / 3;
+  max-height: calc(100vh - 280px);
+  background: #0f172a;
+  border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  margin-top: 24rpx;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  margin-top: 12px;
   animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -27,62 +94,15 @@
   width: 100%;
   height: 100%;
   touch-action: none;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
 }
 
-/* 顶部悬浮胶囊工具栏 */
-.editor-nav-pills {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16rpx 0;
-  gap: 16rpx;
-}
-
-.editor-pill-group {
-  display: flex;
-  gap: 12rpx;
-  background: var(--rw-card-bg, #fff);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-radius: 40rpx;
-  padding: 8rpx;
-  border: 1px solid var(--rw-card-border, rgba(0, 0, 0, 0.06));
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
-}
-
-.editor-pill {
-  height: 56rpx;
-  border-radius: 28rpx;
-  padding: 0 24rpx;
-  font-size: 24rpx;
-  font-weight: 500;
-  background: transparent;
-  color: var(--rw-text-secondary, #64748b);
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-
-  &::after {
-    display: none;
-  }
-
-  &:disabled {
-    opacity: 0.3;
-  }
-
-  &.editor-pill-active {
-    background: var(--rw-accent, #3b82f6);
-    color: #fff;
-    box-shadow: 0 4rpx 12rpx rgba(59, 130, 246, 0.25);
-  }
-}
-
-/* 悬浮提示框 */
+/* ═══ 悬浮闭合提示 ═══ */
 .editor-tip-float {
   position: absolute;
-  top: 140rpx;
+  top: 80px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
@@ -90,24 +110,29 @@
 }
 
 .editor-tip-btn {
-  background: var(--rw-accent);
-  color: #fff;
-  border-radius: 30rpx;
-  font-size: 24rpx;
-  padding: 0 32rpx;
-  height: 60rpx;
-  border: none;
-  box-shadow: 0 4rpx 16rpx var(--rw-accent-glow);
+  background: var(--rw-accent, #3b82f6) !important;
+  color: #fff !important;
+  border-radius: 16px !important;
+  font-size: 13px !important;
+  padding: 0 18px !important;
+  height: 34px !important;
+  line-height: 34px !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  white-space: nowrap !important;
 }
 
-/* 底部一键完成动作列 */
+/* ═══ 底部核心一键执行 ═══ */
 .editor-bottom-bar {
   position: fixed;
   bottom: 0;
   left: 0;
   width: 100%;
-  padding: 32rpx;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0) 100%);
+  padding: 16px 16px calc(env(safe-area-inset-bottom, 8px) + 16px);
+  background: linear-gradient(to top,
+      rgba(15, 23, 42, 0.95) 0%,
+      rgba(15, 23, 42, 0.7) 50%,
+      transparent 100%);
   pointer-events: none;
   z-index: 20;
   display: flex;
@@ -116,23 +141,28 @@
 
 .editor-start-btn {
   pointer-events: auto;
-  width: calc(100% - 64rpx);
-  height: 100rpx;
-  border-radius: 50rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 32rpx;
-  font-weight: 700;
-  background: var(--rw-accent-gradient);
-  color: #fff;
-  border: none;
-  box-shadow: 0 8rpx 32rpx var(--rw-accent-glow);
+  width: 100% !important;
+  max-width: 400px;
+  height: 52px !important;
+  min-height: 52px !important;
+  line-height: 52px !important;
+  border-radius: 26px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  background: var(--rw-accent-gradient, linear-gradient(135deg, #3b82f6, #8b5cf6)) !important;
+  color: #fff !important;
+  border: none !important;
+  box-shadow:
+    0 4px 20px rgba(59, 130, 246, 0.5),
+    0 2px 6px rgba(0, 0, 0, 0.2) !important;
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  letter-spacing: 2rpx;
+  letter-spacing: 1px;
 
   &::after {
-    display: none;
+    display: none !important;
   }
 
   &:active {
@@ -140,32 +170,35 @@
   }
 
   &-disabled {
-    background: rgba(255, 255, 255, 0.1);
-    box-shadow: none;
-    color: var(--rw-text-tertiary);
+    background: rgba(100, 116, 139, 0.3) !important;
+    box-shadow: none !important;
+    color: rgba(255, 255, 255, 0.4) !important;
   }
 }
 
+/* ═══ 错误提示横幅 ═══ */
 .editor-error-banner {
-  position: absolute;
+  position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background: rgba(239, 68, 68, 0.9);
+  background: rgba(239, 68, 68, 0.95);
   color: #fff;
-  padding: 16rpx 32rpx;
-  border-radius: 16rpx;
-  font-size: 26rpx;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-size: 14px;
   z-index: 30;
   pointer-events: none;
-  box-shadow: 0 8rpx 32rpx rgba(239, 68, 68, 0.4);
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4);
+  max-width: 80%;
+  text-align: center;
 }
 
-/* 画板点位视觉风格 */
+/* ═══ 画板点位视觉 ═══ */
 .mask-point {
   position: absolute;
-  width: 16rpx;
-  height: 16rpx;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   transform: translate(-50%, -50%);
   pointer-events: none;
@@ -173,26 +206,26 @@
 
 .mask-point-polygon {
   background-color: rgba(59, 130, 246, 0.8);
-  border: 2rpx solid #ffffff;
-  box-shadow: 0 0 8rpx rgba(59, 130, 246, 0.8);
+  border: 1px solid #ffffff;
+  box-shadow: 0 0 4px rgba(59, 130, 246, 0.8);
 }
 
 .mask-point-draft {
   background-color: rgba(239, 68, 68, 0.8);
-  border: 2rpx solid #ffffff;
-  box-shadow: 0 0 8rpx rgba(239, 68, 68, 0.8);
+  border: 1px solid #ffffff;
+  box-shadow: 0 0 4px rgba(239, 68, 68, 0.8);
 }
 
 .mask-point-brush {
-  width: 24rpx;
-  height: 24rpx;
+  width: 12px;
+  height: 12px;
   background-color: rgba(16, 185, 129, 0.3);
-  box-shadow: 0 0 16rpx rgba(16, 185, 129, 0.6);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
 }
 
 .mask-point-active {
-  width: 24rpx;
-  height: 24rpx;
+  width: 12px;
+  height: 12px;
   background-color: rgba(245, 158, 11, 0.4);
-  box-shadow: 0 0 16rpx rgba(245, 158, 11, 0.8);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.8);
 }

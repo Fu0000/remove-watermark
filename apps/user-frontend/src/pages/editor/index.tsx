@@ -67,7 +67,27 @@ export default function EditorPage() {
   const { setTask } = useTaskStore();
 
   // Connect to the new Media store
-  const { selectedMedia, mediaType } = useMediaStore();
+  const { selectedMedia: _selectedMedia, mediaType: _mediaType, setMedia } = useMediaStore();
+
+  // DEV ONLY: ?mock=1 injects a placeholder image so layout can be verified without backend
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('mock') === '1' && !_selectedMedia) {
+        setMedia('IMAGE', {
+          sourcePath: 'https://picsum.photos/seed/watermark/800/600',
+          fileName: 'test-watermark.jpg',
+          fileSize: 102400,
+          mimeType: 'image/jpeg',
+          imageWidth: 800,
+          imageHeight: 600,
+        });
+      }
+    }
+  }, []);
+
+  const selectedMedia = _selectedMedia;
+  const mediaType = _mediaType;
 
   // Use actual image dimensions from store, or fall back to defaults
   const IMAGE_WIDTH = selectedMedia?.imageWidth || DEFAULT_IMAGE_WIDTH;
@@ -325,15 +345,35 @@ export default function EditorPage() {
     <PageShell title="智能消除工作台" subtitle={`${mediaType === "VIDEO" ? "🎬 视频" : "🖼️ 图片"} · ${selectedMedia.fileName}`}>
 
       {/* 极简顶栏工具集 */}
-      <View className="editor-nav-pills animate-fade-in">
-        <View className="editor-pill-group">
-          <Button className={`editor-pill ${mode === "BRUSH" ? "editor-pill-active" : ""}`} onClick={() => setMode("BRUSH")}>🖌️ 手绘涂抹</Button>
-          <Button className={`editor-pill ${mode === "POLYGON" ? "editor-pill-active" : ""}`} onClick={() => setMode("POLYGON")}>⬡ 多边套索</Button>
+      <View className="editor-nav-pills animate-fade-in" style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0' }}>
+        <View className="editor-pill-group" style={{ display: 'flex', gap: '8px' }}>
+          <View
+            className={`editor-pill ${mode === "BRUSH" ? "editor-pill-active" : ""}`}
+            onClick={() => setMode("BRUSH")}
+            style={{ padding: '8px 16px', borderRadius: '20px', fontSize: '14px', background: mode === "BRUSH" ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)' : 'transparent', color: mode === "BRUSH" ? '#fff' : '#64748b' }}
+          >🖌️ 手绘涂抹</View>
+          <View
+            className={`editor-pill ${mode === "POLYGON" ? "editor-pill-active" : ""}`}
+            onClick={() => setMode("POLYGON")}
+            style={{ padding: '8px 16px', borderRadius: '20px', fontSize: '14px', background: mode === "POLYGON" ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)' : 'transparent', color: mode === "POLYGON" ? '#fff' : '#64748b' }}
+          >⬡ 多边套索</View>
         </View>
-        <View className="editor-pill-group">
-          <Button className="editor-pill" onClick={handleUndo} disabled={!history.length}>↩️ 撤回</Button>
-          <Button className="editor-pill" onClick={handleRedo} disabled={!future.length}>↪️ 重做</Button>
-          <Button className="editor-pill" onClick={handleClearMask} disabled={!hasMaskData && draftPolygon.length === 0}>🗑️ 清除</Button>
+        <View className="editor-pill-group" style={{ display: 'flex', gap: '8px' }}>
+          <View
+            className="editor-pill"
+            onClick={history.length ? handleUndo : undefined}
+            style={{ padding: '8px 12px', borderRadius: '20px', fontSize: '14px', opacity: history.length ? 1 : 0.4 }}
+          >↩️ 撤回</View>
+          <View
+            className="editor-pill"
+            onClick={future.length ? handleRedo : undefined}
+            style={{ padding: '8px 12px', borderRadius: '20px', fontSize: '14px', opacity: future.length ? 1 : 0.4 }}
+          >↪️ 重做</View>
+          <View
+            className="editor-pill"
+            onClick={(hasMaskData || draftPolygon.length > 0) ? handleClearMask : undefined}
+            style={{ padding: '8px 12px', borderRadius: '20px', fontSize: '14px', opacity: (hasMaskData || draftPolygon.length > 0) ? 1 : 0.4 }}
+          >🗑️ 清除</View>
         </View>
       </View>
 
@@ -345,7 +385,19 @@ export default function EditorPage() {
       )}
 
       {/* 主力暗黑画板 */}
-      <View className="editor-workspace">
+      <View
+        className="editor-workspace"
+        style={{
+          width: '100%',
+          height: 'calc(100vh - 220px)', // 留出顶栏(~120px) + 底部按钮栏(~100px) 的空间
+          minHeight: '300px',
+          background: '#0f172a',
+          borderRadius: '16px',
+          overflow: 'hidden',
+          marginTop: '12px',
+          marginBottom: '80px', // 底部按钮 position:fixed 需要留出 margin
+        }}
+      >
         <View
           className="mask-board"
           onClick={handlePolygonTap}
@@ -398,14 +450,27 @@ export default function EditorPage() {
       )}
 
       {/* 底部悬浮核心一键执行 Button */}
-      <View className="editor-bottom-bar animate-slide-up" style={{ animationDelay: "0.2s" }}>
-        <Button
+      <View className="editor-bottom-bar animate-slide-up" style={{ animationDelay: "0.2s", padding: '16px', position: 'fixed', bottom: 0, left: 0, width: '100%', boxSizing: 'border-box', background: 'linear-gradient(to top, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.7) 50%, transparent 100%)' }}>
+        <View
           className={`editor-start-btn ${!hasMaskData ? 'editor-start-btn-disabled' : ''}`}
-          loading={loading}
-          onClick={handleStartErase}
+          onClick={!loading && hasMaskData ? handleStartErase : undefined}
+          style={{
+            width: '100%',
+            height: '52px',
+            borderRadius: '26px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '17px',
+            fontWeight: 'bold',
+            background: hasMaskData ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)' : 'rgba(100, 116, 139, 0.3)',
+            color: hasMaskData ? '#fff' : 'rgba(255, 255, 255, 0.4)',
+            boxShadow: hasMaskData ? '0 4px 20px rgba(59, 130, 246, 0.5)' : 'none',
+            opacity: loading ? 0.7 : 1
+          }}
         >
-          开始智能抹除 ✨
-        </Button>
+          {loading ? "处理中..." : "开始智能抹除 ✨"}
+        </View>
       </View>
 
     </PageShell>
