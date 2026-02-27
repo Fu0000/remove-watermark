@@ -15,14 +15,13 @@ import "./index.scss";
 const DEFAULT_IMAGE_WIDTH = 1920;
 const DEFAULT_IMAGE_HEIGHT = 1080;
 
-type MaskMode = "POLYGON" | "BRUSH";
+type MaskMode = "RECTANGLE" | "BRUSH";
 type MaskPoint = [number, number];
 type MaskPath = MaskPoint[];
 
 interface MaskSnapshot {
   polygons: MaskPath[];
   brushStrokes: MaskPath[];
-  draftPolygon: MaskPath;
 }
 
 interface BoardRect {
@@ -56,7 +55,8 @@ export default function EditorPage() {
   const [mode, setMode] = useState<MaskMode>("BRUSH");
   const [polygons, setPolygons] = useState<MaskPath[]>([]);
   const [brushStrokes, setBrushStrokes] = useState<MaskPath[]>([]);
-  const [draftPolygon, setDraftPolygon] = useState<MaskPath>([]);
+  const [draftRect, setDraftRect] = useState<[MaskPoint, MaskPoint] | null>(null);
+  const activeRectStartRef = useRef<MaskPoint | null>(null);
   const [activeStroke, setActiveStroke] = useState<MaskPath>([]);
   const activeStrokeRef = useRef<MaskPath>([]);
   const [history, setHistory] = useState<MaskSnapshot[]>([]);
@@ -98,14 +98,14 @@ export default function EditorPage() {
 
   const snapshotCurrent = (): MaskSnapshot => ({
     polygons: deepClonePaths(polygons),
-    brushStrokes: deepClonePaths(brushStrokes),
-    draftPolygon: deepClonePath(draftPolygon)
+    brushStrokes: deepClonePaths(brushStrokes)
   });
 
   const applySnapshot = (snapshot: MaskSnapshot) => {
     setPolygons(deepClonePaths(snapshot.polygons));
     setBrushStrokes(deepClonePaths(snapshot.brushStrokes));
-    setDraftPolygon(deepClonePath(snapshot.draftPolygon));
+    setDraftRect(null);
+    activeRectStartRef.current = null;
     setActiveStroke([]);
     activeStrokeRef.current = [];
   };
@@ -153,10 +153,10 @@ export default function EditorPage() {
 
   const pointFromEvent = (event: unknown): MaskPoint | undefined => {
     if (!boardRect) return undefined;
-    const record = event as { touches?: any[]; changedTouches?: any[]; detail?: any };
+    const record = event as any;
     const touched = record.touches?.[0] || record.changedTouches?.[0];
-    const rawX = asFiniteNumber(touched?.x) ?? asFiniteNumber(touched?.clientX) ?? asFiniteNumber(touched?.pageX) ?? asFiniteNumber(record.detail?.x) ?? asFiniteNumber(record.detail?.clientX);
-    const rawY = asFiniteNumber(touched?.y) ?? asFiniteNumber(touched?.clientY) ?? asFiniteNumber(touched?.pageY) ?? asFiniteNumber(record.detail?.y) ?? asFiniteNumber(record.detail?.clientY);
+    const rawX = asFiniteNumber(touched?.x) ?? asFiniteNumber(touched?.clientX) ?? asFiniteNumber(touched?.pageX) ?? asFiniteNumber(record.clientX) ?? asFiniteNumber(record.pageX) ?? asFiniteNumber(record.detail?.x) ?? asFiniteNumber(record.detail?.clientX);
+    const rawY = asFiniteNumber(touched?.y) ?? asFiniteNumber(touched?.clientY) ?? asFiniteNumber(touched?.pageY) ?? asFiniteNumber(record.clientY) ?? asFiniteNumber(record.pageY) ?? asFiniteNumber(record.detail?.y) ?? asFiniteNumber(record.detail?.clientY);
     if (rawX === undefined || rawY === undefined) return undefined;
 
     const localX = clamp(rawX - boardRect.left, 0, boardRect.width);
@@ -166,65 +166,69 @@ export default function EditorPage() {
     return [normalizedX, normalizedY];
   };
 
-  const handlePolygonTap = (event: unknown) => {
-    if (mode !== "POLYGON") return;
-    const point = pointFromEvent(event);
-    if (!point) return;
-    commitSnapshot({
-      polygons: deepClonePaths(polygons),
-      brushStrokes: deepClonePaths(brushStrokes),
-      draftPolygon: [...deepClonePath(draftPolygon), point]
-    });
-  };
-
   const handleBoardTouchStart = (event: unknown) => {
-    if (mode !== "BRUSH") return;
     const point = pointFromEvent(event);
     if (!point) return;
-    activeStrokeRef.current = [point];
-    setActiveStroke([point]);
+    if (mode === "BRUSH") {
+      activeStrokeRef.current = [point];
+      setActiveStroke([point]);
+    } else if (mode === "RECTANGLE") {
+      activeRectStartRef.current = point;
+      setDraftRect([point, point]);
+    }
   };
 
   const handleBoardTouchMove = (event: unknown) => {
-    if (mode !== "BRUSH" || !activeStrokeRef.current.length) return;
     const point = pointFromEvent(event);
     if (!point) return;
-    activeStrokeRef.current = [...activeStrokeRef.current, point];
-    setActiveStroke([...activeStrokeRef.current]);
+    if (mode === "BRUSH" && activeStrokeRef.current.length) {
+      activeStrokeRef.current = [...activeStrokeRef.current, point];
+      setActiveStroke([...activeStrokeRef.current]);
+    } else if (mode === "RECTANGLE" && activeRectStartRef.current) {
+      setDraftRect([activeRectStartRef.current, point]);
+    }
   };
 
   const handleBoardTouchEnd = () => {
-    if (mode !== "BRUSH") return;
-    if (activeStrokeRef.current.length < 2) {
+    if (mode === "BRUSH") {
+      if (activeStrokeRef.current.length < 2) {
+        setActiveStroke([]);
+        activeStrokeRef.current = [];
+        return;
+      }
+      commitSnapshot({
+        polygons: deepClonePaths(polygons),
+        brushStrokes: [...deepClonePaths(brushStrokes), deepClonePath(activeStrokeRef.current)],
+      });
       setActiveStroke([]);
       activeStrokeRef.current = [];
-      return;
+    } else if (mode === "RECTANGLE") {
+      if (!activeRectStartRef.current || !draftRect) {
+        setDraftRect(null);
+        activeRectStartRef.current = null;
+        return;
+      }
+      const [start, end] = draftRect;
+      const rectPolygon: MaskPath = [
+        [start[0], start[1]],
+        [end[0], start[1]],
+        [end[0], end[1]],
+        [start[0], end[1]]
+      ];
+      // Only commit if rect has minimum dimension
+      if (Math.abs(start[0] - end[0]) > 5 && Math.abs(start[1] - end[1]) > 5) {
+        commitSnapshot({
+          polygons: [...deepClonePaths(polygons), rectPolygon],
+          brushStrokes: deepClonePaths(brushStrokes)
+        });
+      }
+      setDraftRect(null);
+      activeRectStartRef.current = null;
     }
-    commitSnapshot({
-      polygons: deepClonePaths(polygons),
-      brushStrokes: [...deepClonePaths(brushStrokes), deepClonePath(activeStrokeRef.current)],
-      draftPolygon: deepClonePath(draftPolygon)
-    });
-    setActiveStroke([]);
-    activeStrokeRef.current = [];
-  };
-
-  const handleClosePolygon = () => {
-    if (draftPolygon.length < 3) {
-      setErrorText("提示：多边形至少需要 3 个点才能闭合");
-      setTimeout(() => setErrorText(""), 2000);
-      return;
-    }
-    setErrorText("");
-    commitSnapshot({
-      polygons: [...deepClonePaths(polygons), deepClonePath(draftPolygon)],
-      brushStrokes: deepClonePaths(brushStrokes),
-      draftPolygon: []
-    });
   };
 
   const handleClearMask = () => {
-    commitSnapshot({ polygons: [], brushStrokes: [], draftPolygon: [] });
+    commitSnapshot({ polygons: [], brushStrokes: [] });
   };
 
   const handleUndo = () => {
@@ -243,12 +247,7 @@ export default function EditorPage() {
     applySnapshot(next);
   };
 
-  const submitPolygons = useMemo(() => {
-    if (draftPolygon.length >= 3) return [...polygons, draftPolygon];
-    return polygons;
-  }, [polygons, draftPolygon]);
-
-  const hasMaskData = submitPolygons.length > 0 || brushStrokes.length > 0;
+  const hasMaskData = polygons.length > 0 || brushStrokes.length > 0;
 
   // ====核心集成动作：一键消除====
   const handleStartErase = async () => {
@@ -306,7 +305,7 @@ export default function EditorPage() {
         {
           imageWidth: IMAGE_WIDTH,
           imageHeight: IMAGE_HEIGHT,
-          polygons: submitPolygons,
+          polygons: polygons,
           brushStrokes,
           version: 0
         },
@@ -353,10 +352,10 @@ export default function EditorPage() {
             style={{ padding: '8px 16px', borderRadius: '20px', fontSize: '14px', background: mode === "BRUSH" ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)' : 'transparent', color: mode === "BRUSH" ? '#fff' : '#64748b' }}
           >🖌️ 手绘涂抹</View>
           <View
-            className={`editor-pill ${mode === "POLYGON" ? "editor-pill-active" : ""}`}
-            onClick={() => setMode("POLYGON")}
-            style={{ padding: '8px 16px', borderRadius: '20px', fontSize: '14px', background: mode === "POLYGON" ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)' : 'transparent', color: mode === "POLYGON" ? '#fff' : '#64748b' }}
-          >⬡ 多边套索</View>
+            className={`editor-pill ${mode === "RECTANGLE" ? "editor-pill-active" : ""}`}
+            onClick={() => setMode("RECTANGLE")}
+            style={{ padding: '8px 16px', borderRadius: '20px', fontSize: '14px', background: mode === "RECTANGLE" ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)' : 'transparent', color: mode === "RECTANGLE" ? '#fff' : '#64748b' }}
+          >⬡ 图形框选</View>
         </View>
         <View className="editor-pill-group" style={{ display: 'flex', gap: '8px' }}>
           <View
@@ -371,18 +370,11 @@ export default function EditorPage() {
           >↪️ 重做</View>
           <View
             className="editor-pill"
-            onClick={(hasMaskData || draftPolygon.length > 0) ? handleClearMask : undefined}
-            style={{ padding: '8px 12px', borderRadius: '20px', fontSize: '14px', opacity: (hasMaskData || draftPolygon.length > 0) ? 1 : 0.4 }}
+            onClick={hasMaskData ? handleClearMask : undefined}
+            style={{ padding: '8px 12px', borderRadius: '20px', fontSize: '14px', opacity: hasMaskData ? 1 : 0.4 }}
           >🗑️ 清除</View>
         </View>
       </View>
-
-      {/* 当处于多边形模式下，且存在顶点，给出闭合提示 */}
-      {mode === "POLYGON" && draftPolygon.length > 0 && (
-        <View className="editor-tip-float">
-          <Button className="editor-tip-btn" onClick={handleClosePolygon}>点此闭合当前多边形</Button>
-        </View>
-      )}
 
       {/* 主力暗黑画板 */}
       <View
@@ -400,29 +392,60 @@ export default function EditorPage() {
       >
         <View
           className="mask-board"
-          onClick={handlePolygonTap}
+          // @ts-ignore - Taro ViewProps lacks mouse events but they work in H5
+          onMouseDown={handleBoardTouchStart}
+          // @ts-ignore
+          onMouseMove={handleBoardTouchMove}
+          // @ts-ignore
+          onMouseUp={handleBoardTouchEnd}
+          // @ts-ignore
+          onMouseLeave={handleBoardTouchEnd}
           onTouchStart={handleBoardTouchStart}
           onTouchMove={handleBoardTouchMove}
           onTouchEnd={handleBoardTouchEnd}
-          style={selectedMedia.sourcePath ? { backgroundImage: `url(${selectedMedia.sourcePath})`, backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' } : {}}
+          style={selectedMedia.sourcePath ? { backgroundImage: `url(${selectedMedia.sourcePath})`, backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center', touchAction: 'none' } : { touchAction: 'none' }}
         >
-          {/* 画板绘制点位阵列 */}
-          {submitPolygons.map((polygon, polygonIndex) =>
-            polygon.map((point, pointIndex) => (
+          {/* 渲染已提交的矩形框（多边形） */}
+          {polygons.map((polygon, polygonIndex) => {
+            const xs = polygon.map(p => p[0]);
+            const ys = polygon.map(p => p[1]);
+            const minX = Math.min(...xs);
+            const maxX = Math.max(...xs);
+            const minY = Math.min(...ys);
+            const maxY = Math.max(...ys);
+            return (
               <View
-                key={`poly-${polygonIndex}-${pointIndex}-${point[0]}-${point[1]}`}
-                className="mask-point mask-point-polygon"
-                style={{ left: `${(point[0] / IMAGE_WIDTH) * 100}%`, top: `${(point[1] / IMAGE_HEIGHT) * 100}%` }}
+                key={`rect-${polygonIndex}`}
+                style={{
+                  position: 'absolute',
+                  backgroundColor: 'rgba(59, 130, 246, 0.4)',
+                  border: '2px solid rgba(59, 130, 246, 0.8)',
+                  left: `${(minX / IMAGE_WIDTH) * 100}%`,
+                  top: `${(minY / IMAGE_HEIGHT) * 100}%`,
+                  width: `${((maxX - minX) / IMAGE_WIDTH) * 100}%`,
+                  height: `${((maxY - minY) / IMAGE_HEIGHT) * 100}%`,
+                  zIndex: 5
+                }}
               />
-            ))
-          )}
-          {draftPolygon.map((point, pointIndex) => (
+            );
+          })}
+          {/* 渲染绘制中的矩形预览 */}
+          {draftRect && (
             <View
-              key={`draft-${pointIndex}-${point[0]}-${point[1]}`}
-              className="mask-point mask-point-draft"
-              style={{ left: `${(point[0] / IMAGE_WIDTH) * 100}%`, top: `${(point[1] / IMAGE_HEIGHT) * 100}%` }}
+              style={{
+                position: 'absolute',
+                border: '2px dashed #3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                left: `${(Math.min(draftRect[0][0], draftRect[1][0]) / IMAGE_WIDTH) * 100}%`,
+                top: `${(Math.min(draftRect[0][1], draftRect[1][1]) / IMAGE_HEIGHT) * 100}%`,
+                width: `${(Math.abs(draftRect[0][0] - draftRect[1][0]) / IMAGE_WIDTH) * 100}%`,
+                height: `${(Math.abs(draftRect[0][1] - draftRect[1][1]) / IMAGE_HEIGHT) * 100}%`,
+                zIndex: 10
+              }}
             />
-          ))}
+          )}
+
+          {/* 手绘涂抹保留原来的点阵 */}
           {brushStrokes.map((stroke, strokeIndex) =>
             stroke.filter((_, pointIndex) => pointIndex % 2 === 0).map((point, pointIndex) => (
               <View
@@ -443,11 +466,13 @@ export default function EditorPage() {
       </View>
 
       {/* 报错小横幅 */}
-      {errorText && (
-        <View className="editor-error-banner animate-slide-up">
-          <Text>{errorText}</Text>
-        </View>
-      )}
+      {
+        errorText && (
+          <View className="editor-error-banner animate-slide-up">
+            <Text>{errorText}</Text>
+          </View>
+        )
+      }
 
       {/* 底部悬浮核心一键执行 Button */}
       <View className="editor-bottom-bar animate-slide-up" style={{ animationDelay: "0.2s", padding: '16px', position: 'fixed', bottom: 0, left: 0, width: '100%', boxSizing: 'border-box', background: 'linear-gradient(to top, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.7) 50%, transparent 100%)' }}>
@@ -473,6 +498,6 @@ export default function EditorPage() {
         </View>
       </View>
 
-    </PageShell>
+    </PageShell >
   );
 }
