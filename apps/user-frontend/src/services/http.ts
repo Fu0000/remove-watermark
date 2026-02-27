@@ -6,6 +6,9 @@ import { API_BASE_URL } from "@/config/runtime";
 type TokenAccessor = () => string | undefined;
 let tokenAccessor: TokenAccessor = () => undefined;
 
+type SessionExpiredCallback = () => void;
+let onSessionExpired: SessionExpiredCallback | undefined;
+
 export interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   data?: unknown;
@@ -26,6 +29,11 @@ export class ApiError extends Error {
 
 export function setTokenAccessor(accessor: TokenAccessor) {
   tokenAccessor = accessor;
+}
+
+/** Register a callback that fires when a 401 response is received globally. */
+export function setSessionExpiredHandler(handler: SessionExpiredCallback) {
+  onSessionExpired = handler;
 }
 
 export async function request<T>(url: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
@@ -59,7 +67,20 @@ export async function request<T>(url: string, options: RequestOptions = {}): Pro
 
   const body = response.data;
   if (response.statusCode >= 400) {
-    throw new ApiError(body?.message || "request failed", response.statusCode, body?.code || 50001);
+    const apiError = new ApiError(body?.message || "request failed", response.statusCode, body?.code || 50001);
+
+    // ── Global 401 interception: session expired → clear & redirect ──
+    if (response.statusCode === 401) {
+      onSessionExpired?.();
+      Taro.showToast({ title: "登录已过期，请重新登录", icon: "none", duration: 2500 });
+    }
+
+    // ── Global 403+40302: quota exceeded ──
+    if (response.statusCode === 403 && body?.code === 40302) {
+      Taro.showToast({ title: "配额不足，请升级套餐", icon: "none", duration: 2500 });
+    }
+
+    throw apiError;
   }
 
   return body;

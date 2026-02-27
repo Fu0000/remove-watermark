@@ -1,16 +1,18 @@
 import { Component, createElement, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/auth.store";
-import { setTokenAccessor } from "@/services/http";
+import { setTokenAccessor, setSessionExpiredHandler } from "@/services/http";
 import "./app.scss";
 
 function AuthBridge() {
   const accessToken = useAuthStore((state) => state.accessToken);
+  const clearSession = useAuthStore((state) => state.clearSession);
 
   useEffect(() => {
     setTokenAccessor(() => accessToken);
+    setSessionExpiredHandler(() => clearSession());
     return undefined;
-  }, [accessToken]);
+  }, [accessToken, clearSession]);
 
   return null;
 }

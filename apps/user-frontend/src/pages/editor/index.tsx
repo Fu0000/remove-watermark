@@ -236,6 +236,10 @@ export default function EditorPage() {
       setErrorText("登录状态失效，请返回重新连接");
       return;
     }
+    if (typeof user.quotaLeft === "number" && user.quotaLeft <= 0) {
+      setErrorText("当前配额已用完，请升级套餐后再继续");
+      return;
+    }
     if (!selectedMedia) {
       setErrorText("未找到待处理文件缓存");
       return;

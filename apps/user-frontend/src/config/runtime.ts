@@ -52,7 +52,7 @@ function resolveDefaultApiBaseUrl() {
   const isLocalHost =
     host === "127.0.0.1" || host === "localhost" || /^192\.168\.\d+\.\d+$/.test(host) || /^10\.\d+\.\d+\.\d+$/.test(host);
 
-  return isLocalHost ? "http://127.0.0.1:13000" : "http://127.0.0.1:3000";
+  return isLocalHost ? "http://127.0.0.1:3000" : "http://127.0.0.1:3000";
 }
 
 const runtimeEnv: Record<string, string | undefined> =
